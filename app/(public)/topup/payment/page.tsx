@@ -104,14 +104,7 @@ export default function TopupPaymentPage() {
         return
       }
 
-      // Non-INR fallback mock payment (until Stripe is wired).
-      await fetch('/api/payment/webhook', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId, status: 'success' }),
-      })
-      router.push('/topup/success')
+      throw new Error('Payment gateway is not configured for this currency.')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Payment failed')
       setStarting(false)

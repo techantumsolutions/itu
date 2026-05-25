@@ -19,7 +19,8 @@ export function Confirmation() {
     selectedProduct,
     phoneNumber,
     setStep,
-    reset,
+    resetRecharge,
+    processRecharge,
   } = useRechargeStore()
 
   const { balance, deduct } = useWalletStore()
@@ -36,14 +37,8 @@ export function Confirmation() {
     
     setIsProcessing(true)
     
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 2000))
-    
-    // Deduct from wallet
-    const success = await deduct(
-      selectedProduct.senderAmount,
-      `Mobile recharge to ${selectedCountry?.dialCode}${phoneNumber}`
-    )
+    const order = await processRecharge()
+    const success = !!order
     
     if (success) {
       setIsSuccess(true)
@@ -53,12 +48,12 @@ export function Confirmation() {
   }
 
   const handleDone = () => {
-    reset()
+    resetRecharge()
     router.push("/dashboard")
   }
 
   const handleNewRecharge = () => {
-    reset()
+    resetRecharge()
   }
 
   if (isSuccess) {
@@ -71,8 +66,8 @@ export function Confirmation() {
           <h2 className="text-2xl font-bold">Recharge Successful!</h2>
           <p className="text-muted-foreground mt-2">
             {formatCurrency(
-              selectedProduct?.destinationAmount || 0,
-              selectedProduct?.destinationCurrency || "USD"
+              selectedProduct?.minReceiveAmount || 0,
+              selectedProduct?.receiveCurrency || "USD"
             )}{" "}
             has been sent to
           </p>
@@ -91,8 +86,8 @@ export function Confirmation() {
               <span className="text-muted-foreground">Amount Paid</span>
               <span className="font-medium">
                 {formatCurrency(
-                  selectedProduct?.senderAmount || 0,
-                  selectedProduct?.senderCurrency || "USD"
+                  selectedProduct?.minSendAmount || 0,
+                  selectedProduct?.sendCurrency || "USD"
                 )}
               </span>
             </div>
@@ -183,8 +178,8 @@ export function Confirmation() {
               </div>
               <p className="text-lg font-bold">
                 {formatCurrency(
-                  selectedProduct?.destinationAmount || 0,
-                  selectedProduct?.destinationCurrency || "USD"
+                  selectedProduct?.minReceiveAmount || 0,
+                  selectedProduct?.receiveCurrency || "USD"
                 )}
               </p>
             </div>
@@ -198,8 +193,8 @@ export function Confirmation() {
               <span className="text-muted-foreground">Subtotal</span>
               <span>
                 {formatCurrency(
-                  selectedProduct?.senderAmount || 0,
-                  selectedProduct?.senderCurrency || "USD"
+                  selectedProduct?.minSendAmount || 0,
+                  selectedProduct?.sendCurrency || "USD"
                 )}
               </span>
             </div>
@@ -212,8 +207,8 @@ export function Confirmation() {
               <span>Total</span>
               <span className="text-xl font-bold text-primary">
                 {formatCurrency(
-                  selectedProduct?.senderAmount || 0,
-                  selectedProduct?.senderCurrency || "USD"
+                  selectedProduct?.minSendAmount || 0,
+                  selectedProduct?.sendCurrency || "USD"
                 )}
               </span>
             </div>
@@ -253,8 +248,8 @@ export function Confirmation() {
           <>
             Confirm & Pay{" "}
             {formatCurrency(
-              selectedProduct?.senderAmount || 0,
-              selectedProduct?.senderCurrency || "USD"
+              selectedProduct?.minSendAmount || 0,
+              selectedProduct?.sendCurrency || "USD"
             )}
           </>
         )}

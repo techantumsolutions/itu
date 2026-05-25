@@ -36,7 +36,6 @@ import {
 } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { useRechargeStore, useAuthStore, useLocalePreferencesStore } from '@/lib/stores'
-import { mockCarriers, mockProducts } from '@/lib/mock-data'
 import type { Carrier, Product } from '@/lib/types'
 
 // Steps for the recharge flow
@@ -60,6 +59,7 @@ export default function RechargePage() {
     setCarrier,
     setProduct,
     setPhoneNumber,
+    setCountries,
     isLoadingCarriers,
     isLoadingProducts,
     isProcessing,
@@ -75,26 +75,18 @@ export default function RechargePage() {
   const [products, setProducts] = useState<Product[]>([])
   const [productFilter, setProductFilter] = useState<'all' | 'data' | 'voice' | 'combo'>('all')
 
-  const fxRates: Record<string, number> = {
-    USD: 1,
-    EUR: 0.92,
-    GBP: 0.79,
-    INR: 83.2,
-    NGN: 1590,
-    PHP: 57.1,
-    MXN: 16.8,
-    BDT: 117.4,
-    PKR: 278,
-    GHS: 14.2,
-    KES: 129.5,
-  }
+  useEffect(() => {
+    void fetch('/api/countries', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => setCountries(Array.isArray(data?.countries) ? data.countries : []))
+      .catch(() => setCountries([]))
+  }, [setCountries])
 
-  const convertUsd = (amountUsd: number) => amountUsd * (fxRates[currencyCode] ?? 1)
-  const formatCurrency = (amount: number) =>
+  const formatCurrency = (amount: number, currency = currencyCode) =>
     new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: currencyCode,
-      maximumFractionDigits: currencyCode === 'JPY' ? 0 : 2,
+      currency,
+      maximumFractionDigits: currency === 'JPY' ? 0 : 2,
     }).format(amount)
 
   // Ensure a default country exists (navbar Top-up should work)
@@ -107,36 +99,73 @@ export default function RechargePage() {
   // Load carriers when country is selected
   useEffect(() => {
     if (selectedCountry) {
-      const countryCarriers = mockCarriers.filter(c => c.countryCode === selectedCountry.code)
-      setCarriers(countryCarriers)
+      void fetch(`/api/providers?countryCode=${encodeURIComponent(selectedCountry.code)}`, { cache: 'no-store' })
+        .then((r) => r.json())
+        .then((data) => setCarriers(Array.isArray(data?.providers) ? data.providers : []))
+        .catch(() => setCarriers([]))
     }
   }, [selectedCountry])
 
   // Load products when carrier is selected
   useEffect(() => {
     if (selectedCarrier) {
-      const carrierProducts = mockProducts.filter(p => p.carrierId === selectedCarrier.id)
-      setProducts(carrierProducts)
+      const params = new URLSearchParams({
+        country: selectedCountry?.code ?? '',
+        providerCode: selectedCarrier.code,
+      })
+      void fetch(`/api/plans?${params}`, { cache: 'no-store' })
+        .then((r) => r.json())
+        .then((data) => {
+          const rows = Array.isArray(data?.plans) ? data.plans : []
+          setProducts(
+            rows.map((p: any): Product => ({
+              id: String(p.id),
+              skuCode: String(p.id),
+              carrierCode: selectedCarrier.code,
+              name: String(p.planName || p.benefits || p.id),
+              displayText: String(p.benefits || p.planName || p.id),
+              type: p.type === 'data' ? 'data' : p.type === 'unlimited' ? 'voice' : 'combo',
+              minSendAmount: Number(p.price_eur ?? p.price_inr ?? 0),
+              maxSendAmount: Number(p.price_eur ?? p.price_inr ?? 0),
+              sendCurrency: p.price_eur != null ? 'EUR' : 'INR',
+              minReceiveAmount: Number(p.price_inr ?? p.price_eur ?? 0),
+              maxReceiveAmount: Number(p.price_inr ?? p.price_eur ?? 0),
+              receiveCurrency: 'INR',
+              commissionRate: 0,
+              processingMode: 'Instant',
+              benefits: p.benefits ? [{ type: 'benefit', info: String(p.benefits) }] : [],
+              validity: p.validity || undefined,
+              isPromo: p.tag === 'popular',
+            })),
+          )
+        })
+        .catch(() => setProducts([]))
+    } else {
+      setProducts([])
     }
-  }, [selectedCarrier])
+  }, [selectedCarrier, selectedCountry])
 
   // Auto-detect carrier when phone number is complete
   useEffect(() => {
     const detectCarrier = async () => {
       if (localPhone.length >= 10 && selectedCountry && !selectedCarrier) {
         setIsDetecting(true)
-        // Simulate API call for carrier detection
-        await new Promise(resolve => setTimeout(resolve, 800))
-        const countryCarriers = mockCarriers.filter(c => c.countryCode === selectedCountry.code)
-        if (countryCarriers.length > 0) {
-          // In real implementation, this would use GetAccountLookup API
-          setCarrier(countryCarriers[0])
+        try {
+          const res = await fetch('/api/operator/detect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ phoneNumber: localPhone, countryCode: selectedCountry.code }),
+          })
+          const data = await res.json().catch(() => ({}))
+          const match = carriers.find((c) => c.code === data.providerCode || c.name === data.operator || c.shortName === data.operator)
+          if (match) setCarrier(match)
+        } finally {
+          setIsDetecting(false)
         }
-        setIsDetecting(false)
       }
     }
     detectCarrier()
-  }, [localPhone, selectedCountry, selectedCarrier, setCarrier])
+  }, [localPhone, selectedCountry, selectedCarrier, carriers, setCarrier])
 
   const handleContinueToPlans = () => {
     if (localPhone && selectedCarrier) {
@@ -439,7 +468,7 @@ export default function RechargePage() {
                     {/* Price */}
                     <div className="flex items-end justify-between">
                       <div>
-                        <p className="text-2xl font-bold text-primary">{formatCurrency(convertUsd(product.minSendAmount))}</p>
+                        <p className="text-2xl font-bold text-primary">{formatCurrency(product.minSendAmount, product.sendCurrency)}</p>
                         <p className="text-xs text-muted-foreground">
                           {product.minReceiveAmount} {product.receiveCurrency}
                         </p>
@@ -515,17 +544,17 @@ export default function RechargePage() {
               <div className="space-y-3">
                 <div className="flex justify-between text-sm">
                   <span>Top-up Amount</span>
-                  <span>{formatCurrency(convertUsd(selectedProduct.minSendAmount))}</span>
+                  <span>{formatCurrency(selectedProduct.minSendAmount, selectedProduct.sendCurrency)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span>Service Fee</span>
-                  <span>{formatCurrency(convertUsd(0.5))}</span>
+                  <span>{formatCurrency(0, selectedProduct.sendCurrency)}</span>
                 </div>
                 <Separator />
                 <div className="flex justify-between font-semibold text-lg">
                   <span>Total</span>
                   <span className="text-primary">
-                    {formatCurrency(convertUsd(selectedProduct.minSendAmount + 0.5))}
+                    {formatCurrency(selectedProduct.minSendAmount, selectedProduct.sendCurrency)}
                   </span>
                 </div>
               </div>
@@ -568,7 +597,7 @@ export default function RechargePage() {
                     </>
                   ) : (
                     <>
-                      Pay {formatCurrency(convertUsd(selectedProduct.minSendAmount + 0.5))}
+                      Pay {formatCurrency(selectedProduct.minSendAmount, selectedProduct.sendCurrency)}
                       <ArrowRight className="ml-2 h-4 w-4" />
                     </>
                   )}

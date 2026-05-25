@@ -1,29 +1,47 @@
 "use client"
 
+import { useEffect, useMemo, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts"
-import { mockDashboardStats } from "@/lib/mock-data"
-
-const salesData = [
-  { name: "Completed", value: 75, color: "hsl(var(--chart-1))" },
-  { name: "Pending", value: 15, color: "hsl(var(--chart-2))" },
-  { name: "Remaining", value: 10, color: "hsl(var(--muted))" },
-]
 
 export function SalesReport() {
+  const [summary, setSummary] = useState({
+    total_revenue: 0,
+    total_orders: 0,
+    completed_orders: 0,
+    failed_orders: 0,
+  })
+
+  useEffect(() => {
+    void fetch('/api/admin/dashboard', { credentials: 'include', cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => {
+        const s = data?.summary ?? {}
+        setSummary({
+          total_revenue: Number(s.total_revenue) || 0,
+          total_orders: Number(s.total_orders) || 0,
+          completed_orders: Number(s.completed_orders) || 0,
+          failed_orders: Number(s.failed_orders) || 0,
+        })
+      })
+      .catch(() => {})
+  }, [])
+
+  const salesData = useMemo(() => {
+    const pending = Math.max(0, summary.total_orders - summary.completed_orders - summary.failed_orders)
+    return [
+      { name: "Completed", value: summary.completed_orders, color: "hsl(var(--chart-1))" },
+      { name: "Pending", value: pending, color: "hsl(var(--chart-2))" },
+      { name: "Failed", value: summary.failed_orders, color: "hsl(var(--muted))" },
+    ].filter((row) => row.value > 0)
+  }, [summary])
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
       minimumFractionDigits: 2,
     }).format(amount)
-  }
-
-  const formatCompactCurrency = (amount: number) => {
-    if (amount >= 1000) {
-      return `+$${(amount / 1000).toFixed(0)}k`
-    }
-    return `+$${amount}`
   }
 
   return (
@@ -58,7 +76,7 @@ export function SalesReport() {
           {/* Center text */}
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span className="text-2xl font-bold">
-              {formatCurrency(mockDashboardStats.totalRevenue * 0.225)}
+              {formatCurrency(summary.total_revenue)}
             </span>
             <span className="text-sm text-muted-foreground">Summary</span>
           </div>
@@ -69,20 +87,16 @@ export function SalesReport() {
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground">Monthly</p>
             <p className="text-xl font-bold">
-              {formatCurrency(mockDashboardStats.monthlyRevenue)}
+              {formatCurrency(summary.total_revenue)}
             </p>
-            <p className="text-xs text-success">
-              {formatCompactCurrency(187000)}
-            </p>
+            <p className="text-xs text-muted-foreground">{summary.completed_orders} completed orders</p>
           </div>
           <div className="space-y-1">
             <p className="text-sm text-muted-foreground">Yearly</p>
             <p className="text-xl font-bold">
-              {formatCurrency(mockDashboardStats.yearlyRevenue)}
+              {formatCurrency(summary.total_revenue)}
             </p>
-            <p className="text-xs text-success">
-              {formatCompactCurrency(553000)}
-            </p>
+            <p className="text-xs text-muted-foreground">{summary.total_orders} total orders</p>
           </div>
         </div>
       </CardContent>

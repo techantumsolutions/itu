@@ -95,17 +95,19 @@ export function TransactionDetailDialog({ open, onOpenChange, transaction, viewe
     if (!open || !transaction || !viewer) return
 
     let isMounted = true
+    const currentTransaction = transaction
+    const currentViewer = viewer
     async function loadRelatedTickets() {
       setLoadingTickets(true)
       try {
         const list = isAdmin
-          ? await apiAdminListTickets(viewer, { status: 'all', q: transaction.id })
-          : await apiListTickets(viewer)
+          ? await apiAdminListTickets(currentViewer, { status: 'all', q: currentTransaction.id })
+          : await apiListTickets(currentViewer)
         if (!isMounted) return
         const filtered = list.filter(
           (ticket) =>
-            ticket.transactionId === transaction.id ||
-            ticket.subject.toLowerCase().includes(transaction.id.toLowerCase()),
+            ticket.transactionId === currentTransaction.id ||
+            ticket.subject.toLowerCase().includes(currentTransaction.id.toLowerCase()),
         )
         setRelatedTickets(filtered)
       } catch (error) {

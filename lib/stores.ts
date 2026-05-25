@@ -3,78 +3,88 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { User, Transaction, Country, Carrier, Product, RechargeOrder } from './types'
-import {
-  mockUsers,
-  mockWallets,
-  mockTransactions,
-  mockCountries,
-  mockCarriers,
-  mockProducts,
-} from './mock-data'
 
 // Auth Store
 interface AuthState {
   user: User | null
   isAuthenticated: boolean
   isLoading: boolean
-  login: (email: string, password: string) => Promise<boolean>
+  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>
   loginWithOTP: (phone: string, countryCode: string) => Promise<boolean>
   logout: () => void
   register: (email: string, password: string, name: string) => Promise<boolean>
+  setSession: (user: User | null) => void
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null, // Start logged out for public website
       isAuthenticated: false,
       isLoading: false,
-      login: async (email: string) => {
+      setSession: (user) => set({ user, isAuthenticated: Boolean(user) }),
+      login: async (email: string, password: string) => {
         set({ isLoading: true })
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        // Case-insensitive email comparison and trim whitespace
-        const normalizedEmail = email.toLowerCase().trim()
-        const user = mockUsers.find((u) => u.email.toLowerCase().trim() === normalizedEmail)
-        if (user) {
-          set({ user, isAuthenticated: true, isLoading: false })
-          return true
+        try {
+          const normalizedEmail = email.trim().toLowerCase()
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: normalizedEmail, password }),
+          })
+          const data = (await res.json().catch(() => ({}))) as { ok?: boolean; user?: any; error?: string }
+          if (!res.ok || !data.ok || !data.user?.id) {
+            set({ isLoading: false })
+            const err =
+              typeof data.error === 'string'
+                ? data.error
+                : res.status === 401
+                  ? 'Invalid email or password.'
+                  : 'Login failed. Check server logs and Supabase configuration.'
+            return { ok: false, error: err }
+          }
+          set({ user: data.user, isAuthenticated: true, isLoading: false })
+          return { ok: true }
+        } catch {
+          set({ isLoading: false })
+          return { ok: false, error: 'Network error. Is the dev server running?' }
         }
+      },
+      loginWithOTP: async (phone: string, countryCode: string) => {
+        // Deprecated by OTP endpoints; UI calls /api/auth/otp/* directly.
+        // Keep for backward compat.
         set({ isLoading: false })
         return false
       },
-      loginWithOTP: async (phone: string, countryCode: string) => {
-        set({ isLoading: true })
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        // Create or find user by phone
-        const newUser: User = {
-          id: `user-${Date.now()}`,
-          email: '',
-          name: 'User',
-          phone,
-          countryCode,
-          role: 'user',
-          rewardPoints: 0,
-          createdAt: new Date().toISOString(),
-        }
-        set({ user: newUser, isAuthenticated: true, isLoading: false })
-        return true
-      },
       logout: () => {
+        void fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
         set({ user: null, isAuthenticated: false })
+        try {
+          useAuthStore.persist.clearStorage()
+        } catch {
+          /* ignore */
+        }
       },
       register: async (email: string, _password: string, name: string) => {
         set({ isLoading: true })
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        const newUser: User = {
-          id: `user-${Date.now()}`,
-          email,
-          name,
-          role: 'user',
-          rewardPoints: 0,
-          createdAt: new Date().toISOString(),
+        try {
+          const res = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password: _password, name }),
+          })
+          const data = (await res.json().catch(() => ({}))) as { ok?: boolean; user?: any }
+          if (!res.ok || !data.ok || !data.user?.id) {
+            set({ isLoading: false })
+            return false
+          }
+          set({ user: data.user, isAuthenticated: true, isLoading: false })
+          return true
+        } catch {
+          set({ isLoading: false })
+          return false
         }
-        set({ user: newUser, isAuthenticated: true, isLoading: false })
-        return true
       },
     }),
     {
@@ -97,67 +107,44 @@ interface WalletState {
 export const useWalletStore = create<WalletState>()(
   persist(
     (set, get) => ({
-      balance: mockWallets[0]?.balance || 0,
-      transactions: mockTransactions,
+      balance: 0,
+      transactions: [],
       isLoading: false,
       topUp: async (amount: number) => {
         set({ isLoading: true })
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        const newTransaction: Transaction = {
-          id: `txn-${Date.now()}`,
-          userId: 'user-1',
-          type: 'topup',
-          amount,
-          currency: 'USD',
-          status: 'completed',
-          description: 'Wallet Top-up',
-          createdAt: new Date().toISOString(),
+        try {
+          const res = await fetch('/api/wallet/topup', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount }),
+          })
+          return res.ok
+        } finally {
+          set({ isLoading: false })
         }
-        set((state) => ({
-          balance: state.balance + amount,
-          transactions: [newTransaction, ...state.transactions],
-          isLoading: false,
-        }))
-        return true
       },
       deduct: async (amount: number, description: string, metadata?: Transaction['metadata']) => {
-        const { balance } = get()
-        if (balance < amount) return false
         set({ isLoading: true })
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        const newTransaction: Transaction = {
-          id: `txn-${Date.now()}`,
-          userId: 'user-1',
-          type: 'recharge',
-          amount,
-          currency: 'USD',
-          status: 'completed',
-          description,
-          createdAt: new Date().toISOString(),
-          metadata,
+        try {
+          const res = await fetch('/api/wallet/deduct', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount, description, metadata }),
+          })
+          return res.ok
+        } finally {
+          set({ isLoading: false })
         }
-        set((state) => ({
-          balance: state.balance - amount,
-          transactions: [newTransaction, ...state.transactions],
-          isLoading: false,
-        }))
-        return true
       },
       addRewardPoints: (points: number, orderId: string) => {
-        const newTransaction: Transaction = {
-          id: `txn-${Date.now()}`,
-          userId: 'user-1',
-          type: 'points_earned',
-          amount: points,
-          currency: 'PTS',
-          status: 'completed',
-          description: `Reward points earned for order ${orderId}`,
-          rewardPoints: points,
-          createdAt: new Date().toISOString(),
-        }
-        set((state) => ({
-          transactions: [newTransaction, ...state.transactions],
-        }))
+        void fetch('/api/rewards/ledger', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ points, orderId }),
+        }).catch(() => {})
       },
       getTransactions: () => get().transactions,
     }),
@@ -186,6 +173,7 @@ interface RechargeState {
   setCarrier: (carrier: Carrier | null) => void
   setProduct: (product: Product | null) => void
   setPhoneNumber: (phone: string) => void
+  setCountries: (countries: Country[]) => void
   loadCarriers: (countryCode: string) => Promise<void>
   loadProducts: (carrierId: string) => Promise<void>
   detectCarrier: (phoneNumber: string, countryCode: string) => Promise<Carrier | null>
@@ -199,7 +187,7 @@ export const useRechargeStore = create<RechargeState>()((set, get) => ({
   selectedCarrier: null,
   selectedProduct: null,
   phoneNumber: '',
-  countries: mockCountries,
+  countries: [],
   carriers: [],
   products: [],
   currentOrder: null,
@@ -212,62 +200,92 @@ export const useRechargeStore = create<RechargeState>()((set, get) => ({
   setCarrier: (carrier) => set({ selectedCarrier: carrier, selectedProduct: null, products: [] }),
   setProduct: (product) => set({ selectedProduct: product }),
   setPhoneNumber: (phone) => set({ phoneNumber: phone }),
+  setCountries: (countries) => set({ countries }),
   loadCarriers: async (countryCode) => {
     set({ isLoadingCarriers: true })
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    const carriers = mockCarriers.filter((c) => c.countryCode === countryCode)
-    set({ carriers, isLoadingCarriers: false })
+    try {
+      const res = await fetch(`/api/providers?countryCode=${encodeURIComponent(countryCode)}`, { cache: 'no-store' })
+      const data = await res.json().catch(() => ({}))
+      set({ carriers: Array.isArray(data.providers) ? data.providers : [], isLoadingCarriers: false })
+    } catch {
+      set({ carriers: [], isLoadingCarriers: false })
+    }
   },
   loadProducts: async (carrierId) => {
     set({ isLoadingProducts: true })
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    const products = mockProducts.filter((p) => p.carrierId === carrierId)
-    set({ products, isLoadingProducts: false })
+    try {
+      const carrier = get().selectedCarrier
+      const country = get().selectedCountry
+      const params = new URLSearchParams({
+        country: country?.code ?? '',
+        providerCode: carrier?.code ?? carrierId,
+      })
+      const res = await fetch(`/api/plans?${params}`, { cache: 'no-store' })
+      const data = await res.json().catch(() => ({}))
+      const products = Array.isArray(data.plans)
+        ? data.plans.map((p: any): Product => ({
+            id: String(p.id),
+            skuCode: String(p.id),
+            carrierCode: carrier?.code ?? carrierId,
+            name: String(p.planName || p.benefits || p.id),
+            displayText: String(p.benefits || p.planName || p.id),
+            type: p.type === 'data' ? 'data' : p.type === 'unlimited' ? 'voice' : 'combo',
+            minSendAmount: Number(p.price_eur ?? p.price_inr ?? 0),
+            maxSendAmount: Number(p.price_eur ?? p.price_inr ?? 0),
+            sendCurrency: p.price_eur != null ? 'EUR' : 'INR',
+            minReceiveAmount: Number(p.price_inr ?? p.price_eur ?? 0),
+            maxReceiveAmount: Number(p.price_inr ?? p.price_eur ?? 0),
+            receiveCurrency: 'INR',
+            commissionRate: 0,
+            processingMode: 'Instant',
+            benefits: p.benefits ? [{ type: 'benefit', info: String(p.benefits) }] : [],
+            validity: p.validity || undefined,
+          }))
+        : []
+      set({ products, isLoadingProducts: false })
+    } catch {
+      set({ products: [], isLoadingProducts: false })
+    }
   },
   detectCarrier: async (phoneNumber: string, countryCode: string) => {
-    // Simulate operator detection API call
-    await new Promise((resolve) => setTimeout(resolve, 500))
-    const carriers = mockCarriers.filter((c) => c.countryCode === countryCode)
-    // In real implementation, this would use the API to detect carrier
-    // For now, return the first carrier as a simulation
-    if (carriers.length > 0) {
-      const detected = carriers[0]
-      set({ selectedCarrier: detected })
-      return detected
-    }
-    return null
+    const res = await fetch('/api/operator/detect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phoneNumber, countryCode }),
+    })
+    const data = await res.json().catch(() => ({}))
+    const detected = get().carriers.find((c) => c.code === data.providerCode || c.name === data.operator) ?? null
+    if (detected) set({ selectedCarrier: detected })
+    return detected
   },
   processRecharge: async () => {
     set({ isProcessing: true })
     const { selectedCountry, selectedCarrier, selectedProduct, phoneNumber } = get()
-    
-    // Simulate processing
-    await new Promise((resolve) => setTimeout(resolve, 2000))
-    
-    const order: RechargeOrder = {
-      id: `order-${Date.now()}`,
-      phoneNumber,
-      countryCode: selectedCountry?.code || '',
-      carrierCode: selectedCarrier?.code || '',
-      carrierName: selectedCarrier?.name || '',
-      skuCode: selectedProduct?.skuCode || '',
-      productName: selectedProduct?.name || '',
-      sendAmount: selectedProduct?.minSendAmount || 0,
-      sendCurrency: selectedProduct?.sendCurrency || 'USD',
-      receiveAmount: selectedProduct?.minReceiveAmount || 0,
-      receiveCurrency: selectedProduct?.receiveCurrency || 'USD',
-      serviceFee: 0.50,
-      totalAmount: (selectedProduct?.minSendAmount || 0) + 0.50,
-      status: 'completed',
-      createdAt: new Date().toISOString(),
-      completedAt: new Date().toISOString(),
-      rewardPointsEarned: Math.floor((selectedProduct?.minSendAmount || 0)),
+    try {
+      const res = await fetch('/api/recharge', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          skuCode: selectedProduct?.skuCode,
+          sendAmount: selectedProduct?.minSendAmount,
+          phoneNumber,
+          countryCode: selectedCountry?.code,
+          carrierCode: selectedCarrier?.code,
+          carrierName: selectedCarrier?.name,
+          productName: selectedProduct?.name,
+          receiveCurrency: selectedProduct?.receiveCurrency,
+          receiveAmount: selectedProduct?.minReceiveAmount,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.order) throw new Error(data.error ?? 'Recharge failed')
+      set({ currentOrder: data.order, isProcessing: false })
+      return data.order
+    } catch (error) {
+      set({ isProcessing: false })
+      throw error
     }
-    
-    set({ currentOrder: order, isProcessing: false })
-    return order
   },
   resetRecharge: () =>
     set({

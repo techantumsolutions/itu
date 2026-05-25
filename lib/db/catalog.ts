@@ -80,6 +80,9 @@ export function pickOperatorForPhone(operators: OperatorRow[], localDigits: stri
   const digits = localDigits.replace(/\D/g, '')
   if (!digits) return null
 
+  // If there's only one operator for the country, we can safely assume it.
+  if (operators.length === 1) return operators[0]
+
   for (const op of operators) {
     const rx = op.validation_regex?.trim()
     if (!rx) continue
@@ -91,6 +94,7 @@ export function pickOperatorForPhone(operators: OperatorRow[], localDigits: stri
     }
   }
 
-  const def = operators.find((o) => o.is_default)
-  return def ?? operators[0] ?? null
+  // If no validation regex matches, do not guess. Returning null prevents
+  // incorrectly showing a single operator (e.g. "Jio") for every number.
+  return null
 }

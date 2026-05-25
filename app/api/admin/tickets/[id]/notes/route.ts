@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getRequestUser, isAdminRequest } from '@/lib/tickets/auth-headers'
-import { addNote, getTicketAdmin } from '@/lib/tickets/persistence'
+import { addNote, getTicketAdmin } from '@/lib/tickets/db-persistence'
 
 type Ctx = { params: Promise<{ id: string }> }
 

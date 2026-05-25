@@ -4,11 +4,19 @@ export interface User {
   email: string
   name: string
   avatar?: string
-  role: 'user' | 'reseller' | 'admin'
+  /** App-wide role; `super_admin` is owner / full access. */
+  role: 'user' | 'reseller' | 'admin' | 'super_admin'
   phone?: string
   countryCode?: string
   rewardPoints: number
   createdAt: string
+  /**
+   * When `role === 'admin'`, map of feature flags. `null` = legacy full admin (all features).
+   * Ignored for `super_admin`.
+   */
+  adminPermissions?: Record<string, boolean> | null
+  /** Same as `role` for admin kinds; optional mirror for APIs. */
+  appRole?: string
 }
 
 // Wallet & Transaction Types

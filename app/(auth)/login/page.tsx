@@ -9,13 +9,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuthStore } from '@/lib/stores'
+import { isClientAdminUser } from '@/lib/tickets/auth-headers'
 import { useCMSStore } from '@/lib/cms-store'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { readLocaleCookiesFromDocument } from '@/lib/locale/locale-cookies'
 
 export default function LoginPage() {
   const router = useRouter()
-  const { login, loginWithOTP, isLoading } = useAuthStore()
+  const { login, setSession, isLoading } = useAuthStore()
   const { content, hasHydrated } = useCMSStore()
 
   const [identifier, setIdentifier] = useState('')
@@ -45,12 +46,13 @@ export default function LoginPage() {
 
   const handleEmailLogin = async () => {
     setError('')
-    const success = await login(identifier, password)
-    if (success) {
-      if (identifier.toLowerCase().trim() === 'admin@itu.com') router.push('/admin')
+    const result = await login(identifier, password)
+    if (result.ok) {
+      const u = useAuthStore.getState().user
+      if (isClientAdminUser(u)) router.push('/admin')
       else router.push('/account')
     } else {
-      setError('Invalid email or password.')
+      setError(result.error ?? 'Invalid email or password.')
     }
   }
 
@@ -147,12 +149,22 @@ export default function LoginPage() {
                       return
                     }
                     setSendingOtp(true)
-                    // Simulate sending OTP
-                    await new Promise((r) => setTimeout(r, 600))
-                    setOtpValue('')
-                    setOtpTimer(25)
-                    setOtpStep('otp')
-                    setSendingOtp(false)
+                    try {
+                      const res = await fetch('/api/auth/otp/send', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ phone: `+91${normalizedPhone}` }),
+                      })
+                      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
+                      if (!res.ok || !data.ok) throw new Error(data.error || 'otp_send_failed')
+                      setOtpValue('')
+                      setOtpTimer(25)
+                      setOtpStep('otp')
+                    } catch (e) {
+                      setError(e instanceof Error ? e.message : 'Failed to send OTP.')
+                    } finally {
+                      setSendingOtp(false)
+                    }
                   }}
                 >
                   {isLoading || sendingOtp ? (
@@ -178,6 +190,12 @@ export default function LoginPage() {
                   Don&apos;t have an Account?{' '}
                   <Link href="/register" className="font-semibold text-[var(--hero-cta-orange)] hover:underline">
                     Sign up here
+                  </Link>
+                </p>
+                <p className="text-center text-sm text-neutral-500">
+                  Staff (super admin / admin)?{' '}
+                  <Link href="/admin/login" className="font-semibold text-neutral-800 underline-offset-4 hover:underline">
+                    Admin sign in
                   </Link>
                 </p>
               </div>
@@ -221,26 +239,38 @@ export default function LoginPage() {
                   disabled={isLoading || otpValue.length !== 6}
                   onClick={async () => {
                     setError('')
-                    // Demo validation: accept any 6 digits
-                    const ok = await loginWithOTP(normalizedPhone, 'IN')
-                    if (ok) {
-                      const c = readLocaleCookiesFromDocument()
-                      const userId = `user-${Date.now()}`
-                      // Persist detected locale to Supabase profile when configured.
-                      void fetch('/api/profile/locale', {
+                    try {
+                      const res = await fetch('/api/auth/otp/verify', {
                         method: 'POST',
-                        credentials: 'include',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          userId,
-                          country: c.country ?? 'IN',
-                          language: c.language ?? 'en-IN',
-                          currency: c.currency ?? 'INR',
-                        }),
-                      }).catch(() => {})
-                      router.push('/account')
+                        body: JSON.stringify({ phone: `+91${normalizedPhone}`, otp: otpValue }),
+                      })
+                      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
+                      if (!res.ok || !data.ok) throw new Error(data.error || 'otp_verify_failed')
+
+                      const me = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' })
+                      const meData = (await me.json().catch(() => ({}))) as { user?: any }
+                      if (meData?.user?.id) {
+                        setSession(meData.user)
+                        const c = readLocaleCookiesFromDocument()
+                        void fetch('/api/profile/locale', {
+                          method: 'POST',
+                          credentials: 'include',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            userId: meData.user.id,
+                            country: c.country ?? 'IN',
+                            language: c.language ?? 'en-IN',
+                            currency: c.currency ?? 'INR',
+                          }),
+                        }).catch(() => {})
+                      }
+                      const u = meData?.user
+                      if (isClientAdminUser(u)) router.push('/admin')
+                      else router.push('/account')
+                    } catch (e) {
+                      setError(e instanceof Error ? e.message : 'OTP verification failed.')
                     }
-                    else setError('OTP verification failed.')
                   }}
                 >
                   {isLoading ? (

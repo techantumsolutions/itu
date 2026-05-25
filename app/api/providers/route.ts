@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
-import { isCatalogDemoFallbackEnabled } from '@/lib/catalog/demo-plans'
-import { getDemoOperatorRows } from '@/lib/catalog/demo-operators'
 import { dbFetchOperators } from '@/lib/db/catalog'
 import { guardCatalog } from '@/lib/db/require-catalog'
+import { cacheGetJson, cacheSetJson } from '@/lib/cache/redis'
 
 export async function GET(request: Request) {
   const denied = guardCatalog()
@@ -16,10 +15,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Country code is required' }, { status: 400 })
     }
 
-    let rows = await dbFetchOperators(countryCode)
-    if (!rows.length && isCatalogDemoFallbackEnabled()) {
-      rows = getDemoOperatorRows(countryCode)
-    }
+    const iso = countryCode.trim().toUpperCase()
+    const cacheKey = `catalog:operators:${iso}`
+    const cached = await cacheGetJson<any[]>(cacheKey)
+    const rows = cached ?? (await dbFetchOperators(iso))
+    if (!cached && rows.length) await cacheSetJson(cacheKey, rows, 300)
 
     const providers = rows.map((p) => ({
       id: `carrier-${p.code.toLowerCase().replace(/_/g, '-')}`,

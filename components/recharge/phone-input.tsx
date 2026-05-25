@@ -51,7 +51,7 @@ export function PhoneInput() {
   }
 
   const hasEnoughBalance = selectedProduct 
-    ? balance >= selectedProduct.senderAmount 
+    ? balance >= selectedProduct.minSendAmount 
     : true
 
   return (
@@ -87,14 +87,14 @@ export function PhoneInput() {
             <div className="text-right">
               <p className="font-bold text-lg">
                 {formatCurrency(
-                  selectedProduct?.senderAmount || 0,
-                  selectedProduct?.senderCurrency || "USD"
+                  selectedProduct?.minSendAmount || 0,
+                  selectedProduct?.sendCurrency || "USD"
                 )}
               </p>
               <p className="text-xs text-muted-foreground">
                 {formatCurrency(
-                  selectedProduct?.destinationAmount || 0,
-                  selectedProduct?.destinationCurrency || "USD"
+                  selectedProduct?.minReceiveAmount || 0,
+                  selectedProduct?.receiveCurrency || "USD"
                 )}{" "}
                 credit
               </p>

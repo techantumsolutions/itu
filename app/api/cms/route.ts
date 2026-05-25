@@ -1,25 +1,44 @@
 import { NextResponse } from 'next/server'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import type { SiteContent } from '@/lib/cms-store'
+import { cacheDel, cacheGetJson, cacheSetJson } from '@/lib/cache/redis'
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 const CMS_ID = 'default'
+const CMS_CACHE_KEY = `cms:site:${CMS_ID}`
 
 export async function GET() {
   try {
+    const cached = await cacheGetJson<{ content: SiteContent | null; ok: boolean }>(CMS_CACHE_KEY)
+    if (cached) {
+      return NextResponse.json(
+        cached,
+        { headers: { 'Cache-Control': 'no-store, max-age=0' } },
+      )
+    }
+
     const res = await supabaseRest(`cms_site?select=content&id=eq.${encodeURIComponent(CMS_ID)}&limit=1`)
-    if (!res.ok) return NextResponse.json({ content: null }, { status: 200 })
+    if (!res.ok) {
+      const payload = { content: null as SiteContent | null, ok: false, error: await res.text() }
+      // Cache negative briefly to avoid hammering Supabase during outages.
+      await cacheSetJson(CMS_CACHE_KEY, payload, 5)
+      return NextResponse.json(payload, { status: 200, headers: { 'Cache-Control': 'no-store, max-age=0' } })
+    }
     const rows = (await res.json()) as Array<{ content?: unknown }>
     const content = (rows?.[0]?.content ?? null) as SiteContent | null
+    const payload = { content, ok: true }
+    await cacheSetJson(CMS_CACHE_KEY, payload, 60)
     return NextResponse.json(
-      { content },
+      payload,
       { headers: { 'Cache-Control': 'no-store, max-age=0' } },
     )
-  } catch {
+  } catch (e) {
     // If Supabase env/table isn't configured yet, fall back to client defaults.
-    return NextResponse.json(
-      { content: null },
-      { status: 200, headers: { 'Cache-Control': 'no-store, max-age=0' } },
-    )
+    const payload = { content: null as SiteContent | null, ok: false, error: 'cms_unavailable' }
+    await cacheSetJson(CMS_CACHE_KEY, payload, 5)
+    return NextResponse.json(payload, { status: 200, headers: { 'Cache-Control': 'no-store, max-age=0' } })
   }
 }
 
@@ -41,6 +60,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: await res.text() }, { status: 500 })
     }
 
+    await cacheDel(CMS_CACHE_KEY)
     return NextResponse.json({ ok: true })
   } catch (e) {
     return NextResponse.json({ ok: false, error: 'Failed to save CMS content' }, { status: 500 })

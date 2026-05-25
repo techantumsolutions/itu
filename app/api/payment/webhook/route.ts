@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { updateOrderMemory } from '@/lib/topup/orders-memory'
+import { updateOrderDb } from '@/lib/topup/orders-db'
 
 export async function POST(request: Request) {
   try {
@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     const status = body.status === 'success' ? 'success' : body.status === 'failed' ? 'failed' : 'pending'
 
     if (!orderId) return NextResponse.json({ error: 'orderId required' }, { status: 400 })
-    const updated = updateOrderMemory(orderId, { status })
+    const updated = await updateOrderDb(orderId, { status })
     if (!updated) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     return NextResponse.json({ ok: true })
   } catch (error) {

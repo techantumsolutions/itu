@@ -4,6 +4,7 @@ import { ArrowUp, ArrowDown, ChevronRight } from 'lucide-react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { useEffect, useState } from 'react'
 
 interface StatCardProps {
   title: string
@@ -124,36 +125,69 @@ export function StatCardsGrid({ stats }: StatCardsGridProps) {
         value={formatCurrency(stats.totalRevenue)}
         change={stats.revenueChange}
         trend={stats.revenueChange >= 0 ? 'up' : 'down'}
-        sparklineData={[2800, 3200, 3800, 4200, 5800, 9427]}
       />
       <StatCard
         title="Total Order"
         value={formatNumber(stats.totalOrders)}
         change={Math.abs(stats.ordersChange)}
         trend={stats.ordersChange >= 0 ? 'up' : 'down'}
-        sparklineData={[120, 145, 168, 190, 175, 160]}
       />
     </div>
   )
 }
 
-// Standalone StatCards component with built-in data
 export function StatCards() {
+  const [summary, setSummary] = useState<{ totalRevenue: number; totalOrders: number } | null>(null)
+  const [aggOps, setAggOps] = useState<number | null>(null)
+  const [aggPlans, setAggPlans] = useState<number | null>(null)
+
+  useEffect(() => {
+    const run = async () => {
+      try {
+        const [dashboardRes, aggRes] = await Promise.all([
+          fetch('/api/admin/dashboard', { credentials: 'include', cache: 'no-store' }),
+          fetch('/api/admin/reports/aggregator?provider=dtone', { credentials: 'include', cache: 'no-store' }),
+        ])
+        const dashboard = (await dashboardRes.json().catch(() => ({}))) as any
+        const agg = (await aggRes.json().catch(() => ({}))) as any
+        const revenue = Number(dashboard?.summary?.total_revenue)
+        const orders = Number(dashboard?.summary?.total_orders)
+        const ops = Number(agg?.summary?.operators?.withActivePlans)
+        const plans = Number(agg?.summary?.plans?.total)
+        setSummary({
+          totalRevenue: Number.isFinite(revenue) ? revenue : 0,
+          totalOrders: Number.isFinite(orders) ? orders : 0,
+        })
+        setAggOps(Number.isFinite(ops) ? ops : null)
+        setAggPlans(Number.isFinite(plans) ? plans : null)
+      } catch {
+        setSummary({ totalRevenue: 0, totalOrders: 0 })
+        setAggOps(null)
+        setAggPlans(null)
+      }
+    }
+    void run()
+  }, [])
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <StatCard
         title="Total Revenue"
-        value="$9,427.64"
-        change={10}
+        value={new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(summary?.totalRevenue ?? 0)}
+        change={0}
         trend="up"
-        sparklineData={[2800, 3200, 3800, 4200, 5800, 9427]}
       />
       <StatCard
-        title="Total Order"
-        value="57,922"
-        change={15}
-        trend="down"
-        sparklineData={[120, 145, 168, 190, 175, 160]}
+        title="Total Orders"
+        value={new Intl.NumberFormat('en-US').format(summary?.totalOrders ?? 0)}
+        change={0}
+        trend="up"
+      />
+      <StatCard
+        title="DT One Coverage"
+        value={aggOps != null && aggPlans != null ? `${aggOps} operators • ${aggPlans} plans` : 'No catalog data'}
+        change={0}
+        trend="up"
       />
     </div>
   )

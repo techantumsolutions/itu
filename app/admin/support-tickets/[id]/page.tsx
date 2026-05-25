@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { format } from 'date-fns'
 import { ArrowLeft, Loader2, Send, StickyNote } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { useAuthStore } from '@/lib/stores'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -25,8 +24,8 @@ import {
   apiAdminSetStatus,
 } from '@/lib/tickets/client-api'
 import type { TicketAdminDetail, TicketStatus } from '@/lib/tickets/types'
+import { isClientAdminUser } from '@/lib/tickets/auth-headers'
 import { toast } from 'sonner'
-import { mockRechargeOrders, mockUsers } from '@/lib/mock-data'
 
 export default function AdminSupportTicketDetailPage() {
   const router = useRouter()
@@ -51,7 +50,7 @@ export default function AdminSupportTicketDetailPage() {
   const [savingNote, setSavingNote] = useState(false)
 
   useEffect(() => {
-    if (user && user.role !== 'admin') {
+    if (user && !isClientAdminUser(user)) {
       toast.error('Admins only')
       router.replace('/account')
     }
@@ -147,20 +146,6 @@ export default function AdminSupportTicketDetailPage() {
   }
 
   const canPublicReply = data.status !== 'resolved'
-  const transaction = data.transactionId
-    ? mockRechargeOrders.find((x) => x.id === data.transactionId)
-    : null
-  const txnUser = transaction?.userId ? mockUsers.find((x) => x.id === transaction.userId) : null
-  const routingVariant = transaction ? transaction.id.charCodeAt(transaction.id.length - 1) % 3 : 0
-  const routingType = routingVariant === 0 ? 'Dedicated' : routingVariant === 1 ? 'Cheapest' : 'Fallback'
-
-  const formatMoney = (amount?: number, currency?: string) => {
-    if (typeof amount !== 'number') return '—'
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: currency || 'USD',
-    }).format(amount)
-  }
 
   return (
     <div className="space-y-8">
@@ -230,45 +215,11 @@ export default function AdminSupportTicketDetailPage() {
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Linked Transaction</h2>
             {!data.transactionId ? (
               <p className="text-sm text-muted-foreground">No transaction linked to this ticket.</p>
-            ) : !transaction ? (
+            ) : (
               <div className="space-y-2 text-sm">
                 <p className="text-muted-foreground">Linked transaction ID</p>
                 <p className="font-mono">{data.transactionId}</p>
-                <p className="text-muted-foreground">Transaction details not found in current dataset.</p>
-              </div>
-            ) : (
-              <div className="grid gap-4">
-                <div className="grid gap-2 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                  <p><span className="text-muted-foreground">Transaction ID:</span> <span className="font-mono">{transaction.id}</span></p>
-                  <p><span className="text-muted-foreground">Date & Time:</span> {format(new Date(transaction.createdAt), 'MMM d, yyyy HH:mm')}</p>
-                  <p>
-                    <span className="text-muted-foreground">Status:</span>{' '}
-                    <Badge variant="outline">{transaction.status}</Badge>
-                  </p>
-                  <p><span className="text-muted-foreground">Amount:</span> {formatMoney(transaction.senderAmount, transaction.senderCurrency)}</p>
-                  <p><span className="text-muted-foreground">Currency:</span> {transaction.senderCurrency}</p>
-                  <p><span className="text-muted-foreground">Destination Country:</span> {transaction.countryName}</p>
-                  <p><span className="text-muted-foreground">Network / Operator:</span> {transaction.providerName}</p>
-                  <p><span className="text-muted-foreground">Mobile Number:</span> {transaction.countryCode} {transaction.phoneNumber}</p>
-                  <p><span className="text-muted-foreground">Payment Method:</span> {transaction.paymentMethod || '—'}</p>
-                  <p><span className="text-muted-foreground">Payment Status:</span> {transaction.status}</p>
-                  <p><span className="text-muted-foreground">Payment Reference ID:</span> <span className="font-mono">{transaction.id}-payref</span></p>
-                  <p><span className="text-muted-foreground">Gateway Response:</span> {transaction.errorMessage || (transaction.status === 'completed' ? 'Approved' : 'Pending')}</p>
-                  <p><span className="text-muted-foreground">Provider Used:</span> {transaction.providerName}</p>
-                  <p><span className="text-muted-foreground">Routing Type:</span> {routingType}</p>
-                  <p><span className="text-muted-foreground">API Response Status:</span> {transaction.status === 'completed' ? 'SUCCESS' : transaction.status === 'failed' ? 'FAILED' : 'PENDING'}</p>
-                  <p><span className="text-muted-foreground">Customer Name:</span> {txnUser?.name || data.userName || '—'}</p>
-                  <p><span className="text-muted-foreground">Customer Email:</span> {txnUser?.email || data.userEmail || '—'}</p>
-                  <p><span className="text-muted-foreground">Customer Country:</span> {txnUser?.countryCode || '—'}</p>
-                </div>
-
-                {(transaction.status === 'failed' || transaction.errorMessage) && (
-                  <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm">
-                    <p><span className="text-muted-foreground">Error Message:</span> {transaction.errorMessage || '—'}</p>
-                    <p><span className="text-muted-foreground">Failure Reason:</span> {transaction.errorMessage || 'Provider unavailable'}</p>
-                    <p><span className="text-muted-foreground">Retry Attempts:</span> 1</p>
-                  </div>
-                )}
+                <p className="text-muted-foreground">Transaction details are loaded from the transaction APIs.</p>
               </div>
             )}
           </section>

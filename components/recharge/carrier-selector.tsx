@@ -99,7 +99,7 @@ export function CarrierSelector() {
                     <div>
                       <p className="font-medium">{carrier.name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {carrier.type === "prepaid" ? "Prepaid" : "Postpaid"} plans available
+                        {carrier.shortName || carrier.code} plans available
                       </p>
                     </div>
                   </div>

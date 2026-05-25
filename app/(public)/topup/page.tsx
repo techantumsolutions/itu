@@ -7,11 +7,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { CalendarDays, ChevronDown, MessageSquareText, PhoneCall, Sparkles, Wifi } from 'lucide-react'
 import { useTopupStore, type TopupPlan } from '@/store/topupStore'
 
-type OperatorDetectResponse = { operator: string; country: string; providerCode?: string }
-type PlansResponse = { plans: TopupPlan[] }
+type OperatorDetectResponse = { operator: string; country: string; providerCode?: string; source?: string }
+type DtoneProductsResponse = { success: boolean; data?: unknown; message?: string }
 
 const tabs = [
   { id: 'all', label: 'All' },
@@ -19,6 +20,82 @@ const tabs = [
   { id: 'unlimited', label: 'Unlimited Pack' },
   { id: 'data', label: 'Data Pack' },
 ] as const
+
+function num(v: unknown, fallback = 0): number {
+  const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : typeof v === 'number' ? v : NaN
+  return Number.isFinite(n) ? n : fallback
+}
+
+function text(v: unknown): string {
+  return typeof v === 'string' ? v : v == null ? '' : String(v)
+}
+
+function iso2ToIso3(countryCode: string): string {
+  const cc = (countryCode || '').trim().toUpperCase()
+  if (cc === 'IN') return 'IND'
+  if (cc.length === 3) return cc
+  return cc
+}
+
+function dtoneToTopupPlans(
+  payload: unknown,
+  ctx: { countryCode: string; maxItems?: number }
+): TopupPlan[] {
+  const rows = Array.isArray(payload) ? payload : []
+  const targetIso3 = iso2ToIso3(ctx.countryCode)
+
+  const filteredByCountry = rows.filter((raw) => {
+    const p = (raw ?? {}) as any
+    const iso = text(p?.operator?.country?.iso_code).toUpperCase()
+    if (targetIso3 && iso && iso !== targetIso3) return false
+    return true
+  })
+
+  // If the account/environment returns no products for this country, fall back to "show something"
+  // so the user can still confirm the integration is live.
+  const effective = filteredByCountry.length ? filteredByCountry : rows
+
+  const limited = typeof ctx.maxItems === 'number' ? effective.slice(0, ctx.maxItems) : effective
+
+  return limited.map((raw, idx) => {
+    const p = (raw ?? {}) as any
+
+    const id = text(p?.id ?? `dtone-${idx}`)
+    const name = text(p?.name || p?.description || id)
+
+    const eur = num(p?.prices?.retail?.amount, num(p?.source?.amount, 0))
+    const localAmount = num(p?.destination?.amount, 0)
+    const localUnit = text(p?.destination?.unit || '')
+
+    const tags = Array.isArray(p?.tags) ? (p.tags as unknown[]).map((t) => text(t).toUpperCase()) : []
+    const type: TopupPlan['type'] = tags.includes('DATA') ? 'data' : tags.includes('VOICE') ? 'unlimited' : 'topup'
+
+    const benefitsArr = Array.isArray(p?.benefits) ? (p.benefits as unknown[]) : []
+    const dataBenefit = benefitsArr.find((b: any) => text(b?.unit_type).toUpperCase() === 'DATA') as any
+    const dataAmount = dataBenefit?.amount?.total_including_tax ?? dataBenefit?.amount?.total_excluding_tax ?? dataBenefit?.amount?.base
+    const dataUnit = text(dataBenefit?.unit)
+    const dataLabel = dataAmount != null && dataUnit ? `${text(dataAmount)}${dataUnit}` : undefined
+
+    const validityQty = num(p?.validity?.quantity, 0)
+    const validityUnit = text(p?.validity?.unit)
+    const validity =
+      validityQty && validityUnit ? `${validityQty} ${validityUnit.toLowerCase()}${validityQty === 1 ? '' : 's'}` : ''
+
+    const priceInr = localUnit.toUpperCase() === 'INR' ? Math.round(localAmount) : Math.round(eur * 100)
+
+    return {
+      id,
+      type,
+      tag: idx < 3 ? 'popular' : 'none',
+      price_inr: priceInr,
+      price_eur: Number(eur.toFixed(2)),
+      validity,
+      data: dataLabel,
+      benefits: localUnit ? `${name} • ${localAmount} ${localUnit}` : name,
+      planName: name,
+    }
+  })
+}
 
 export default function TopupPlanSelectionPage() {
   const router = useRouter()
@@ -34,16 +111,32 @@ export default function TopupPlanSelectionPage() {
   const [tab, setTab] = useState<(typeof tabs)[number]['id']>('all')
   const [sort, setSort] = useState<'popular' | 'price' | 'validity'>('popular')
 
+  const [operatorDialogOpen, setOperatorDialogOpen] = useState(false)
+  const [providersLoading, setProvidersLoading] = useState(false)
+  const [providers, setProviders] = useState<Array<{ code: string; name: string; shortName: string }>>([])
+  const [selectedProviderCode, setSelectedProviderCode] = useState<string>('')
+  const [manualOperatorOverride, setManualOperatorOverride] = useState<boolean>(false)
+
   useEffect(() => {
     setPhoneDetails({ countryCode, phoneNumber: localPhone })
   }, [countryCode, localPhone, setPhoneDetails])
 
   useEffect(() => {
+    // If the number changes, let auto-detect run again.
+    setManualOperatorOverride(false)
+    setSelectedProviderCode('')
+    setResolvedProviderCode(undefined)
+    setOperator('')
+  }, [localPhone, setOperator])
+
+  useEffect(() => {
     const run = async () => {
       if (!localPhone || localPhone.length < 10) {
         setResolvedProviderCode(undefined)
+        setOperator('')
         return
       }
+      if (manualOperatorOverride) return
       setDetecting(true)
       try {
         const res = await fetch('/api/operator/detect', {
@@ -69,21 +162,63 @@ export default function TopupPlanSelectionPage() {
       }
     }
     void run()
-  }, [localPhone, countryCode, setOperator])
+  }, [localPhone, countryCode, setOperator, manualOperatorOverride])
+
+  useEffect(() => {
+    if (!operatorDialogOpen) return
+    const loadProviders = async () => {
+      setProvidersLoading(true)
+      try {
+        // Operator picker for this page should reflect DT One operators (not local DB codes).
+        // We derive it from the already-available DT One products list.
+        const res = await fetch('/api/dtone/products', { credentials: 'include' })
+        const json = (await res.json().catch(() => ({}))) as DtoneProductsResponse
+        const items = json?.success && Array.isArray(json?.data) ? (json.data as any[]) : []
+
+        const targetIso3 = iso2ToIso3(countryCode)
+        const seen = new Map<string, { code: string; name: string; shortName: string }>()
+        for (const p of items) {
+          const iso3 = text((p as any)?.operator?.country?.iso_code).trim().toUpperCase()
+          if (targetIso3 && iso3 && iso3 !== targetIso3) continue
+          const opId = text((p as any)?.operator?.id).trim()
+          const opName = text((p as any)?.operator?.name).trim()
+          if (!opId || !opName) continue
+          if (!seen.has(opId)) {
+            seen.set(opId, { code: opId, name: opName, shortName: opName })
+          }
+        }
+        const mapped = Array.from(seen.values()).sort((a, b) => a.shortName.localeCompare(b.shortName))
+        setProviders(mapped)
+        if (!selectedProviderCode && mapped.length) {
+          const initial = resolvedProviderCode && mapped.some((m) => m.code === resolvedProviderCode) ? resolvedProviderCode : mapped[0].code
+          setSelectedProviderCode(initial)
+        }
+      } finally {
+        setProvidersLoading(false)
+      }
+    }
+    void loadProviders()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [operatorDialogOpen, countryCode])
 
   useEffect(() => {
     const load = async () => {
       if (!showPlans) return
       setLoadingPlans(true)
       try {
-        const params = new URLSearchParams({
-          operator,
-          country: countryCode,
-        })
-        if (resolvedProviderCode) params.set('providerCode', resolvedProviderCode)
-        const res = await fetch(`/api/plans?${params}`, { credentials: 'include' })
-        const data = (await res.json().catch(() => ({}))) as PlansResponse
-        const rows = res.ok && Array.isArray(data?.plans) ? data.plans : []
+        const res = await fetch('/api/dtone/products', { credentials: 'include' })
+        const json = (await res.json().catch(() => ({}))) as DtoneProductsResponse
+        const all =
+          res.ok && json?.success ? (Array.isArray(json.data) ? (json.data as any[]) : []) : []
+
+        // If operator was detected via DT One lookup, providerCode is DT One operator id.
+        const dtoneOperatorId = resolvedProviderCode && /^\d+$/.test(resolvedProviderCode) ? Number(resolvedProviderCode) : null
+        const filtered =
+          dtoneOperatorId != null
+            ? all.filter((p) => Number((p as any)?.operator?.id) === dtoneOperatorId)
+            : all
+
+        const rows = dtoneToTopupPlans(filtered, { countryCode, maxItems: 200 })
         setPlans(rows)
       } finally {
         setLoadingPlans(false)
@@ -140,6 +275,7 @@ export default function TopupPlanSelectionPage() {
               <button
                 type="button"
                 className="text-xs font-medium text-[var(--hero-cta-orange)] underline underline-offset-2"
+                onClick={() => setOperatorDialogOpen(true)}
               >
                 Change
               </button>
@@ -198,11 +334,12 @@ export default function TopupPlanSelectionPage() {
                 </div>
               ) : visiblePlans.length === 0 ? (
                 <div className="rounded-2xl bg-white px-6 py-12 text-center shadow-sm ring-1 ring-black/5">
-                  <p className="text-sm font-semibold text-neutral-900">No recharge plans in catalog</p>
+                  <p className="text-sm font-semibold text-neutral-900">No DT One products found</p>
                   <p className="mt-2 text-xs text-neutral-500">
-                    Apply <span className="font-mono text-neutral-700">supabase/catalog_seed.sql</span> in your Supabase SQL
-                    editor, or set <span className="font-mono text-neutral-700">CATALOG_DEMO_FALLBACK=1</span> in{' '}
-                    <span className="font-mono text-neutral-700">.env</span> for demo SKUs when the table is empty.
+                    Check <span className="font-mono text-neutral-700">DTONE_API_KEY</span>,{' '}
+                    <span className="font-mono text-neutral-700">DTONE_API_SECRET</span>, and{' '}
+                    <span className="font-mono text-neutral-700">DTONE_BASE_URL</span> in <span className="font-mono text-neutral-700">.env</span>,
+                    then verify <span className="font-mono text-neutral-700">/api/dtone/products</span> returns data.
                   </p>
                 </div>
               ) : (
@@ -326,6 +463,50 @@ export default function TopupPlanSelectionPage() {
             </p>
           </div>
         )}
+
+        <Dialog open={operatorDialogOpen} onOpenChange={setOperatorDialogOpen}>
+          <DialogContent className="sm:max-w-[520px]">
+            <DialogHeader>
+              <DialogTitle>Choose operator</DialogTitle>
+              <DialogDescription>Select your operator for this number.</DialogDescription>
+            </DialogHeader>
+
+            <div className="grid gap-3">
+              <Select value={selectedProviderCode} onValueChange={setSelectedProviderCode} disabled={providersLoading || providers.length === 0}>
+                <SelectTrigger className="h-11">
+                  <SelectValue placeholder={providersLoading ? 'Loading operators…' : 'Select operator'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {providers.map((p) => (
+                    <SelectItem key={p.code} value={p.code}>
+                      {p.shortName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setOperatorDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                className="bg-[var(--hero-cta-orange)] text-white hover:brightness-105"
+                disabled={!selectedProviderCode}
+                onClick={() => {
+                  const chosen = providers.find((p) => p.code === selectedProviderCode)
+                  if (!chosen) return
+                  setManualOperatorOverride(true)
+                  setOperator(chosen.shortName || chosen.name)
+                  setResolvedProviderCode(chosen.code)
+                  setOperatorDialogOpen(false)
+                }}
+              >
+                Apply
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   )

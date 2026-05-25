@@ -28,7 +28,7 @@ import {
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { useAuthStore, useLocalePreferencesStore } from '@/lib/stores'
 import { useCMSStore } from '@/lib/cms-store'
-import { mockCountries } from '@/lib/mock-data'
+import type { Country } from '@/lib/types'
 import { NAV_CURRENCIES, navRegionShortLabel, isNavCurrency } from '@/lib/locale-nav-data'
 import { readLocaleCookiesFromDocument, setLocaleCookiesClient } from '@/lib/locale/locale-cookies'
 import { normalizeCountryCode } from '@/lib/locale/country-config'
@@ -62,8 +62,12 @@ export default function PublicLayout({
     setCurrency,
     setManualOverride,
   } = useLocalePreferencesStore()
+  const [countries, setCountries] = useState<Country[]>([])
 
-  const region = mockCountries.find((c) => c.code === regionCode) ?? mockCountries[0]!
+  const region =
+    countries.find((c) => c.code === regionCode) ??
+    countries[0] ??
+    ({ code: regionCode || '', name: regionCode || 'Region', flag: '', dialCode: '', dialingInfo: [] } as Country)
   const language =
     content.header.languages.find((l) => l.code === languageCode) ?? content.header.languages[0]!
   const currency = NAV_CURRENCIES.find((c) => c.code === currencyCode) ?? NAV_CURRENCIES[0]!
@@ -76,13 +80,32 @@ export default function PublicLayout({
     // Load CMS content from server so all browsers see the same content.
     // Important: wait for zustand-persist hydration first so localStorage doesn't overwrite DB content after we set it.
     if (!hasHydrated) return
+
+    // If CMS fetch fails temporarily (network/restart), keep showing the last known good content.
+    try {
+      const raw = window.localStorage.getItem('itu-cms-last-good')
+      if (raw) {
+        const parsed = JSON.parse(raw) as unknown
+        if (parsed && typeof parsed === 'object') {
+          setContent(parsed as any, { markDirty: false })
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     let cancelled = false
     void fetch('/api/cms', { cache: 'no-store', credentials: 'include' })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('cms'))))
-      .then((data: { content?: unknown }) => {
+      .then((data: { content?: unknown; ok?: boolean }) => {
         if (cancelled) return
         if (data?.content && typeof data.content === 'object') {
           setContent(data.content as any, { markDirty: false })
+          try {
+            window.localStorage.setItem('itu-cms-last-good', JSON.stringify(data.content))
+          } catch {
+            // ignore
+          }
         }
       })
       .catch(() => {
@@ -112,7 +135,7 @@ export default function PublicLayout({
       const ll = (opts.languageCode ?? '').trim()
       const cu = (opts.currencyCode ?? '').trim().toUpperCase()
 
-      if (ccc && mockCountries.some((c) => c.code === ccc) && regionCode === 'IN') setRegion(ccc)
+      if (ccc && countries.some((c) => c.code === ccc) && regionCode === 'IN') setRegion(ccc)
       if (ll && languageCode === 'en') {
         // CMS stores base language codes (e.g. "en"), while detection may return "en-IN"
         const base = ll.split('-')[0]!.toLowerCase()
@@ -156,6 +179,7 @@ export default function PublicLayout({
     }
     void run()
   }, [
+    countries,
     content.header.languages,
     currencyCode,
     languageCode,
@@ -168,10 +192,17 @@ export default function PublicLayout({
   ])
 
   useEffect(() => {
-    if (!mockCountries.some((c) => c.code === regionCode)) {
-      setRegion(mockCountries[0]!.code)
+    void fetch('/api/countries', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => setCountries(Array.isArray(data?.countries) ? data.countries : []))
+      .catch(() => setCountries([]))
+  }, [])
+
+  useEffect(() => {
+    if (countries.length > 0 && !countries.some((c) => c.code === regionCode)) {
+      setRegion(countries[0]!.code)
     }
-  }, [regionCode, setRegion])
+  }, [countries, regionCode, setRegion])
 
   useEffect(() => {
     const valid = content.header.languages.some((l) => l.code === languageCode)
@@ -276,7 +307,12 @@ export default function PublicLayout({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="max-h-[min(24rem,70vh)] w-56 overflow-y-auto rounded-2xl p-1 shadow-[0_12px_40px_rgba(15,23,42,0.12)]">
-                {mockCountries.map((c) => (
+                {countries.length === 0 ? (
+                  <DropdownMenuItem disabled className="rounded-xl text-muted-foreground">
+                    No regions configured
+                  </DropdownMenuItem>
+                ) : null}
+                {countries.map((c) => (
                   <DropdownMenuItem
                     key={c.code}
                     className={cn('rounded-xl', c.code === region.code && 'bg-muted font-medium')}

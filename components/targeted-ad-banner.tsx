@@ -2,51 +2,26 @@
 
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import { useAdminToolsStore, isAdLive } from '@/lib/admin-tools-store'
-import { useAuthStore, useLocalePreferencesStore, useWalletStore } from '@/lib/stores'
+import { useLocalePreferencesStore } from '@/lib/stores'
 import { X } from 'lucide-react'
 
-function getFrequentTopupCountry(
-  userId: string | undefined,
-  transactions: ReturnType<typeof useWalletStore.getState>['transactions'],
-) {
-  if (!userId) return null
-  const counts = new Map<string, number>()
-  for (const txn of transactions) {
-    if (txn.userId !== userId || txn.type !== 'recharge') continue
-    const country = txn.metadata?.country
-    if (!country) continue
-    counts.set(country, (counts.get(country) ?? 0) + 1)
-  }
-  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1])
-  return sorted[0]?.[0] ?? null
+type PublicAd = {
+  id: string
+  title: string
+  image_url: string | null
+  link_url: string | null
 }
 
 export function TargetedAdBanner() {
-  const ads = useAdminToolsStore((s) => s.ads)
-  const user = useAuthStore((s) => s.user)
   const regionCode = useLocalePreferencesStore((s) => s.regionCode)
-  const transactions = useWalletStore((s) => s.transactions)
+  const [ads, setAds] = useState<PublicAd[]>([])
   const [isHydrated, setIsHydrated] = useState(false)
   const [failedAdIds, setFailedAdIds] = useState<string[]>([])
   const [open, setOpen] = useState(false)
 
   const adCandidates = useMemo(() => {
-    const liveAds = ads.filter((x) => isAdLive(x))
-    if (liveAds.length === 0) return []
-
-    const frequentCountry = getFrequentTopupCountry(user?.id, transactions)
-    const destination = frequentCountry ?? regionCode
-
-    const withImage = liveAds.filter((x) => x.imageUrl.trim().length > 0)
-    const targeted = withImage.filter((x) => x.targetCountries.includes(destination))
-    const global = withImage.filter((x) => x.targetCountries.length === 0)
-    const remaining = withImage.filter(
-      (x) => !targeted.some((t) => t.id === x.id) && !global.some((g) => g.id === x.id),
-    )
-
-    return [...targeted, ...global, ...remaining].map((candidate) => ({ ad: candidate, destination }))
-  }, [ads, user?.id, transactions, regionCode])
+    return ads.filter((x) => x.image_url?.trim()).map((candidate) => ({ ad: candidate }))
+  }, [ads])
 
   const ad = useMemo(
     () => adCandidates.find((candidate) => !failedAdIds.includes(candidate.ad.id)) ?? null,
@@ -56,6 +31,13 @@ export function TargetedAdBanner() {
   useEffect(() => {
     setIsHydrated(true)
   }, [])
+
+  useEffect(() => {
+    void fetch(`/api/ads?country=${encodeURIComponent(regionCode)}`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => setAds(Array.isArray(data?.ads) ? data.ads : []))
+      .catch(() => setAds([]))
+  }, [regionCode])
 
   useEffect(() => {
     if (!ad) {
@@ -84,7 +66,7 @@ export function TargetedAdBanner() {
 
   if (!isHydrated || !ad || !open) return null
 
-  const href = ad.ad.ctaUrl?.trim() || '/recharge'
+  const href = ad.ad.link_url?.trim() || '/recharge'
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 sm:p-8">
@@ -111,7 +93,7 @@ export function TargetedAdBanner() {
           <span className="sr-only">{ad.ad.title}</span>
           {/* eslint-disable-next-line @next/next/no-img-element -- admin-provided arbitrary URLs */}
           <img
-            src={ad.ad.imageUrl}
+            src={ad.ad.image_url ?? ''}
             alt=""
             className="max-h-[min(85vh,720px)] w-full object-contain bg-neutral-950"
             loading="eager"

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { isAdminRequest } from '@/lib/tickets/auth-headers'
-import { listTicketsAdmin } from '@/lib/tickets/persistence'
+import { listTicketsAdmin } from '@/lib/tickets/db-persistence'
 import type { TicketStatus } from '@/lib/tickets/types'
 
 export async function GET(request: Request) {

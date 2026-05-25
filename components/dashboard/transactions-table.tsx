@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   Table,
   TableBody,
@@ -18,7 +18,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Settings2, SlidersHorizontal, MoreHorizontal, ArrowUpDown } from "lucide-react"
-import { mockTransactions } from "@/lib/mock-data"
 import type { Transaction } from "@/lib/types"
 
 type SortField = "product" | "purchaseNo" | "date" | "amount"
@@ -27,8 +26,16 @@ type SortDirection = "asc" | "desc"
 export function TransactionsTable() {
   const [sortField, setSortField] = useState<SortField>("date")
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
+  const [transactions, setTransactions] = useState<Transaction[]>([])
 
-  const sortedTransactions = [...mockTransactions].sort((a, b) => {
+  useEffect(() => {
+    void fetch('/api/admin/transactions?limit=10', { credentials: 'include', cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => setTransactions(Array.isArray(data?.transactions) ? data.transactions : []))
+      .catch(() => setTransactions([]))
+  }, [])
+
+  const sortedTransactions = [...transactions].sort((a, b) => {
     let comparison = 0
     switch (sortField) {
       case "product":
@@ -145,6 +152,13 @@ export function TransactionsTable() {
             </TableRow>
           </TableHeader>
           <TableBody>
+            {sortedTransactions.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
+                  No transactions yet.
+                </TableCell>
+              </TableRow>
+            ) : null}
             {sortedTransactions.slice(0, 5).map((transaction) => {
               const productName = transaction.description || "Transaction"
               const purchaseNo = transaction.metadata?.orderId || transaction.id

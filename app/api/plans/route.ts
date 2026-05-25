@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
-import { getDemoPlanRows, isCatalogDemoFallbackEnabled } from '@/lib/catalog/demo-plans'
 import { dbFetchOperators, dbFetchPlans, type PlanRow } from '@/lib/db/catalog'
+import { dbListAggPlans } from '@/lib/db/agg-catalog'
 import { guardCatalog } from '@/lib/db/require-catalog'
+import { cacheGetJson, cacheSetJson } from '@/lib/cache/redis'
 
 function num(v: unknown, fallback = 0): number {
   const n = Number(v)
@@ -38,6 +39,38 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url)
+    const source = (searchParams.get('source') ?? '').trim().toLowerCase()
+
+    // Additive: allow serving aggregator-synced plans from normalized tables.
+    // Default behavior (no `source`) remains unchanged for backward compatibility.
+    if (source === 'agg' || source === 'aggregator' || source === 'dtone') {
+      const countryIso3 = (searchParams.get('countryIso3') ?? '').trim().toUpperCase()
+      const operatorId = (searchParams.get('operatorId') ?? '').trim()
+      const tag = (searchParams.get('tag') ?? '').trim()
+      const limit = Number(searchParams.get('limit') ?? '50')
+      const offset = Number(searchParams.get('offset') ?? '0')
+      const minRetail = searchParams.get('minRetail') != null ? Number(searchParams.get('minRetail')) : undefined
+      const maxRetail = searchParams.get('maxRetail') != null ? Number(searchParams.get('maxRetail')) : undefined
+
+      const rows = await dbListAggPlans({
+        provider: 'dtone',
+        countryIso3: countryIso3 || undefined,
+        operatorId: operatorId || undefined,
+        tag: tag || undefined,
+        minRetail: Number.isFinite(minRetail as number) ? (minRetail as number) : undefined,
+        maxRetail: Number.isFinite(maxRetail as number) ? (maxRetail as number) : undefined,
+        limit: Number.isFinite(limit) ? limit : 50,
+        offset: Number.isFinite(offset) ? offset : 0,
+        status: 'active',
+      })
+
+      return NextResponse.json({
+        source: 'aggregator',
+        plans: rows,
+        pagination: { limit: Number.isFinite(limit) ? limit : 50, offset: Number.isFinite(offset) ? offset : 0, returned: rows.length },
+      })
+    }
+
     const operatorRaw = (searchParams.get('operator') ?? '').trim()
     const operatorLc = operatorRaw.toLowerCase()
     const providerCodeHint = (searchParams.get('providerCode') ?? '').trim()
@@ -58,10 +91,10 @@ export async function GET(request: Request) {
     }
 
     // When the UI shows "Unknown" or names don't match DB codes, still return plans for the country.
-    let rows = await dbFetchPlans(country, code)
-    if (!rows.length && isCatalogDemoFallbackEnabled()) {
-      rows = getDemoPlanRows(country)
-    }
+    const cacheKey = `catalog:plans:${country}:${code ?? 'ALL'}`
+    const cached = await cacheGetJson<PlanRow[]>(cacheKey)
+    const rows = cached ?? (await dbFetchPlans(country, code))
+    if (!cached && rows.length) await cacheSetJson(cacheKey, rows, 300)
     return NextResponse.json({ plans: rows.map(rowToPlan) })
   } catch (error) {
     console.error('plans:', error)

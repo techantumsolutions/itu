@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -28,8 +28,19 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Search, Filter, Download, MoreHorizontal, Eye, RefreshCw } from 'lucide-react'
-import { mockRechargeOrders, mockUsers } from '@/lib/mock-data'
 import { useAuthStore } from '@/lib/stores'
+
+type AdminTransaction = {
+  id: string
+  userId: string
+  type: string
+  amount: number
+  currency: string
+  status: string
+  description: string
+  metadata: Record<string, any>
+  createdAt: string
+}
 
 export default function AdminTransactionsPage() {
   const user = useAuthStore((s) => s.user)
@@ -38,12 +49,24 @@ export default function AdminTransactionsPage() {
   const [dateFilter, setDateFilter] = useState<string>('all')
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailModel, setDetailModel] = useState<TransactionDetailModel | null>(null)
+  const [transactions, setTransactions] = useState<AdminTransaction[]>([])
 
-  const filteredOrders = mockRechargeOrders.filter((order) => {
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (statusFilter !== 'all') params.set('status', statusFilter)
+    void fetch(`/api/admin/transactions?${params}`, { credentials: 'include', cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => setTransactions(Array.isArray(data?.transactions) ? data.transactions : []))
+      .catch(() => setTransactions([]))
+  }, [statusFilter])
+
+  const filteredOrders = transactions.filter((order) => {
+    const metadata = order.metadata ?? {}
     const matchesSearch =
       order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.phoneNumber.includes(searchQuery) ||
-      order.providerName.toLowerCase().includes(searchQuery.toLowerCase())
+      String(metadata.phone_number ?? '').includes(searchQuery) ||
+      String(metadata.operator ?? metadata.carrierName ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      order.description.toLowerCase().includes(searchQuery.toLowerCase())
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter
     return matchesSearch && matchesStatus
   })
@@ -63,32 +86,30 @@ export default function AdminTransactionsPage() {
     )
   }
 
-  const openTransactionDetail = (order: (typeof mockRechargeOrders)[number]) => {
-    const customer = mockUsers.find((u) => u.id === order.userId)
-    const routingVariant = order.id.charCodeAt(order.id.length - 1) % 3
-    const routingType = routingVariant === 0 ? 'Dedicated' : routingVariant === 1 ? 'Cheapest' : 'Fallback'
+  const openTransactionDetail = (order: AdminTransaction) => {
+    const metadata = order.metadata ?? {}
     setDetailModel({
       id: order.id,
       createdAt: order.createdAt,
-      status: order.status,
-      amount: order.senderAmount,
-      currency: order.senderCurrency,
-      customerName: customer?.name || 'Unknown',
-      customerEmail: customer?.email || '—',
-      customerCountry: customer?.countryCode || '—',
-      destinationCountry: order.countryName,
-      networkOperator: order.providerName,
-      mobileNumber: `${order.countryCode} ${order.phoneNumber}`,
-      paymentMethod: order.paymentMethod || '—',
+      status: order.status as any,
+      amount: order.amount,
+      currency: order.currency,
+      customerName: String(metadata.customerName ?? 'Unknown'),
+      customerEmail: String(metadata.customerEmail ?? '—'),
+      customerCountry: String(metadata.country ?? '—'),
+      destinationCountry: String(metadata.countryName ?? metadata.country ?? '—'),
+      networkOperator: String(metadata.operator ?? metadata.carrierName ?? '—'),
+      mobileNumber: String(metadata.phone_number ?? metadata.phoneNumber ?? '—'),
+      paymentMethod: String(metadata.payment_gateway ?? '—'),
       paymentStatus: order.status,
-      paymentReferenceId: `${order.id}-payref`,
-      gatewayResponse: order.errorMessage || (order.status === 'completed' ? 'Approved' : 'Pending'),
-      providerUsed: order.providerName,
-      routingType,
+      paymentReferenceId: String(metadata.razorpay_payment_id ?? metadata.providerRef ?? order.id),
+      gatewayResponse: String(metadata.gatewayResponse ?? (order.status === 'completed' ? 'Approved' : 'Pending')),
+      providerUsed: String(metadata.provider ?? metadata.operator ?? '—'),
+      routingType: String(metadata.routingType ?? '—'),
       apiResponseStatus: order.status === 'completed' ? 'SUCCESS' : order.status === 'failed' ? 'FAILED' : 'PENDING',
-      errorMessage: order.errorMessage,
-      failureReason: order.errorMessage || (order.status === 'failed' ? 'Provider unavailable' : ''),
-      retryAttempts: order.status === 'failed' ? 1 : 0,
+      errorMessage: typeof metadata.errorMessage === 'string' ? metadata.errorMessage : undefined,
+      failureReason: String(metadata.errorMessage ?? (order.status === 'failed' ? 'Provider unavailable' : '')),
+      retryAttempts: Number(metadata.retryAttempts ?? 0),
     })
     setDetailOpen(true)
   }
@@ -111,12 +132,12 @@ export default function AdminTransactionsPage() {
   }
 
   // Stats
-  const totalOrders = mockRechargeOrders.length
-  const completedOrders = mockRechargeOrders.filter(o => o.status === 'completed').length
-  const totalRevenue = mockRechargeOrders
+  const totalOrders = transactions.length
+  const completedOrders = transactions.filter(o => o.status === 'completed').length
+  const totalRevenue = transactions
     .filter(o => o.status === 'completed')
-    .reduce((sum, o) => sum + o.senderAmount, 0)
-  const failedOrders = mockRechargeOrders.filter(o => o.status === 'failed').length
+    .reduce((sum, o) => sum + o.amount, 0)
+  const failedOrders = transactions.filter(o => o.status === 'failed').length
 
   return (
     <div className="space-y-6">
@@ -228,16 +249,16 @@ export default function AdminTransactionsPage() {
                       <TableCell className="font-mono text-sm">{order.id.slice(0, 12)}...</TableCell>
                       <TableCell>
                         <div>
-                          <p className="font-medium">{order.countryCode} {order.phoneNumber}</p>
-                          <p className="text-xs text-muted-foreground">{order.countryName}</p>
+                          <p className="font-medium">{String(order.metadata?.phone_number ?? order.metadata?.phoneNumber ?? '—')}</p>
+                          <p className="text-xs text-muted-foreground">{String(order.metadata?.countryName ?? order.metadata?.country ?? '—')}</p>
                         </div>
                       </TableCell>
-                      <TableCell>{order.providerName}</TableCell>
+                      <TableCell>{String(order.metadata?.operator ?? order.metadata?.carrierName ?? '—')}</TableCell>
                       <TableCell>
                         <div>
-                          <p className="font-medium">{formatCurrency(order.senderAmount, order.senderCurrency)}</p>
+                          <p className="font-medium">{formatCurrency(order.amount, order.currency)}</p>
                           <p className="text-xs text-muted-foreground">
-                            {formatCurrency(order.destinationAmount, order.destinationCurrency)} received
+                            {order.description || order.type}
                           </p>
                         </div>
                       </TableCell>

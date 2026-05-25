@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { createOrderMemory, getOrderMemory, updateOrderMemory } from '@/lib/topup/orders-memory'
+import { createOrderDb, getOrderDb, updateOrderDb } from '@/lib/topup/orders-db'
 import Razorpay from 'razorpay'
 
 export async function POST(request: Request) {
@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     // If client already has an orderId, return gateway payload for that order (Razorpay init step).
     const existingOrderId = typeof body.orderId === 'string' ? body.orderId.trim() : ''
     if (existingOrderId) {
-      const existing = getOrderMemory(existingOrderId)
+      const existing = await getOrderDb(existingOrderId)
       if (!existing) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
       // For this repo we don’t persist full order details server-side beyond memory;
       // payment page uses this endpoint only to get Razorpay params.
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
         receipt: existingOrderId,
         notes: { topup_order_id: existingOrderId },
       })
-      updateOrderMemory(existingOrderId, { razorpay_order_id: razorpayOrder.id, payment_gateway: 'razorpay' })
+      await updateOrderDb(existingOrderId, { razorpay_order_id: razorpayOrder.id, payment_gateway: 'razorpay' })
       return NextResponse.json({
         orderId: existingOrderId,
         payment_gateway: 'razorpay',
@@ -51,8 +51,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing order fields' }, { status: 400 })
     }
 
-    // Create an order record (Supabase integration can replace this later).
-    const order = createOrderMemory({
+    const order = await createOrderDb({
       phone_number,
       operator,
       country,
@@ -79,7 +78,7 @@ export async function POST(request: Request) {
         receipt: order.id,
         notes: { topup_order_id: order.id },
       })
-      updateOrderMemory(order.id, { razorpay_order_id: razorpayOrder.id })
+      await updateOrderDb(order.id, { razorpay_order_id: razorpayOrder.id })
       return NextResponse.json({
         orderId: order.id,
         payment_gateway: 'razorpay',

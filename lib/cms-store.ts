@@ -72,7 +72,7 @@ export interface AppPromoContent {
   accentSubtitle: string
   /** Supporting body line (dark grey) */
   subtitle: string
-  /** Right column: phone mock + decorative art (upload or URL) */
+  /** Right column: phone preview + decorative art (upload or URL) */
   sectionImage: string
   /** Optional custom App Store badge image; falls back to built-in black badge */
   appStoreBadgeImage: string

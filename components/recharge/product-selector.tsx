@@ -89,7 +89,7 @@ export function ProductSelector() {
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <p className="text-lg font-bold">
-                          {formatCurrency(product.destinationAmount, product.destinationCurrency)}
+                          {formatCurrency(product.minReceiveAmount, product.receiveCurrency)}
                         </p>
                         {product.isPromo && (
                           <Badge variant="secondary" className="bg-success/10 text-success">
@@ -101,15 +101,15 @@ export function ProductSelector() {
                       <p className="text-sm text-muted-foreground">
                         {product.name}
                       </p>
-                      {product.description && (
+                      {product.displayText && (
                         <p className="text-xs text-muted-foreground">
-                          {product.description}
+                          {product.displayText}
                         </p>
                       )}
                     </div>
                     <div className="text-right">
                       <p className="text-xl font-bold text-primary">
-                        {formatCurrency(product.senderAmount, product.senderCurrency)}
+                        {formatCurrency(product.minSendAmount, product.sendCurrency)}
                       </p>
                       <p className="text-xs text-muted-foreground">You pay</p>
                     </div>

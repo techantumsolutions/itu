@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
-import { getOrderMemory } from '@/lib/topup/orders-memory'
+import { getOrderDb } from '@/lib/topup/orders-db'
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params
-    const order = getOrderMemory(id)
+    const order = await getOrderDb(id)
     if (!order) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
     const pdfDoc = await PDFDocument.create()

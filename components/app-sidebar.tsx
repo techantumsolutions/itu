@@ -1,18 +1,23 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
+import { useAuthStore, useUIStore } from '@/lib/stores'
+import { isClientSuperAdmin } from '@/lib/tickets/auth-headers'
+import { clientHasAdminFeature } from '@/lib/auth/client-features'
+import type { AdminFeatureKey } from '@/lib/auth/admin-features'
 import {
   LayoutDashboard,
   Package,
   BarChart3,
   LineChart,
   Users,
+  UserCog,
   Settings,
   HelpCircle,
   Moon,
   Sun,
-  Wallet,
+  LogOut,
   Globe,
   Route,
   FileEdit,
@@ -36,89 +41,138 @@ import {
 } from '@/components/ui/sidebar'
 
 
-import { useUIStore } from '@/lib/stores'
 import { cn } from '@/lib/utils'
 import { ItuLogoMark } from '@/components/itu-logo-mark'
 
-const mainMenuItems = [
+const mainMenuItems: {
+  title: string
+  url: string
+  icon: typeof LayoutDashboard
+  feature: AdminFeatureKey
+  superAdminOnly?: boolean
+}[] = [
   {
     title: 'Dashboard',
     url: '/admin',
     icon: LayoutDashboard,
+    feature: 'dashboard',
+  },
+  {
+    title: 'Admin users',
+    url: '/admin/staff',
+    icon: UserCog,
+    feature: 'dashboard',
+    superAdminOnly: true,
   },
   {
     title: 'Providers',
     url: '/admin/providers',
     icon: Globe,
+    feature: 'providers',
   },
   {
     title: 'Routing',
     url: '/admin/routing',
     icon: Route,
+    feature: 'routing',
   },
   {
     title: 'Products',
     url: '/admin/products',
     icon: Package,
+    feature: 'products',
   },
   {
     title: 'Website CMS',
     url: '/admin/cms',
     icon: FileEdit,
+    feature: 'cms',
   },
   {
     title: 'Customers',
     url: '/admin/customers',
     icon: Users,
+    feature: 'customers',
   },
   {
     title: 'Support Tickets',
     url: '/admin/support-tickets',
     icon: MessageSquare,
+    feature: 'tickets',
   },
   {
     title: 'Ads Manager',
     url: '/admin/ads',
     icon: Megaphone,
+    feature: 'ads',
   },
   {
     title: 'Reconciliation',
     url: '/admin/reconciliation',
     icon: FileSpreadsheet,
+    feature: 'reconciliation',
   },
   {
     title: 'Reports & Analytics',
     url: '/admin/reports',
     icon: ChartNoAxesCombined,
+    feature: 'reports',
   },
   {
     title: 'Analytics',
     url: '/admin/analytics',
     icon: LineChart,
+    feature: 'analytics',
   },
   {
     title: 'Statistics',
     url: '/admin/statistics',
     icon: BarChart3,
+    feature: 'statistics',
   },
 ]
 
-const helpCenterItems = [
+const helpCenterItems: {
+  title: string
+  url: string
+  icon: typeof Settings
+  feature: AdminFeatureKey
+}[] = [
   {
     title: 'Settings',
     url: '/admin/settings',
     icon: Settings,
+    feature: 'settings',
   },
   {
     title: 'Help Center',
     url: '/admin/help',
     icon: HelpCircle,
+    feature: 'help',
   },
 ]
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+  const user = useAuthStore((s) => s.user)
+  const logout = useAuthStore((s) => s.logout)
   const { theme, toggleTheme } = useUIStore()
+
+  const handleSignOut = () => {
+    logout()
+    router.push('/admin/login')
+  }
+
+  const isSuperAdmin = isClientSuperAdmin(user)
+
+  const visibleMain = mainMenuItems.filter((item) => {
+    if (!user) return false
+    if (item.superAdminOnly) return isSuperAdmin
+    return clientHasAdminFeature(user, item.feature)
+  })
+
+  const visibleHelp = helpCenterItems.filter((item) => user && clientHasAdminFeature(user, item.feature))
 
   return (
     <Sidebar collapsible="icon" className="border-r border-border/70 bg-sidebar shadow-elevated-sm">
@@ -139,7 +193,7 @@ export function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainMenuItems.map((item) => {
+              {visibleMain.map((item) => {
                 const isActive = pathname === item.url || 
                   (item.url !== '/admin' && pathname.startsWith(item.url))
                 return (
@@ -174,7 +228,7 @@ export function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {helpCenterItems.map((item) => {
+              {visibleHelp.map((item) => {
                 const isActive = pathname === item.url
                 return (
                   <SidebarMenuItem key={item.title}>
@@ -237,7 +291,22 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      
+      <SidebarFooter className="border-t border-sidebar-border/80 p-2">
+        {user ? (
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                tooltip="Sign out"
+                className="rounded-xl text-muted-foreground hover:text-destructive"
+                onClick={handleSignOut}
+              >
+                <LogOut className="size-4" />
+                <span>Sign out</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        ) : null}
+      </SidebarFooter>
     </Sidebar>
   )
 }

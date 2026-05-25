@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { Search, Mail, Bell, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,8 +22,14 @@ interface DashboardHeaderProps {
 }
 
 export function DashboardHeader({ title }: DashboardHeaderProps) {
+  const router = useRouter()
   const { user, logout } = useAuthStore()
   const { setCommandOpen } = useUIStore()
+
+  const handleSignOut = () => {
+    logout()
+    router.push('/admin/login')
+  }
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border/70 bg-card/90 px-4 shadow-elevated-sm backdrop-blur-xl supports-[backdrop-filter]:bg-card/80 lg:px-6">
@@ -89,7 +96,13 @@ export function DashboardHeader({ title }: DashboardHeaderProps) {
             <DropdownMenuItem>Settings</DropdownMenuItem>
             <DropdownMenuItem>Billing</DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={logout} className="text-destructive">
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onSelect={(e) => {
+                e.preventDefault()
+                handleSignOut()
+              }}
+            >
               Sign out
             </DropdownMenuItem>
           </DropdownMenuContent>

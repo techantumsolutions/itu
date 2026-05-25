@@ -26,6 +26,7 @@ import {
 import { TicketStatusBadge } from '@/components/ticket-status-badge'
 import { apiAdminListTickets } from '@/lib/tickets/client-api'
 import type { Ticket, TicketStatus } from '@/lib/tickets/types'
+import { isClientAdminUser } from '@/lib/tickets/auth-headers'
 import { toast } from 'sonner'
 
 export default function AdminSupportTicketsPage() {
@@ -46,7 +47,7 @@ export default function AdminSupportTicketsPage() {
   const [debouncedQ, setDebouncedQ] = useState('')
 
   useEffect(() => {
-    if (user && user.role !== 'admin') {
+    if (user && !isClientAdminUser(user)) {
       toast.error('Admins only')
       router.replace('/account')
     }

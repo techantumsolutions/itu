@@ -294,16 +294,6 @@ export async function getProviderStatus(
   return response.Items || []
 }
 
-// ============================================================================
-// Mock Data Fallback (for development without API keys)
-// ============================================================================
-
-import { 
-  mockCountries, 
-  mockCarriers, 
-  mockProducts 
-} from '@/lib/mock-data'
-
 /**
  * Check if API is configured
  */
@@ -312,89 +302,36 @@ export function isApiConfigured(): boolean {
 }
 
 /**
- * Get countries (with fallback to mock data)
+ * Get countries when Ding is configured.
  */
 export async function getCountriesWithFallback(): Promise<DingCountry[]> {
   if (!isApiConfigured()) {
-    // Return mock data transformed to DingCountry format
-    return mockCountries.map(c => ({
-      CountryIso: c.code,
-      CountryName: c.name,
-      InternationalDialingInformation: c.dialingInfo.map(d => ({
-        Prefix: d.prefix,
-        MinimumLength: d.minLength,
-        MaximumLength: d.maxLength,
-      })),
-      RegionCodes: [],
-    }))
+    throw new Error('Ding API is not configured')
   }
   return getCountries()
 }
 
 /**
- * Get providers (with fallback to mock data)
+ * Get providers when Ding is configured.
  */
 export async function getProvidersWithFallback(
   countryIso: string
 ): Promise<DingProvider[]> {
   if (!isApiConfigured()) {
-    // Return mock data transformed to DingProvider format
-    return mockCarriers
-      .filter(c => c.countryCode === countryIso)
-      .map(c => ({
-        ProviderCode: c.code,
-        CountryIso: c.countryCode,
-        Name: c.name,
-        ShortName: c.shortName,
-        ValidationRegex: c.validationRegex || '',
-        LogoUrl: c.logo,
-      }))
+    throw new Error('Ding API is not configured')
   }
   return getProviders(countryIso)
 }
 
 /**
- * Get products (with fallback to mock data)
+ * Get products when Ding is configured.
  */
 export async function getProductsWithFallback(
   countryIso: string,
   providerCode?: string
 ): Promise<DingProduct[]> {
   if (!isApiConfigured()) {
-    // Return mock data transformed to DingProduct format
-    const carrier = mockCarriers.find(c => c.code === providerCode)
-    if (!carrier) return []
-    
-    return mockProducts
-      .filter(p => p.carrierId === carrier.id)
-      .map(p => ({
-        SkuCode: p.skuCode,
-        ProviderCode: providerCode || '',
-        LocalizationKey: p.name,
-        Maximum: {
-          SendValue: p.maxSendAmount,
-          SendCurrencyIso: p.sendCurrency,
-          ReceiveValue: p.maxReceiveAmount,
-          ReceiveCurrencyIso: p.receiveCurrency,
-        },
-        Minimum: {
-          SendValue: p.minSendAmount,
-          SendCurrencyIso: p.sendCurrency,
-          ReceiveValue: p.minReceiveAmount,
-          ReceiveCurrencyIso: p.receiveCurrency,
-        },
-        CommissionRate: p.commissionRate,
-        ProcessingMode: p.processingMode,
-        RedemptionMechanism: 'Immediate',
-        Benefits: p.benefits.map(b => ({
-          Type: b.type,
-          Value: b.value,
-          Unit: b.unit,
-          AdditionalInformation: b.info,
-        })),
-        ValidityPeriodIso: p.validity,
-        DefaultDisplayText: p.displayText,
-      }))
+    throw new Error('Ding API is not configured')
   }
   return getProducts(countryIso, providerCode)
 }

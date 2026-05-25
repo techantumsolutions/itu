@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import crypto from 'crypto'
-import { getOrderMemory, updateOrderMemory } from '@/lib/topup/orders-memory'
+import { getOrderDb, updateOrderDb } from '@/lib/topup/orders-db'
 
 export async function POST(request: Request) {
   try {
@@ -14,7 +14,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: false, error: 'Missing Razorpay fields' }, { status: 400 })
     }
 
-    const order = getOrderMemory(orderId)
+    const order = await getOrderDb(orderId)
     if (!order) return NextResponse.json({ ok: false, error: 'Order not found' }, { status: 404 })
 
     const secret = process.env.RAZORPAY_KEY_SECRET
@@ -25,11 +25,11 @@ export async function POST(request: Request) {
     const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex')
 
     if (expected !== razorpay_signature) {
-      updateOrderMemory(orderId, { status: 'failed', razorpay_order_id, razorpay_payment_id, payment_gateway: 'razorpay' })
+      await updateOrderDb(orderId, { status: 'failed', razorpay_order_id, razorpay_payment_id, payment_gateway: 'razorpay' })
       return NextResponse.json({ ok: false, error: 'Invalid signature' }, { status: 400 })
     }
 
-    updateOrderMemory(orderId, {
+    await updateOrderDb(orderId, {
       status: 'success',
       razorpay_order_id,
       razorpay_payment_id,

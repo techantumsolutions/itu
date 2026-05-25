@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
-import { createTicket, listTicketsForUser } from '@/lib/tickets/persistence'
+import { createTicket, listTicketsForUser } from '@/lib/tickets/db-persistence'
 
 export async function GET(request: Request) {
   const user = getRequestUser(request)

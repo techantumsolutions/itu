@@ -37,9 +37,16 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     setIsSaving(true)
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    setIsSaving(false)
+    try {
+      await fetch('/api/profile/locale', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user?.id, country: user?.countryCode, language: 'en', currency: 'USD' }),
+      }).catch(() => {})
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (

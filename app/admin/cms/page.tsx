@@ -163,6 +163,11 @@ export default function CMSPage() {
       markClean()
       setSavedSnapshot(contentSnapshot)
       setSaveStatus('saved')
+      try {
+        window.localStorage.setItem('itu-cms-last-good', contentSnapshot)
+      } catch {
+        // ignore
+      }
       setTimeout(() => setSaveStatus('idle'), 2000)
     } catch {
       setSaveStatus('idle')
