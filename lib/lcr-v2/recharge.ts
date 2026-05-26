@@ -9,8 +9,10 @@ import {
   dbInsertRechargeAttempt,
   dbUpdateRechargeAttempt,
 } from '@/lib/lcr-v2/recharge-db'
+import { aggResolveInternalPlanIdForSystemPlan } from '@/lib/aggregator/repository'
 
 export type LcrV2RechargeBody = {
+  systemPlanId?: string
   internalPlanId?: string
   skuCode?: string
   phoneNumber: string
@@ -60,13 +62,17 @@ export async function processLcrV2Recharge(request: Request, body: LcrV2Recharge
   }
 
   let internalPlanId = (body.internalPlanId || '').trim()
+  const systemPlanId = (body.systemPlanId || '').trim()
+  if (!internalPlanId && systemPlanId) {
+    internalPlanId = (await aggResolveInternalPlanIdForSystemPlan(systemPlanId)) ?? ''
+  }
   if (!internalPlanId && body.skuCode) {
     const maps = await dbFindMappingsByProviderPlanId(String(body.skuCode).trim())
     internalPlanId = maps[0]?.internal_plan_id ?? ''
   }
 
   if (!internalPlanId) {
-    return { ok: false as const, status: 400, error: 'internalPlanId or mapped skuCode is required for LCR v2' }
+    return { ok: false as const, status: 400, error: 'systemPlanId, internalPlanId, or mapped skuCode is required for LCR v2' }
   }
 
   const plan = await dbGetInternalPlan(internalPlanId)
@@ -99,7 +105,7 @@ export async function processLcrV2Recharge(request: Request, body: LcrV2Recharge
     phoneNumber: phoneDigits,
     sendAmount: body.sendAmount,
     currency: body.receiveCurrency ?? undefined,
-    routingDecision: decision,
+    routingDecision: { ...decision, systemPlanId: systemPlanId || undefined },
   })
 
   const chain = [
@@ -185,7 +191,7 @@ export async function processLcrV2Recharge(request: Request, body: LcrV2Recharge
     ok: false as const,
     status: 502,
     error: 'All providers failed',
-    decision,
+    decision: { ...decision, systemPlanId: systemPlanId || undefined },
     attempts: attemptsLog,
     attemptId: attempt.id,
     distributorRef,

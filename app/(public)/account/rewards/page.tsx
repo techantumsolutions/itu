@@ -212,15 +212,15 @@ export default function RewardsPage() {
       </Card>
 
       {/* Important Notice */}
-      <Card className="border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/50">
+      <Card className="border-amber-200 bg-amber-50  ">
         <CardContent className="pt-6">
           <div className="flex items-start gap-3">
             <Clock className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
             <div>
-              <p className="font-medium text-amber-800 dark:text-amber-200">
+              <p className="font-medium text-amber-800 ">
                 Points Expiry Notice
               </p>
-              <p className="text-sm text-amber-700 dark:text-amber-300">
+              <p className="text-sm text-amber-700 ">
                 Reward points are valid for 1 year from the date of earning. Points cannot be
                 converted to cash, transferred, or withdrawn.
               </p>

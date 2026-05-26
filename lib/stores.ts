@@ -303,10 +303,8 @@ export const useRechargeStore = create<RechargeState>()((set, get) => ({
 
 // UI Store
 interface UIState {
-  theme: 'light' | 'dark'
   sidebarOpen: boolean
   commandOpen: boolean
-  toggleTheme: () => void
   setSidebarOpen: (open: boolean) => void
   setCommandOpen: (open: boolean) => void
 }
@@ -314,13 +312,8 @@ interface UIState {
 export const useUIStore = create<UIState>()(
   persist(
     (set) => ({
-      theme: 'light',
       sidebarOpen: true,
       commandOpen: false,
-      toggleTheme: () =>
-        set((state) => ({
-          theme: state.theme === 'light' ? 'dark' : 'light',
-        })),
       setSidebarOpen: (open) => set({ sidebarOpen: open }),
       setCommandOpen: (open) => set({ commandOpen: open }),
     }),

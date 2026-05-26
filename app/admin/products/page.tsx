@@ -20,14 +20,31 @@ type InternalPlan = {
   updated_at: string
 }
 
+type SystemPlan = {
+  id: string
+  system_plan_name: string
+  amount: number | null
+  currency: string | null
+  validity: string | null
+  plan_type: string | null
+  status: string
+  linkedProvidersCount?: number
+  availableProvidersCount?: number
+}
+
 export default function AdminProductsPage() {
   const [plans, setPlans] = useState<InternalPlan[]>([])
+  const [systemPlans, setSystemPlans] = useState<SystemPlan[]>([])
 
   useEffect(() => {
     void fetch('/api/admin/lcr/internal-plans?limit=100', { credentials: 'include', cache: 'no-store' })
       .then((r) => r.json())
       .then((data) => setPlans(Array.isArray(data?.internalPlans) ? data.internalPlans : []))
       .catch(() => setPlans([]))
+    void fetch('/api/admin/aggregator/plans?limit=100', { credentials: 'include', cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => setSystemPlans(Array.isArray(data?.systemPlans) ? data.systemPlans : []))
+      .catch(() => setSystemPlans([]))
   }, [])
 
   return (
@@ -78,6 +95,53 @@ export default function AdminProductsPage() {
                       <Badge variant={plan.active ? 'default' : 'secondary'}>{plan.active ? 'Active' : 'Inactive'}</Badge>
                     </TableCell>
                     <TableCell>{plan.updated_at ? new Date(plan.updated_at).toLocaleString() : '—'}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Package className="size-5" />
+            System Plans
+          </CardTitle>
+          <CardDescription>Website-visible catalog names with linked provider coverage.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>System Plan</TableHead>
+                <TableHead>Amount</TableHead>
+                <TableHead>Validity</TableHead>
+                <TableHead>Providers</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {systemPlans.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                    No system plans found in the aggregator catalog.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                systemPlans.map((plan) => (
+                  <TableRow key={plan.id}>
+                    <TableCell>
+                      <div className="font-medium">{plan.system_plan_name}</div>
+                      <div className="text-xs text-muted-foreground">{plan.plan_type || 'topup'}</div>
+                    </TableCell>
+                    <TableCell>{plan.amount != null ? `${plan.amount} ${plan.currency ?? ''}` : '—'}</TableCell>
+                    <TableCell>{plan.validity || '—'}</TableCell>
+                    <TableCell>{plan.availableProvidersCount ?? plan.linkedProvidersCount ?? 0}</TableCell>
+                    <TableCell>
+                      <Badge variant={plan.status === 'ACTIVE' ? 'default' : 'secondary'}>{plan.status}</Badge>
+                    </TableCell>
                   </TableRow>
                 ))
               )}

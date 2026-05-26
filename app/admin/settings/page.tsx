@@ -17,11 +17,10 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { useAuthStore, useUIStore } from "@/lib/stores"
+import { useAuthStore } from "@/lib/stores"
 
 export default function SettingsPage() {
   const { user } = useAuthStore()
-  const { theme, toggleTheme } = useUIStore()
   const [isSaving, setIsSaving] = useState(false)
 
   // Profile form state
@@ -287,21 +286,6 @@ export default function SettingsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label>Dark Mode</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Toggle between light and dark themes
-                  </p>
-                </div>
-                <Switch
-                  checked={theme === "dark"}
-                  onCheckedChange={toggleTheme}
-                />
-              </div>
-
-              <Separator />
-
               <div className="space-y-2">
                 <Label>Language</Label>
                 <Select defaultValue="en">
