@@ -19,15 +19,17 @@ export async function POST(request: Request) {
       receiveCurrency,
       receiveAmount,
       sendCurrency,
+      systemPlanId,
       internalPlanId,
     } = body
 
     if (isLcrV2Enabled()) {
       const planId = typeof internalPlanId === 'string' ? internalPlanId.trim() : ''
+      const sysPlanId = typeof systemPlanId === 'string' ? systemPlanId.trim() : ''
       const sku = typeof skuCode === 'string' ? skuCode.trim() : ''
-      if (!phoneNumber || (!planId && !sku)) {
+      if (!phoneNumber || (!sysPlanId && !planId && !sku)) {
         return NextResponse.json(
-          { error: 'Missing required fields: phoneNumber and (internalPlanId or skuCode)' },
+          { error: 'Missing required fields: phoneNumber and (systemPlanId, internalPlanId, or skuCode)' },
           { status: 400 }
         )
       }
@@ -36,6 +38,7 @@ export async function POST(request: Request) {
       }
 
       const v2 = await processLcrV2Recharge(request, {
+        systemPlanId: sysPlanId || undefined,
         internalPlanId: planId || undefined,
         skuCode: sku || undefined,
         phoneNumber,
@@ -63,7 +66,7 @@ export async function POST(request: Request) {
 
       if ('cached' in v2 && v2.cached && v2.attempt) {
         const plan = await dbGetInternalPlan(v2.attempt.internal_plan_id)
-        const skuOut = v2.attempt.selected_provider_plan_id || sku || planId
+        const skuOut = v2.attempt.selected_provider_plan_id || sku || planId || sysPlanId
         const order = lcrV2AttemptToApiOrder({
           attempt: v2.attempt,
           internalPlan: plan ?? {},
@@ -92,7 +95,7 @@ export async function POST(request: Request) {
             selected_provider_plan_id: v2.selectedProviderPlanId ?? null,
           },
           internalPlan: v2.internalPlan,
-          skuCode: v2.selectedProviderPlanId || sku,
+          skuCode: v2.selectedProviderPlanId || sku || sysPlanId,
           extras: { countryCode, carrierCode, receiveAmount, receiveCurrency },
         })
         return NextResponse.json({

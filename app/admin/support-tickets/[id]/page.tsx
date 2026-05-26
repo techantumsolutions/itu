@@ -250,18 +250,18 @@ export default function AdminSupportTicketDetailPage() {
         </div>
 
         <aside className="space-y-4">
-          <div className="rounded-2xl border border-amber-200/80 bg-amber-50/60 p-4 dark:border-amber-900/40 dark:bg-amber-950/25">
-            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-100">
+          <div className="rounded-2xl border border-amber-200/80 bg-amber-50/60 p-4  ">
+            <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-900 ">
               <StickyNote className="size-4" />
               Internal notes
             </div>
-            <p className="mb-3 text-xs text-amber-900/80 dark:text-amber-200/80">Visible to admins only.</p>
+            <p className="mb-3 text-xs text-amber-900/80 ">Visible to admins only.</p>
             <ul className="mb-4 max-h-48 space-y-2 overflow-y-auto text-sm">
               {data.notes.length === 0 ? (
                 <li className="text-muted-foreground">No notes yet.</li>
               ) : (
                 data.notes.map((n) => (
-                  <li key={n.id} className="rounded-lg border border-amber-200/50 bg-background/80 px-3 py-2 dark:border-amber-900/30">
+                  <li key={n.id} className="rounded-lg border border-amber-200/50 bg-background/80 px-3 py-2 ">
                     <p className="whitespace-pre-wrap text-foreground">{n.note}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {n.createdBy} · {format(new Date(n.createdAt), 'MMM d, HH:mm')}

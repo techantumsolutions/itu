@@ -21,11 +21,11 @@ export function TicketStatusBadge({ status, showHint }: { status: TicketStatus; 
         variant="secondary"
         className={cn(
           'w-fit font-medium',
-          status === 'open' && 'border-red-200/80 bg-red-50 text-red-800 dark:border-red-900/50 dark:bg-red-950/40 dark:text-red-200',
+          status === 'open' && 'border-red-200/80 bg-red-50 text-red-800   ',
           status === 'in_progress' &&
-            'border-amber-200/80 bg-amber-50 text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100',
+            'border-amber-200/80 bg-amber-50 text-amber-900   ',
           status === 'resolved' &&
-            'border-emerald-200/80 bg-emerald-50 text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/40 dark:text-emerald-200',
+            'border-emerald-200/80 bg-emerald-50 text-emerald-800   ',
         )}
       >
         {labels[status]}

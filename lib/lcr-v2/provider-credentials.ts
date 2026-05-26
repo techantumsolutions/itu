@@ -1,10 +1,13 @@
 import type { ProviderAuth, ProviderConfig } from '@/lib/providers/types'
+import { decryptProviderCredentials } from '@/lib/aggregator/credentials'
 
 /** Parse JSON stored in `lcr_providers.credentials_encrypted` (plain JSON for now). */
 export function parseCredentialsEncrypted(blob: string | null | undefined): ProviderAuth | undefined {
   if (!blob || typeof blob !== 'string') return undefined
   const t = blob.trim()
   if (!t) return undefined
+  const decrypted = decryptProviderCredentials(t)
+  if (decrypted) return decrypted
   try {
     const j = JSON.parse(t) as Record<string, unknown>
     const apiKey = typeof j.apiKey === 'string' ? j.apiKey : undefined

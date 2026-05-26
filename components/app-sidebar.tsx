@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { useAuthStore, useUIStore } from '@/lib/stores'
+import { useAuthStore } from '@/lib/stores'
 import { isClientSuperAdmin } from '@/lib/tickets/auth-headers'
 import { clientHasAdminFeature } from '@/lib/auth/client-features'
 import type { AdminFeatureKey } from '@/lib/auth/admin-features'
@@ -15,8 +15,6 @@ import {
   UserCog,
   Settings,
   HelpCircle,
-  Moon,
-  Sun,
   LogOut,
   Globe,
   Route,
@@ -25,6 +23,7 @@ import {
   Megaphone,
   FileSpreadsheet,
   ChartNoAxesCombined,
+  PlugZap,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -69,6 +68,12 @@ const mainMenuItems: {
     url: '/admin/providers',
     icon: Globe,
     feature: 'providers',
+  },
+  {
+    title: 'Integrations',
+    url: '/admin/integrations',
+    icon: PlugZap,
+    feature: 'integrations',
   },
   {
     title: 'Routing',
@@ -157,7 +162,6 @@ export function AppSidebar() {
   const router = useRouter()
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
-  const { theme, toggleTheme } = useUIStore()
 
   const handleSignOut = () => {
     logout()
@@ -205,7 +209,7 @@ export function AppSidebar() {
                       className={cn(
                         'rounded-xl border border-transparent transition-all duration-200',
                         isActive &&
-                          'border-primary/15 bg-primary/10 font-semibold text-primary shadow-elevated-sm dark:bg-primary/15',
+                          'border-primary/15 bg-primary/10 font-semibold text-primary shadow-elevated-sm ',
                       )}
                     >
                       <Link href={item.url}>
@@ -239,7 +243,7 @@ export function AppSidebar() {
                       className={cn(
                         'rounded-xl border border-transparent transition-all duration-200',
                         isActive &&
-                          'border-primary/15 bg-primary/10 font-semibold text-primary shadow-elevated-sm dark:bg-primary/15',
+                          'border-primary/15 bg-primary/10 font-semibold text-primary shadow-elevated-sm ',
                       )}
                     >
                       <Link href={item.url}>
@@ -250,42 +254,6 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 )
               })}
-              <SidebarMenuItem>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => toggleTheme()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      toggleTheme()
-                    }
-                  }}
-                  className="flex w-full items-center justify-between gap-2 overflow-hidden rounded-md p-2 text-left text-sm outline-none ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 cursor-pointer"
-                >
-                  <div className="flex items-center gap-2">
-                    {theme === 'dark' ? (
-                      <Moon className="size-4" />
-                    ) : (
-                      <Sun className="size-4" />
-                    )}
-                    <span className="group-data-[collapsible=icon]:hidden">Dark Mode</span>
-                  </div>
-                  <div
-                    className={cn(
-                      'group-data-[collapsible=icon]:hidden relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                      theme === 'dark' ? 'bg-primary' : 'bg-muted',
-                    )}
-                  >
-                    <span 
-                      className="pointer-events-none block h-4 w-4 rounded-full bg-background shadow-lg ring-0 transition-transform"
-                      style={{
-                        transform: theme === 'dark' ? 'translateX(16px)' : 'translateX(0px)'
-                      }}
-                    />
-                  </div>
-                </div>
-              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

@@ -144,7 +144,7 @@ export default function TransactionsPage() {
     switch (status) {
       case 'completed':
         return (
-          <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950 dark:text-emerald-400 dark:border-emerald-800">
+          <Badge variant="outline" className="bg-emerald-50 text-emerald-700 border-emerald-200   ">
             <CheckCircle2 className="mr-1 h-3 w-3" />
             Completed
           </Badge>
@@ -152,14 +152,14 @@ export default function TransactionsPage() {
       case 'pending':
       case 'processing':
         return (
-          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-400 dark:border-amber-800">
+          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200   ">
             <Clock className="mr-1 h-3 w-3" />
             {status === 'pending' ? 'Pending' : 'Processing'}
           </Badge>
         )
       case 'failed':
         return (
-          <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-400 dark:border-red-800">
+          <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200   ">
             <XCircle className="mr-1 h-3 w-3" />
             Failed
           </Badge>

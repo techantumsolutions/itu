@@ -318,7 +318,7 @@ export default function AdminProvidersPage() {
       </div>
 
       {!configured && (
-        <p className="text-sm text-amber-800 dark:text-amber-200">
+        <p className="text-sm text-amber-800 ">
           Supabase catalog env vars are missing — configure `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to load
           providers.
         </p>
