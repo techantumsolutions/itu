@@ -72,9 +72,13 @@ export type ProviderSyncResult = {
   durationMs: number
 }
 
+export type FetchRawPlansOptions = {
+  countries?: string[]
+}
+
 export interface ProviderConnector {
   readonly adapterKey: ProviderAdapterKey
-  fetchRawPlans(config: ProviderConfig): Promise<RawPlanRecord[]>
+  fetchRawPlans(config: ProviderConfig, options?: FetchRawPlansOptions): Promise<RawPlanRecord[]>
   normalizePlans(input: { config: ProviderConfig; raw: RawPlanRecord[] }): Promise<NormalizedPlan[]>
   healthCheck?(config: ProviderConfig): Promise<{ ok: boolean; latencyMs?: number; message?: string }>
 }

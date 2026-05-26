@@ -223,7 +223,7 @@ export default function AdminTransactionsPage() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
+          <div className="min-w-0 overflow-hidden rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>

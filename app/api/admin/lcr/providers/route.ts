@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
-import { isAdminRequest, getRequestUser } from '@/lib/tickets/auth-headers'
+import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-rest'
 import { getDtoneCredentialsFromEnv } from '@/lib/dtone'
-import { adminCanUseFeature, adminCanManageProviders } from '@/lib/auth/require-admin-feature'
+import { adminCanUseAnyFeature, adminCanManageProviders } from '@/lib/auth/require-admin-feature'
 
 function dingEnvReady(): boolean {
   const a = process.env.DING_API_KEY?.trim()
@@ -21,8 +21,9 @@ type HealthRow = {
 type RawFetchRow = { provider_id: string; fetched_at: string }
 
 export async function GET(request: Request) {
-  if (!isAdminRequest(request)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  if (!(await adminCanUseFeature(request, 'providers', { allowLegacyHeader: true }))) {
+  if (
+    !(await adminCanUseAnyFeature(request, ['providers', 'routing', 'products'], { allowLegacyHeader: true }))
+  ) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   if (!isSupabaseCatalogConfigured()) {
@@ -131,7 +132,6 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!isAdminRequest(request)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   if (!(await adminCanManageProviders(request))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }

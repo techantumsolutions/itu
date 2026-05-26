@@ -104,10 +104,13 @@
   }
   html {
     font-optical-sizing: auto;
+    overflow-x: hidden;
   }
 
   body {
     @apply bg-background text-foreground antialiased;
+    overflow-x: hidden;
+    max-width: 100%;
   }
 
   h1,

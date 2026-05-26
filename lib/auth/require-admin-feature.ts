@@ -25,6 +25,17 @@ export async function adminCanUseFeature(request: Request, feature: AdminFeature
   return false
 }
 
+export async function adminCanUseAnyFeature(
+  request: Request,
+  features: AdminFeatureKey[],
+  opts?: { allowLegacyHeader?: boolean },
+): Promise<boolean> {
+  for (const feature of features) {
+    if (await adminCanUseFeature(request, feature, opts)) return true
+  }
+  return false
+}
+
 /** Provider mutations (sync, bootstrap, create row): cookie permissions or legacy admin header. */
 export async function adminCanManageProviders(request: Request): Promise<boolean> {
   return adminCanUseFeature(request, 'providers_manage', { allowLegacyHeader: true })

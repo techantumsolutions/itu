@@ -8,6 +8,8 @@ export type TopupPlanType = 'topup' | 'unlimited' | 'data'
 
 export type TopupPlan = {
   id: string
+  internalPlanId?: string
+  systemPlanId?: string
   type: TopupPlanType
   tag: TopupPlanTag
   price_inr: number
@@ -37,6 +39,11 @@ type TopupSessionState = {
   totalAmount: number
   currency: 'INR' | 'EUR'
   orderId: string
+  transactionId: string
+  providerRef: string
+  providerName: string
+  rechargeStatus: 'idle' | 'pending' | 'success' | 'failed'
+  errorMessage: string
 }
 
 type TopupSessionActions = {
@@ -45,6 +52,13 @@ type TopupSessionActions = {
   selectPlan: (plan: TopupPlan) => void
   calculatePricing: (payload?: { currency?: 'INR' | 'EUR'; fee?: number }) => void
   setOrderId: (orderId: string) => void
+  setTransactionResult: (result: {
+    transactionId?: string
+    providerRef?: string
+    providerName?: string
+    rechargeStatus?: 'idle' | 'pending' | 'success' | 'failed'
+    errorMessage?: string
+  }) => void
   resetSession: () => void
 }
 
@@ -58,6 +72,11 @@ const initialState: TopupSessionState = {
   totalAmount: 0,
   currency: 'EUR',
   orderId: '',
+  transactionId: '',
+  providerRef: '',
+  providerName: '',
+  rechargeStatus: 'idle',
+  errorMessage: '',
 }
 
 export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
@@ -94,6 +113,14 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
         })
       },
       setOrderId: (orderId) => set({ orderId }),
+      setTransactionResult: (result) =>
+        set({
+          transactionId: result.transactionId ?? get().transactionId,
+          providerRef: result.providerRef ?? get().providerRef,
+          providerName: result.providerName ?? get().providerName,
+          rechargeStatus: result.rechargeStatus ?? get().rechargeStatus,
+          errorMessage: result.errorMessage ?? get().errorMessage,
+        }),
       resetSession: () => set({ ...initialState }),
     }),
     {
@@ -109,6 +136,11 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
         totalAmount: s.totalAmount,
         currency: s.currency,
         orderId: s.orderId,
+        transactionId: s.transactionId,
+        providerRef: s.providerRef,
+        providerName: s.providerName,
+        rechargeStatus: s.rechargeStatus,
+        errorMessage: s.errorMessage,
       }),
     },
   ),

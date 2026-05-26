@@ -27,6 +27,19 @@ export type DtoneCredentialInput = {
   baseUrl?: string
 }
 
+export type DtoneProductsQuery = {
+  countryIsoCode?: string
+  page?: number
+  perPage?: number
+}
+
+export type DtoneProductsPage = {
+  items: unknown[]
+  page: number
+  totalPages: number
+  total: number
+}
+
 function resolveDtoneCredentials(override?: DtoneCredentialInput): DtoneCredentials {
   const apiKey = override?.apiKey?.trim() || readEnv('DTONE_API_KEY')
   const apiSecret = override?.apiSecret?.trim() || readEnv('DTONE_API_SECRET')
@@ -39,11 +52,20 @@ function resolveDtoneCredentials(override?: DtoneCredentialInput): DtoneCredenti
   return { apiKey, apiSecret, baseUrl }
 }
 
-export async function fetchDtoneProducts(creds?: DtoneCredentialInput) {
+export async function fetchDtoneProductsPage(
+  creds?: DtoneCredentialInput,
+  query?: DtoneProductsQuery,
+): Promise<DtoneProductsPage> {
   const { apiKey, apiSecret, baseUrl } = resolveDtoneCredentials(creds)
   const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
+  const params = new URLSearchParams()
+  const page = Math.max(query?.page ?? 1, 1)
+  const perPage = Math.min(Math.max(query?.perPage ?? 100, 1), 100)
+  params.set('page', String(page))
+  params.set('per_page', String(perPage))
+  if (query?.countryIsoCode) params.set('country_iso_code', query.countryIsoCode.toUpperCase())
 
-  const response = await fetch(`${baseUrl}/v1/products`, {
+  const response = await fetch(`${baseUrl}/v1/products?${params.toString()}`, {
     method: 'GET',
     headers: {
       Authorization: `Basic ${auth}`,
@@ -58,7 +80,48 @@ export async function fetchDtoneProducts(creds?: DtoneCredentialInput) {
     throw new Error(`DTONE API Error: ${response.status}${bodyText ? ` - ${bodyText.slice(0, 500)}` : ''}`)
   }
 
-  return response.json()
+  const items = (await response.json()) as unknown[]
+  const total = Number(response.headers.get('X-Total') ?? items.length)
+  const totalPages = Math.max(Number(response.headers.get('X-Total-Pages') ?? 1), 1)
+
+  return { items, page, totalPages, total: Number.isFinite(total) ? total : items.length }
+}
+
+/** Fetch all product pages, optionally scoped to one or more ISO3 countries. */
+export async function fetchAllDtoneProducts(
+  creds?: DtoneCredentialInput,
+  countries?: string[],
+): Promise<unknown[]> {
+  const countryList = (countries ?? []).map((c) => c.trim().toUpperCase()).filter(Boolean)
+  if (countryList.length) {
+    const merged: unknown[] = []
+    for (const countryIsoCode of countryList) {
+      let page = 1
+      let totalPages = 1
+      do {
+        const res = await fetchDtoneProductsPage(creds, { countryIsoCode, page, perPage: 100 })
+        merged.push(...res.items)
+        totalPages = res.totalPages
+        page += 1
+      } while (page <= totalPages)
+    }
+    return merged
+  }
+
+  const merged: unknown[] = []
+  let page = 1
+  let totalPages = 1
+  do {
+    const res = await fetchDtoneProductsPage(creds, { page, perPage: 100 })
+    merged.push(...res.items)
+    totalPages = res.totalPages
+    page += 1
+  } while (page <= totalPages)
+  return merged
+}
+
+export async function fetchDtoneProducts(creds?: DtoneCredentialInput) {
+  return fetchAllDtoneProducts(creds)
 }
 
 export async function fetchDtoneMobileNumberLookup(

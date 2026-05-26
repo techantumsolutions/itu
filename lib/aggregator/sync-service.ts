@@ -12,6 +12,8 @@ import { buildSystemOperatorInput } from '@/lib/aggregator/operator-normalizer'
 import { buildSystemPlanInput, scorePlanCandidate } from '@/lib/aggregator/plan-normalizer'
 import { extractPlanSignatureParts, sha256 } from '@/lib/aggregator/signature'
 import type { AggregatorSyncResult } from '@/lib/aggregator/types'
+import type { SyncCatalogOptions } from '@/lib/lcr/sync-options'
+import { resolveSyncCountries } from '@/lib/lcr/sync-options'
 import {
   aggFindSystemPlanCandidates,
   aggGetProvider,
@@ -77,11 +79,15 @@ async function createOrGetInternalPlan(plan: NormalizedPlan) {
   return { plan: created, created: Boolean(created?.id) }
 }
 
-export async function syncAggregatorProvider(providerId: string): Promise<AggregatorSyncResult> {
+export async function syncAggregatorProvider(
+  providerId: string,
+  options?: SyncCatalogOptions,
+): Promise<AggregatorSyncResult> {
   const started = Date.now()
   const providerRow = await aggGetProvider(providerId)
   if (!providerRow) throw new Error('provider_not_found')
   const config: ProviderConfig = rowToProviderConfig(providerRow as any)
+  const syncedCountries = resolveSyncCountries(config, options)
   if (!config.isActive) {
     return {
       providerId,
@@ -94,6 +100,7 @@ export async function syncAggregatorProvider(providerId: string): Promise<Aggreg
       mappedPlans: 0,
       duplicateSuggestions: 0,
       durationMs: Date.now() - started,
+      syncedCountries,
     }
   }
 
@@ -104,12 +111,12 @@ export async function syncAggregatorProvider(providerId: string): Promise<Aggreg
     stage: 'full-sync',
     status: 'RUNNING',
     startedAt: syncStartedAt,
-    metadata: { providerCode: config.code },
+    metadata: { providerCode: config.code, syncedCountries },
   }).catch(() => {})
 
   try {
     const connector = getConnector(config.adapterKey)
-    const raw = await connector.fetchRawPlans(config)
+    const raw = await connector.fetchRawPlans(config, { countries: syncedCountries.length ? syncedCountries : undefined })
     const normalized = await connector.normalizePlans({ config, raw })
 
     let rawOperators = 0
@@ -249,6 +256,7 @@ export async function syncAggregatorProvider(providerId: string): Promise<Aggreg
       mappedPlans,
       duplicateSuggestions,
       durationMs,
+      syncedCountries,
     }
 
     await Promise.all([

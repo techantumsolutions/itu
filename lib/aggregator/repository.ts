@@ -11,6 +11,10 @@ function enc(v: string): string {
   return encodeURIComponent(v)
 }
 
+/** Columns guaranteed by supabase/uti_lcr_schema.sql */
+const LCR_PROVIDER_BASE_SELECT =
+  'id,code,name,adapter_key,is_active,priority,base_url,refresh_interval_minutes,supported_countries,credentials_encrypted,status'
+
 async function jsonRows<T = any>(res: Response): Promise<T[]> {
   if (!res.ok) throw new Error(await res.text())
   return (await res.json()) as T[]
@@ -30,6 +34,21 @@ export function isMissingAggregatorSchemaError(error: unknown): boolean {
   )
 }
 
+let aggregatorSchemaReady: boolean | null = null
+
+/** True when multi_provider_aggregator_schema tables exist (cached for process lifetime). */
+export async function isAggregatorSchemaReady(): Promise<boolean> {
+  if (aggregatorSchemaReady != null) return aggregatorSchemaReady
+  try {
+    const res = await supabaseRest('provider_operator_raw?select=id&limit=1', { cache: 'no-store' })
+    aggregatorSchemaReady = res.ok
+    return aggregatorSchemaReady
+  } catch {
+    aggregatorSchemaReady = false
+    return false
+  }
+}
+
 async function jsonRowsOrEmpty<T = any>(res: Response): Promise<T[]> {
   try {
     return await jsonRows<T>(res)
@@ -40,16 +59,15 @@ async function jsonRowsOrEmpty<T = any>(res: Response): Promise<T[]> {
 }
 
 export async function aggListProviders(): Promise<AggregatorProviderRow[]> {
-  const res = await supabaseRest(
-    'lcr_providers?select=id,code,name,adapter_key,is_active,priority,base_url,refresh_interval_minutes,supported_countries,credentials_encrypted,slug,provider_type,auth_type,status,last_sync_at,last_success_sync_at,sync_frequency,webhook_url&order=priority.asc',
-    { cache: 'no-store' },
-  )
+  const res = await supabaseRest(`lcr_providers?select=${LCR_PROVIDER_BASE_SELECT}&order=priority.asc`, {
+    cache: 'no-store',
+  })
   return jsonRows<AggregatorProviderRow>(res)
 }
 
 export async function aggGetProvider(providerId: string): Promise<AggregatorProviderRow | null> {
   const res = await supabaseRest(
-    `lcr_providers?id=eq.${enc(providerId)}&select=id,code,name,adapter_key,is_active,priority,base_url,refresh_interval_minutes,supported_countries,credentials_encrypted,slug,provider_type,auth_type,status,last_sync_at,last_success_sync_at,sync_frequency,webhook_url&limit=1`,
+    `lcr_providers?id=eq.${enc(providerId)}&select=${LCR_PROVIDER_BASE_SELECT}&limit=1`,
     { cache: 'no-store' },
   )
   const rows = await jsonRows<AggregatorProviderRow>(res)

@@ -26,12 +26,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Plus, RefreshCcw, Zap, AlertTriangle, CheckCircle2, XCircle, Activity, Settings2 } from 'lucide-react'
+import { CompactDateTime } from '@/app/admin/integrations/_components/integration-data-page'
 import { useAuthStore } from '@/lib/stores'
 import { toast } from 'sonner'
 import type { User } from '@/lib/types'
 import { isClientAdminUser, isClientSuperAdmin } from '@/lib/tickets/auth-headers'
 import { clientHasAdminFeature } from '@/lib/auth/client-features'
-import { DEFAULT_DTONE_BASE_URL } from '@/lib/dtone'
 
 type LcrProviderRow = {
   id: string
@@ -51,6 +51,11 @@ type LcrProviderRow = {
 }
 
 type CoverageRow = { countryIso3: string; operatorRef: string; providerCodes: string[] }
+
+const ACTIONS_HEAD =
+  'sticky right-0 z-20 w-[148px] min-w-[148px] max-w-[148px] shrink-0 border-l border-border/60 bg-muted/95 backdrop-blur-sm shadow-[-6px_0_10px_-8px_rgba(0,0,0,0.15)] whitespace-nowrap normal-case tracking-normal'
+const ACTIONS_CELL =
+  'sticky right-0 z-10 w-[148px] min-w-[148px] max-w-[148px] shrink-0 border-l border-border/60 bg-background group-hover:bg-muted/60 shadow-[-6px_0_10px_-8px_rgba(0,0,0,0.15)]'
 
 function adminHeaders(user: User) {
   return {
@@ -93,16 +98,11 @@ export default function AdminProvidersPage() {
   const user = useAuthStore((s) => s.user)
   const [providers, setProviders] = useState<LcrProviderRow[]>([])
   const [coverageRows, setCoverageRows] = useState<CoverageRow[]>([])
-  const [catalogLastIngestAt, setCatalogLastIngestAt] = useState<string | null>(null)
   const [configured, setConfigured] = useState(true)
   const [loading, setLoading] = useState(true)
   const [editingProvider, setEditingProvider] = useState<LcrProviderRow | null>(null)
-  const [integration, setIntegration] = useState({
-    dtoneEnvReady: false,
-    dingEnvReady: false,
-    dtoneUsingDefaultBase: false,
-  })
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [syncingId, setSyncingId] = useState<string | null>(null)
 
   const loadAll = useCallback(async () => {
     if (!user || !isClientAdminUser(user)) return
@@ -117,15 +117,7 @@ export default function AdminProvidersPage() {
       const cJson = await cRes.json().catch(() => ({}))
       if (!pRes.ok) throw new Error(pJson.error ?? 'Failed to load providers')
       setProviders(Array.isArray(pJson.providers) ? pJson.providers : [])
-      setCatalogLastIngestAt(pJson.catalogLastIngestAt ?? null)
       setConfigured(pJson.configured !== false)
-      setIntegration(
-        pJson.integration ?? {
-          dtoneEnvReady: false,
-          dingEnvReady: false,
-          dtoneUsingDefaultBase: false,
-        },
-      )
       setCoverageRows(Array.isArray(cJson.rows) ? cJson.rows : [])
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Load failed')
@@ -204,6 +196,7 @@ export default function AdminProvidersPage() {
     setIsRefreshing(true)
     const h = adminHeaders(user)
     const results: { code: string; ok: boolean; msg: string }[] = []
+
     for (const p of providers.filter((x) => x.is_active)) {
       try {
         const res = await fetch('/api/admin/lcr/sync', {
@@ -218,7 +211,9 @@ export default function AdminProvidersPage() {
         results.push({
           code: p.code,
           ok: true,
-          msg: r ? `raw ${r.fetchedRaw ?? 0}, mapped ${r.mappedPlans ?? 0}` : 'ok',
+          msg: r
+            ? `raw ${r.fetchedRaw ?? 0}, mapped ${r.mappedPlans ?? 0}${r.syncedCountries?.length ? ` (${r.syncedCountries.join(', ')})` : ''}`
+            : 'ok',
         })
       } catch (e) {
         results.push({
@@ -233,6 +228,37 @@ export default function AdminProvidersPage() {
     if (failed.length) toast.error(`Some syncs failed: ${failed.map((f) => f.code).join(', ')}`)
     else toast.success('Catalog sync finished')
     await loadAll()
+  }
+
+  const handleSyncProvider = async (providerId: string) => {
+    if (!user || !isClientAdminUser(user)) return
+    if (!configured) {
+      toast.error('Supabase is not configured')
+      return
+    }
+    setSyncingId(providerId)
+    const h = adminHeaders(user)
+    try {
+      const res = await fetch('/api/admin/lcr/sync', {
+        method: 'POST',
+        credentials: 'include',
+        headers: h,
+        body: JSON.stringify({ providerId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? 'Sync failed')
+      const r = data.result
+      toast.success(
+        r
+          ? `Sync finished — raw ${r.fetchedRaw ?? 0}, mapped ${r.mappedPlans ?? 0}`
+          : 'Catalog sync finished',
+      )
+      await loadAll()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Sync failed')
+    } finally {
+      setSyncingId(null)
+    }
   }
 
   const handleToggleProvider = async (providerId: string, isActive: boolean) => {
@@ -279,15 +305,9 @@ export default function AdminProvidersPage() {
     }
   }
 
-  const getSuccessRateColor = (rate: number) => {
-    if (rate >= 98) return 'text-green-600'
-    if (rate >= 95) return 'text-yellow-600'
-    return 'text-red-600'
-  }
-
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">API Providers</h1>
           <p className="text-muted-foreground">
@@ -323,44 +343,6 @@ export default function AdminProvidersPage() {
           providers.
         </p>
       )}
-
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-base">Environment</CardTitle>
-          <CardDescription>Non-secret signals from the server (used for bootstrap).</CardDescription>
-        </CardHeader>
-        <CardContent className="text-sm space-y-2">
-          {integration.dtoneEnvReady ? (
-            <p>
-              <span className="font-medium">DT One:</span>{' '}
-              <code className="text-xs">DTONE_API_KEY</code> and <code className="text-xs">DTONE_API_SECRET</code> are
-              set.
-              {integration.dtoneUsingDefaultBase && (
-                <span className="text-muted-foreground">
-                  {' '}
-                  No <code className="text-xs">DTONE_BASE_URL</code>; using default{' '}
-                  <code className="text-xs">{DEFAULT_DTONE_BASE_URL}</code>.
-                </span>
-              )}
-            </p>
-          ) : (
-            <p className="text-muted-foreground">
-              <span className="font-medium">DT One:</span> server does not see both{' '}
-              <code className="text-xs">DTONE_API_KEY</code> and <code className="text-xs">DTONE_API_SECRET</code>
-              (restart dev server after changing <code className="text-xs">.env</code>).
-            </p>
-          )}
-          {integration.dingEnvReady ? (
-            <p>
-              <span className="font-medium">Ding:</span> env credentials detected (bootstrap may add a DING row).
-            </p>
-          ) : (
-            <p className="text-muted-foreground">
-              <span className="font-medium">Ding:</span> not detected from env.
-            </p>
-          )}
-        </CardContent>
-      </Card>
 
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
@@ -403,111 +385,94 @@ export default function AdminProvidersPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Catalog ingest</CardTitle>
-          <CardDescription>Latest raw plan fetch time across all providers (from provider_plans_raw).</CardDescription>
-        </CardHeader>
-        <CardContent className="text-sm">
-          {catalogLastIngestAt ? (
-            <p>
-              <span className="text-muted-foreground">Last ingest:</span>{' '}
-              {new Date(catalogLastIngestAt).toLocaleString('en-GB', { hour12: false })}
-            </p>
-          ) : (
-            <p className="text-muted-foreground">No ingest recorded yet. Use &quot;Sync catalog&quot; after adding a provider.</p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>Configured Providers</CardTitle>
           <CardDescription>Rows in lcr_providers — source for routing and ingestion.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
+          <div className="relative min-w-0 overflow-x-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Provider</TableHead>
-                  <TableHead>Adapter</TableHead>
+                  <TableHead>Config</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Countries</TableHead>
-                  <TableHead>Success rate</TableHead>
-                  <TableHead>Last ingest</TableHead>
-                  <TableHead>Active</TableHead>
-                  <TableHead className="w-[80px]">Actions</TableHead>
+                  <TableHead>Last sync</TableHead>
+                  <TableHead className={ACTIONS_HEAD}>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
                       Loading…
                     </TableCell>
                   </TableRow>
                 ) : providers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
                       No providers yet. Use Add provider, or set DTONE_API_KEY + DTONE_API_SECRET in env (bootstrap runs on load). Ensure Supabase is configured.
                     </TableCell>
                   </TableRow>
                 ) : (
                   providers.map((provider) => (
-                    <TableRow key={provider.id}>
+                    <TableRow key={provider.id} className="group">
                       <TableCell>
-                        <div>
-                          <p className="font-medium">{provider.name}</p>
-                          <p className="text-xs text-muted-foreground font-mono">{provider.code}</p>
+                        <div className="min-w-0 leading-tight">
+                          <p className="truncate font-medium">{provider.name}</p>
+                          <p className="truncate text-[11px] text-muted-foreground font-mono">{provider.code}</p>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary">{provider.adapter_key}</Badge>
+                        <div className="leading-tight">
+                          <Badge variant="secondary" className="text-xs">
+                            {provider.adapter_key}
+                          </Badge>
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">P{provider.priority}</p>
+                        </div>
                       </TableCell>
-                      <TableCell>{statusBadge(provider.status)}</TableCell>
                       <TableCell>
-                        <Badge variant="outline">P{provider.priority}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm">
-                          {(provider.supported_countries ?? []).slice(0, 4).join(', ')}
-                          {(provider.supported_countries ?? []).length > 4 && (
-                            <span className="text-muted-foreground">
-                              {' '}
-                              +{(provider.supported_countries ?? []).length - 4} more
+                        <div className="space-y-1.5">
+                          {statusBadge(provider.status)}
+                          <div className="flex items-center gap-2">
+                            <Switch
+                              checked={provider.is_active}
+                              onCheckedChange={(v) => void handleToggleProvider(provider.id, v)}
+                              className="scale-90"
+                            />
+                            <span className="text-[11px] text-muted-foreground">
+                              {provider.is_active ? 'Active' : 'Inactive'}
                             </span>
-                          )}
-                          {!(provider.supported_countries ?? []).length && (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </span>
+                          </div>
+                        </div>
                       </TableCell>
                       <TableCell>
-                        {provider.success_rate != null ? (
-                          <span className={`font-medium ${getSuccessRateColor(Number(provider.success_rate))}`}>
-                            {Number(provider.success_rate).toFixed(1)}%
-                          </span>
+                        {provider.last_plan_ingest_at ? (
+                          <CompactDateTime value={provider.last_plan_ingest_at} />
                         ) : (
-                          <span className="text-sm text-muted-foreground">—</span>
+                          <span className="text-xs text-muted-foreground">Never</span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-muted-foreground">
-                          {provider.last_plan_ingest_at
-                            ? new Date(provider.last_plan_ingest_at).toLocaleString('en-GB', { hour12: false })
-                            : 'Never'}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <Switch
-                          checked={provider.is_active}
-                          onCheckedChange={(v) => void handleToggleProvider(provider.id, v)}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingProvider({ ...provider })}>
-                          <Settings2 className="h-4 w-4" />
-                        </Button>
+                      <TableCell className={ACTIONS_CELL}>
+                        <div className="flex flex-col gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 w-full"
+                            disabled={!provider.is_active || syncingId === provider.id || isRefreshing}
+                            onClick={() => void handleSyncProvider(provider.id)}
+                          >
+                            {syncingId === provider.id ? 'Syncing…' : 'Sync'}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-full"
+                            onClick={() => setEditingProvider({ ...provider })}
+                          >
+                            <Settings2 className="mr-1 size-3.5" />
+                            Edit
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -522,11 +487,11 @@ export default function AdminProvidersPage() {
         <CardHeader>
           <CardTitle>Coverage matrix</CardTitle>
           <CardDescription>
-            Country (ISO3) and operator ref from internal plans with active mappings — live from the database.
+            Country (ISO3) and operator ref from internal plans with active mappings.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
+          <div className="min-w-0 overflow-hidden rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>

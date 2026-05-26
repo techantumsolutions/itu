@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import { isAdminRequest } from '@/lib/tickets/auth-headers'
 import { adminCanManageProviders } from '@/lib/auth/require-admin-feature'
-import { syncAggregatorProvider } from '@/lib/aggregator/sync-service'
+import { syncProviderCatalog } from '@/lib/lcr/sync-catalog'
+import { normalizeCountryList } from '@/lib/lcr/countries'
+import { invalidatePublicCatalogCache } from '@/lib/catalog/invalidate-public-cache'
 
 export async function POST(request: Request) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -13,8 +15,13 @@ export async function POST(request: Request) {
   const providerId = typeof body.providerId === 'string' ? body.providerId.trim() : ''
   if (!providerId) return NextResponse.json({ error: 'providerId is required' }, { status: 400 })
 
-  const result = await syncAggregatorProvider(providerId)
+  const countries = normalizeCountryList(
+    body.countries ?? body.countryIso3 ?? body.country ?? body.countryCode ?? '',
+  )
+
+  const result = await syncProviderCatalog(providerId, countries.length ? { countries } : undefined)
+
+  await invalidatePublicCatalogCache().catch(() => {})
 
   return NextResponse.json({ success: true, result })
 }
-

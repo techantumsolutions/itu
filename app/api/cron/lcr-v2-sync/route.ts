@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-rest'
 import { enqueueProviderSync, getProviderSyncQueue } from '@/lib/jobs/queue'
-import { syncAggregatorProvider } from '@/lib/aggregator/sync-service'
+import { syncProviderCatalog } from '@/lib/lcr/sync-catalog'
 
 export async function POST(request: Request) {
   const authHeader = request.headers.get('authorization') || ''
@@ -26,7 +26,7 @@ export async function POST(request: Request) {
         const job = await enqueueProviderSync(p.id)
         results.push({ providerId: p.id, ok: true, queued: true, jobId: job?.id ?? null })
       } else {
-        const r = await syncAggregatorProvider(p.id)
+        const r = await syncProviderCatalog(p.id)
         results.push({ providerId: p.id, ok: true, queued: false, result: r })
       }
     } catch (e) {

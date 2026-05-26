@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { dbFetchOperators } from '@/lib/db/catalog'
 import { guardCatalog } from '@/lib/db/require-catalog'
+import { fetchPublicOperators } from '@/lib/catalog/public-catalog'
 import { cacheGetJson, cacheSetJson } from '@/lib/cache/redis'
 
 export async function GET(request: Request) {
@@ -9,30 +9,33 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url)
-    const countryCode = searchParams.get('countryCode')
+    const countryCode = searchParams.get('countryCode') ?? searchParams.get('country') ?? ''
 
-    if (!countryCode) {
+    if (!countryCode.trim()) {
       return NextResponse.json({ error: 'Country code is required' }, { status: 400 })
     }
 
     const iso = countryCode.trim().toUpperCase()
-    const cacheKey = `catalog:operators:${iso}`
-    const cached = await cacheGetJson<any[]>(cacheKey)
-    const rows = cached ?? (await dbFetchOperators(iso))
-    if (!cached && rows.length) await cacheSetJson(cacheKey, rows, 300)
+    const cacheKey = `catalog:public:operators:${iso}`
+    const cached = await cacheGetJson<{ providers: unknown[]; source: string }>(cacheKey)
+    if (cached) return NextResponse.json(cached)
 
-    const providers = rows.map((p) => ({
-      id: `carrier-${p.code.toLowerCase().replace(/_/g, '-')}`,
-      code: p.code,
-      name: p.name,
-      shortName: p.short_name ?? p.name,
-      logo: p.logo_url,
-      countryCode: p.country_iso,
-      validationRegex: p.validation_regex,
-      regionCode: p.region_code,
-    }))
-
-    return NextResponse.json({ providers })
+    const rows = await fetchPublicOperators(iso)
+    const payload = {
+      source: 'database',
+      providers: rows.map((p) => ({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        shortName: p.shortName,
+        logo: p.logo,
+        countryCode: p.countryCode,
+        countryIso3: p.countryIso3,
+        validationRegex: p.validationRegex,
+      })),
+    }
+    if (rows.length) await cacheSetJson(cacheKey, payload, 300)
+    return NextResponse.json(payload)
   } catch (error) {
     console.error('providers:', error)
     return NextResponse.json({ error: 'Failed to fetch providers' }, { status: 500 })

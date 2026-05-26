@@ -2,12 +2,18 @@ import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { adminCanManageProviders, adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { aggListProviders } from '@/lib/aggregator/repository'
-import { syncAggregatorProvider } from '@/lib/aggregator/sync-service'
+import { syncProviderCatalog } from '@/lib/lcr/sync-catalog'
 import { enqueueProviderSync } from '@/lib/jobs/queue'
+import { invalidatePublicCatalogCache } from '@/lib/catalog/invalidate-public-cache'
+
+import { normalizeCountryList } from '@/lib/lcr/countries'
 
 const syncSchema = z.object({
   providerId: z.string().uuid().optional(),
   mode: z.enum(['inline', 'queue']).optional(),
+  countryIso3: z.string().optional(),
+  countries: z.array(z.string()).optional(),
+  country: z.string().optional(),
 })
 
 export async function GET(request: Request) {
@@ -30,15 +36,23 @@ export async function POST(request: Request) {
     ? [{ id: parsed.data.providerId }]
     : (await aggListProviders()).filter((p) => p.is_active).map((p) => ({ id: p.id }))
 
+  const countries = normalizeCountryList(
+    parsed.data.countries ?? parsed.data.countryIso3 ?? parsed.data.country ?? '',
+  )
+  const syncOptions = countries.length ? { countries } : undefined
+
   const results: unknown[] = []
   for (const provider of providers) {
     if (parsed.data.mode === 'queue') {
       const job = await enqueueProviderSync(provider.id)
       results.push({ providerId: provider.id, queued: Boolean(job), jobId: job?.id ?? null })
     } else {
-      const result = await syncAggregatorProvider(provider.id)
+      const result = await syncProviderCatalog(provider.id, syncOptions)
       results.push({ providerId: provider.id, result })
     }
+  }
+  if (parsed.data.mode !== 'queue') {
+    await invalidatePublicCatalogCache().catch(() => {})
   }
   return NextResponse.json({ success: true, results })
 }

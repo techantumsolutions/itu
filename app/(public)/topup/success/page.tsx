@@ -7,14 +7,23 @@ import { cn } from '@/lib/utils'
 import { useTopupStore } from '@/store/topupStore'
 import { Download, RotateCcw } from 'lucide-react'
 
+const DIAL_CODES: Record<string, string> = { IN: '91', US: '1', GB: '44', AE: '971', SA: '966', BD: '880', PK: '92', NP: '977', LK: '94', NG: '234', KE: '254', GH: '233', ZA: '27', PH: '63', MY: '60', SG: '65' }
+function dialCode(countryIso: string): string {
+  return DIAL_CODES[countryIso.toUpperCase()] ?? countryIso
+}
+
 export default function TopupSuccessPage() {
-  const { orderId, phoneNumber, countryCode, operator, selectedPlan, pricing, totalAmount, resetSession } =
+  const { orderId, phoneNumber, countryCode, operator, selectedPlan, pricing, totalAmount, resetSession, transactionId, providerRef, providerName } =
     useTopupStore()
 
-  const refId = useMemo(() => (orderId ? orderId.slice(0, 12).toUpperCase() : ''), [orderId])
+  const refId = useMemo(() => {
+    if (transactionId) return transactionId.slice(0, 12).toUpperCase()
+    if (orderId) return orderId.slice(0, 12).toUpperCase()
+    return ''
+  }, [transactionId, orderId])
   const dt = useMemo(() => new Date().toLocaleString(), [])
 
-  if (!orderId || !selectedPlan || !pricing) return null
+  if ((!orderId && !transactionId) || !selectedPlan || !pricing) return null
 
   return (
     <div className="min-h-[calc(100vh-6rem)] bg-[var(--hero-navy)]">
@@ -41,14 +50,16 @@ export default function TopupSuccessPage() {
 
           <div className="px-6 py-6">
             <div className="space-y-3 text-xs text-neutral-700">
-              <Row label="Mobile Number" value={`+${countryCode}${phoneNumber}`} />
+              <Row label="Transaction ID" value={refId} mono />
+              <Row label="Mobile Number" value={`+${dialCode(countryCode)} ${phoneNumber}`} />
               <Row label="Operator" value={operator} />
-              <Row label="Plan Name" value={selectedPlan.planName || selectedPlan.id} />
+              <Row label="Plan Name" value={selectedPlan.planName || `₹${selectedPlan.price_inr} • ${selectedPlan.validity}`} />
               <Row
                 label="Amount Paid"
                 value={`${totalAmount.toFixed(2)} ${pricing.localCurrency} (₹ ${selectedPlan.price_inr})`}
               />
-              <Row label="Reference Number" value={refId} mono />
+              {providerRef ? <Row label="Provider Reference" value={providerRef} mono /> : null}
+              {providerName ? <Row label="Provider" value={providerName} /> : null}
               <Row label="Date & Time" value={dt} />
             </div>
 

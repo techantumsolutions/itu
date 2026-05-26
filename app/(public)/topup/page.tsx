@@ -12,7 +12,8 @@ import { CalendarDays, ChevronDown, MessageSquareText, PhoneCall, Sparkles, Wifi
 import { useTopupStore, type TopupPlan } from '@/store/topupStore'
 
 type OperatorDetectResponse = { operator: string; country: string; providerCode?: string; source?: string }
-type DtoneProductsResponse = { success: boolean; data?: unknown; message?: string }
+type DbProvider = { code: string; name: string; shortName: string }
+type DbPlan = TopupPlan
 
 const tabs = [
   { id: 'all', label: 'All' },
@@ -21,82 +22,6 @@ const tabs = [
   { id: 'data', label: 'Data Pack' },
 ] as const
 
-function num(v: unknown, fallback = 0): number {
-  const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : typeof v === 'number' ? v : NaN
-  return Number.isFinite(n) ? n : fallback
-}
-
-function text(v: unknown): string {
-  return typeof v === 'string' ? v : v == null ? '' : String(v)
-}
-
-function iso2ToIso3(countryCode: string): string {
-  const cc = (countryCode || '').trim().toUpperCase()
-  if (cc === 'IN') return 'IND'
-  if (cc.length === 3) return cc
-  return cc
-}
-
-function dtoneToTopupPlans(
-  payload: unknown,
-  ctx: { countryCode: string; maxItems?: number }
-): TopupPlan[] {
-  const rows = Array.isArray(payload) ? payload : []
-  const targetIso3 = iso2ToIso3(ctx.countryCode)
-
-  const filteredByCountry = rows.filter((raw) => {
-    const p = (raw ?? {}) as any
-    const iso = text(p?.operator?.country?.iso_code).toUpperCase()
-    if (targetIso3 && iso && iso !== targetIso3) return false
-    return true
-  })
-
-  // If the account/environment returns no products for this country, fall back to "show something"
-  // so the user can still confirm the integration is live.
-  const effective = filteredByCountry.length ? filteredByCountry : rows
-
-  const limited = typeof ctx.maxItems === 'number' ? effective.slice(0, ctx.maxItems) : effective
-
-  return limited.map((raw, idx) => {
-    const p = (raw ?? {}) as any
-
-    const id = text(p?.id ?? `dtone-${idx}`)
-    const name = text(p?.name || p?.description || id)
-
-    const eur = num(p?.prices?.retail?.amount, num(p?.source?.amount, 0))
-    const localAmount = num(p?.destination?.amount, 0)
-    const localUnit = text(p?.destination?.unit || '')
-
-    const tags = Array.isArray(p?.tags) ? (p.tags as unknown[]).map((t) => text(t).toUpperCase()) : []
-    const type: TopupPlan['type'] = tags.includes('DATA') ? 'data' : tags.includes('VOICE') ? 'unlimited' : 'topup'
-
-    const benefitsArr = Array.isArray(p?.benefits) ? (p.benefits as unknown[]) : []
-    const dataBenefit = benefitsArr.find((b: any) => text(b?.unit_type).toUpperCase() === 'DATA') as any
-    const dataAmount = dataBenefit?.amount?.total_including_tax ?? dataBenefit?.amount?.total_excluding_tax ?? dataBenefit?.amount?.base
-    const dataUnit = text(dataBenefit?.unit)
-    const dataLabel = dataAmount != null && dataUnit ? `${text(dataAmount)}${dataUnit}` : undefined
-
-    const validityQty = num(p?.validity?.quantity, 0)
-    const validityUnit = text(p?.validity?.unit)
-    const validity =
-      validityQty && validityUnit ? `${validityQty} ${validityUnit.toLowerCase()}${validityQty === 1 ? '' : 's'}` : ''
-
-    const priceInr = localUnit.toUpperCase() === 'INR' ? Math.round(localAmount) : Math.round(eur * 100)
-
-    return {
-      id,
-      type,
-      tag: idx < 3 ? 'popular' : 'none',
-      price_inr: priceInr,
-      price_eur: Number(eur.toFixed(2)),
-      validity,
-      data: dataLabel,
-      benefits: localUnit ? `${name} • ${localAmount} ${localUnit}` : name,
-      planName: name,
-    }
-  })
-}
-
 export default function TopupPlanSelectionPage() {
   const router = useRouter()
   const { countryCode, phoneNumber, operator, setPhoneDetails, setOperator, selectPlan, calculatePricing } =
@@ -104,7 +29,6 @@ export default function TopupPlanSelectionPage() {
 
   const [localPhone, setLocalPhone] = useState(phoneNumber)
   const [detecting, setDetecting] = useState(false)
-  const showPlans = localPhone.trim().length >= 10 && Boolean(operator)
   const [loadingPlans, setLoadingPlans] = useState(false)
   const [plans, setPlans] = useState<TopupPlan[]>([])
   const [resolvedProviderCode, setResolvedProviderCode] = useState<string | undefined>()
@@ -113,9 +37,14 @@ export default function TopupPlanSelectionPage() {
 
   const [operatorDialogOpen, setOperatorDialogOpen] = useState(false)
   const [providersLoading, setProvidersLoading] = useState(false)
-  const [providers, setProviders] = useState<Array<{ code: string; name: string; shortName: string }>>([])
+  const [providers, setProviders] = useState<DbProvider[]>([])
   const [selectedProviderCode, setSelectedProviderCode] = useState<string>('')
   const [manualOperatorOverride, setManualOperatorOverride] = useState<boolean>(false)
+
+  const effectiveOperatorId = resolvedProviderCode || selectedProviderCode
+  const operatorReady = Boolean(effectiveOperatorId) || (Boolean(operator) && operator.toLowerCase() !== 'unknown')
+  const showPlansSection = localPhone.trim().length >= 10
+  const showPlans = showPlansSection && operatorReady
 
   useEffect(() => {
     setPhoneDetails({ countryCode, phoneNumber: localPhone })
@@ -165,32 +94,29 @@ export default function TopupPlanSelectionPage() {
   }, [localPhone, countryCode, setOperator, manualOperatorOverride])
 
   useEffect(() => {
+    if (detecting || manualOperatorOverride) return
+    if (localPhone.length >= 10 && operator.toLowerCase() === 'unknown') {
+      setOperatorDialogOpen(true)
+    }
+  }, [detecting, operator, localPhone, manualOperatorOverride])
+
+  useEffect(() => {
     if (!operatorDialogOpen) return
     const loadProviders = async () => {
       setProvidersLoading(true)
       try {
-        // Operator picker for this page should reflect DT One operators (not local DB codes).
-        // We derive it from the already-available DT One products list.
-        const res = await fetch('/api/dtone/products', { credentials: 'include' })
-        const json = (await res.json().catch(() => ({}))) as DtoneProductsResponse
-        const items = json?.success && Array.isArray(json?.data) ? (json.data as any[]) : []
-
-        const targetIso3 = iso2ToIso3(countryCode)
-        const seen = new Map<string, { code: string; name: string; shortName: string }>()
-        for (const p of items) {
-          const iso3 = text((p as any)?.operator?.country?.iso_code).trim().toUpperCase()
-          if (targetIso3 && iso3 && iso3 !== targetIso3) continue
-          const opId = text((p as any)?.operator?.id).trim()
-          const opName = text((p as any)?.operator?.name).trim()
-          if (!opId || !opName) continue
-          if (!seen.has(opId)) {
-            seen.set(opId, { code: opId, name: opName, shortName: opName })
-          }
-        }
-        const mapped = Array.from(seen.values()).sort((a, b) => a.shortName.localeCompare(b.shortName))
+        const res = await fetch(`/api/providers?countryCode=${encodeURIComponent(countryCode)}`, {
+          credentials: 'include',
+          cache: 'no-store',
+        })
+        const json = (await res.json().catch(() => ({}))) as { providers?: DbProvider[] }
+        const mapped = Array.isArray(json.providers) ? json.providers : []
         setProviders(mapped)
         if (!selectedProviderCode && mapped.length) {
-          const initial = resolvedProviderCode && mapped.some((m) => m.code === resolvedProviderCode) ? resolvedProviderCode : mapped[0].code
+          const initial =
+            resolvedProviderCode && mapped.some((m) => m.code === resolvedProviderCode)
+              ? resolvedProviderCode
+              : mapped[0]!.code
           setSelectedProviderCode(initial)
         }
       } finally {
@@ -206,26 +132,31 @@ export default function TopupPlanSelectionPage() {
       if (!showPlans) return
       setLoadingPlans(true)
       try {
-        const res = await fetch('/api/dtone/products', { credentials: 'include' })
-        const json = (await res.json().catch(() => ({}))) as DtoneProductsResponse
-        const all =
-          res.ok && json?.success ? (Array.isArray(json.data) ? (json.data as any[]) : []) : []
+        const params = new URLSearchParams({
+          countryId: countryCode,
+          limit: '200',
+        })
+        if (effectiveOperatorId) params.set('operatorId', effectiveOperatorId)
+        else if (operator && operator.toLowerCase() !== 'unknown') params.set('operatorName', operator)
+        if (tab !== 'all') params.set('category', tab)
 
-        // If operator was detected via DT One lookup, providerCode is DT One operator id.
-        const dtoneOperatorId = resolvedProviderCode && /^\d+$/.test(resolvedProviderCode) ? Number(resolvedProviderCode) : null
-        const filtered =
-          dtoneOperatorId != null
-            ? all.filter((p) => Number((p as any)?.operator?.id) === dtoneOperatorId)
-            : all
-
-        const rows = dtoneToTopupPlans(filtered, { countryCode, maxItems: 200 })
-        setPlans(rows)
+        const res = await fetch(`/api/plans?${params}`, { credentials: 'include', cache: 'no-store' })
+        const json = (await res.json().catch(() => ({}))) as { plans?: DbPlan[]; error?: string }
+        const raw = Array.isArray(json.plans) ? json.plans : []
+        // Filter out plans with invalid data (negative validity, zero price, etc.)
+        const valid = raw.filter((p) => {
+          const vNum = parseInt(p.validity, 10)
+          if (Number.isFinite(vNum) && vNum <= 0) return false
+          if (p.price_inr <= 0 && p.price_eur <= 0) return false
+          return true
+        })
+        setPlans(valid)
       } finally {
         setLoadingPlans(false)
       }
     }
     void load()
-  }, [showPlans, operator, countryCode, resolvedProviderCode])
+  }, [showPlans, operator, countryCode, effectiveOperatorId, tab])
 
   const visiblePlans = useMemo(() => {
     let rows = [...plans]
@@ -239,7 +170,7 @@ export default function TopupPlanSelectionPage() {
   const onBuy = (plan: TopupPlan) => {
     selectPlan(plan)
     calculatePricing({ currency: 'EUR', fee: 0.49 })
-    router.push('/topup/review')
+    router.push('/topup/summary')
   }
 
   return (
@@ -289,8 +220,22 @@ export default function TopupPlanSelectionPage() {
           </div>
         </div>
 
-        {showPlans ? (
+        {showPlansSection ? (
           <>
+            {!operatorReady ? (
+              <div className="mx-auto mt-10 max-w-2xl rounded-2xl bg-white p-6 text-center shadow-sm ring-1 ring-black/5">
+                <p className="text-sm font-semibold text-neutral-900">Select your mobile operator</p>
+                <p className="mt-2 text-xs text-neutral-500">
+                  Operator detection uses the catalog database. Choose your operator to load available plans.
+                </p>
+                <Button className="mt-4" onClick={() => setOperatorDialogOpen(true)}>
+                  Choose operator
+                </Button>
+              </div>
+            ) : null}
+
+            {operatorReady ? (
+            <>
             <div className="mt-10 flex flex-col items-center justify-between gap-4 md:flex-row">
               <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="w-full md:w-auto">
                 <TabsList className="h-12 rounded-full bg-transparent p-0 shadow-none ring-0">
@@ -334,13 +279,19 @@ export default function TopupPlanSelectionPage() {
                 </div>
               ) : visiblePlans.length === 0 ? (
                 <div className="rounded-2xl bg-white px-6 py-12 text-center shadow-sm ring-1 ring-black/5">
-                  <p className="text-sm font-semibold text-neutral-900">No DT One products found</p>
+                  <p className="text-sm font-semibold text-neutral-900">No plans available for this operator</p>
                   <p className="mt-2 text-xs text-neutral-500">
-                    Check <span className="font-mono text-neutral-700">DTONE_API_KEY</span>,{' '}
-                    <span className="font-mono text-neutral-700">DTONE_API_SECRET</span>, and{' '}
-                    <span className="font-mono text-neutral-700">DTONE_BASE_URL</span> in <span className="font-mono text-neutral-700">.env</span>,
-                    then verify <span className="font-mono text-neutral-700">/api/dtone/products</span> returns data.
+                    Plans are loaded from the application catalog database. Ask an admin to sync providers in the
+                    admin panel, or choose a different operator using Change.
                   </p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-4"
+                    onClick={() => setOperatorDialogOpen(true)}
+                  >
+                    Choose operator
+                  </Button>
                 </div>
               ) : (
                 visiblePlans.map((plan) => (
@@ -454,6 +405,8 @@ export default function TopupPlanSelectionPage() {
                 </div>
               </div>
             </div>
+            </>
+            ) : null}
           </>
         ) : (
           <div className="mx-auto mt-10 max-w-2xl rounded-2xl bg-white p-6 shadow-sm ring-1 ring-black/5">

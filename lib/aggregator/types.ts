@@ -108,4 +108,5 @@ export type AggregatorSyncResult = {
   mappedPlans: number
   duplicateSuggestions: number
   durationMs: number
+  syncedCountries?: string[]
 }

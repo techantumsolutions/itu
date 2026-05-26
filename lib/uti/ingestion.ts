@@ -2,6 +2,8 @@ import crypto from 'crypto'
 import type { ProviderConfig, NormalizedPlan } from '@/lib/providers/types'
 import { getConnector } from '@/lib/providers/registry'
 import { fingerprintPlan } from '@/lib/uti/normalize'
+import type { SyncCatalogOptions } from '@/lib/lcr/sync-options'
+import { resolveSyncCountries } from '@/lib/lcr/sync-options'
 import {
   dbCreateInternalPlan,
   dbEnqueuePlanReview,
@@ -23,6 +25,7 @@ export type IngestResult = {
   mappedPlans: number
   reviewQueued: number
   durationMs: number
+  syncedCountries: string[]
 }
 
 function categoryFromPlan(p: NormalizedPlan): string {
@@ -33,11 +36,12 @@ function categoryFromPlan(p: NormalizedPlan): string {
   return 'topup'
 }
 
-export async function ingestProviderPlans(config: ProviderConfig): Promise<IngestResult> {
+export async function ingestProviderPlans(config: ProviderConfig, options?: SyncCatalogOptions): Promise<IngestResult> {
   const started = Date.now()
   const connector = getConnector(config.adapterKey)
+  const syncedCountries = resolveSyncCountries(config, options)
 
-  const raw = await connector.fetchRawPlans(config)
+  const raw = await connector.fetchRawPlans(config, { countries: syncedCountries.length ? syncedCountries : undefined })
   for (const r of raw) {
     const checksumHash = sha256(JSON.stringify(r.raw))
     await dbUpsertProviderRawPlan({
@@ -114,6 +118,7 @@ export async function ingestProviderPlans(config: ProviderConfig): Promise<Inges
     mappedPlans,
     reviewQueued,
     durationMs: Date.now() - started,
+    syncedCountries,
   }
 }
 

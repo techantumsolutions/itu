@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
-import { dbFetchOperatorsForCountries } from '@/lib/db/catalog'
 import { guardCatalog } from '@/lib/db/require-catalog'
+import { fetchPublicOperatorCounts, fetchPublicCountries } from '@/lib/catalog/public-catalog'
 
 const MAX_CODES = 40
 
 /**
- * GET ?codes=JM,NG,IN — counts operators per ISO from Supabase `operators`.
+ * GET ?codes=JM,NG,IN — operator counts from synced catalog (database).
+ * When no codes provided, returns counts for all countries with catalog data.
  */
 export async function GET(request: Request) {
   const denied = guardCatalog()
@@ -17,21 +18,29 @@ export async function GET(request: Request) {
     const parsed = raw
       .split(',')
       .map((c) => c.trim().toUpperCase())
-      .filter((c) => /^[A-Z]{2}$/.test(c))
+      .filter((c) => /^[A-Z]{2,3}$/.test(c))
+
+    const allCounts = await fetchPublicOperatorCounts()
+
+    if (!parsed.length) {
+      return NextResponse.json({ source: 'database', counts: allCounts })
+    }
+
     const unique = [...new Set(parsed)].slice(0, MAX_CODES)
-
-    if (!unique.length) {
-      return NextResponse.json({ counts: {} })
+    const counts: Record<string, number> = {}
+    for (const code of unique) {
+      counts[code] = allCounts[code] ?? 0
     }
 
-    const rows = await dbFetchOperatorsForCountries(unique)
-    const counts: Record<string, number> = Object.fromEntries(unique.map((iso) => [iso, 0]))
-    for (const r of rows) {
-      const iso = r.country_iso?.toUpperCase()
-      if (iso && iso in counts) counts[iso]++
+    if (Object.values(counts).every((n) => n === 0)) {
+      const countries = await fetchPublicCountries()
+      for (const code of unique) {
+        const match = countries.find((c) => c.code === code || c.iso3 === code)
+        counts[code] = match?.operatorCount ?? 0
+      }
     }
 
-    return NextResponse.json({ counts })
+    return NextResponse.json({ source: 'database', counts })
   } catch (error) {
     console.error('operator-counts:', error)
     return NextResponse.json({ error: 'Failed to load operator counts' }, { status: 500 })

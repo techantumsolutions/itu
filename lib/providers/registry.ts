@@ -5,7 +5,7 @@ const connectors: Record<ProviderAdapterKey, ProviderConnector> = {
   dtone: dtoneConnector,
   ding: {
     adapterKey: 'ding',
-    async fetchRawPlans() {
+    async fetchRawPlans(_config, _options) {
       throw new Error('ding connector not implemented')
     },
     async normalizePlans() {
@@ -14,7 +14,7 @@ const connectors: Record<ProviderAdapterKey, ProviderConnector> = {
   },
   reloadly: {
     adapterKey: 'reloadly',
-    async fetchRawPlans() {
+    async fetchRawPlans(_config, _options) {
       throw new Error('reloadly connector not implemented')
     },
     async normalizePlans() {
@@ -23,7 +23,7 @@ const connectors: Record<ProviderAdapterKey, ProviderConnector> = {
   },
   custom: {
     adapterKey: 'custom',
-    async fetchRawPlans() {
+    async fetchRawPlans(_config, _options) {
       throw new Error('custom connector not implemented')
     },
     async normalizePlans() {

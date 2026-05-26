@@ -3,7 +3,7 @@
  * Processes BullMQ jobs from queue "provider-sync".
  */
 import { Worker } from 'bullmq'
-import { syncAggregatorProvider } from '@/lib/aggregator/sync-service'
+import { syncProviderCatalog } from '@/lib/lcr/sync-catalog'
 
 const url = process.env.REDIS_URL
 if (!url) {
@@ -19,7 +19,7 @@ console.log('[lcr-sync-worker] starting…')
 const worker = new Worker<JobPayload>(
   'provider-sync',
   async (job) => {
-    return syncAggregatorProvider(job.data.providerId)
+    return syncProviderCatalog(job.data.providerId)
   },
   { connection: { url } as any }
 )

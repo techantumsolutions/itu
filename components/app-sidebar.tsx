@@ -36,6 +36,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarSeparator,
 } from '@/components/ui/sidebar'
 
@@ -49,6 +52,7 @@ const mainMenuItems: {
   icon: typeof LayoutDashboard
   feature: AdminFeatureKey
   superAdminOnly?: boolean
+  children?: { title: string; url: string }[]
 }[] = [
   {
     title: 'Dashboard',
@@ -77,9 +81,14 @@ const mainMenuItems: {
   },
   {
     title: 'Routing',
-    url: '/admin/routing',
+    url: '/admin/routing/lcr-engine',
     icon: Route,
     feature: 'routing',
+    children: [
+      { title: 'LCR Engine', url: '/admin/routing/lcr-engine' },
+      { title: 'Routing Rules', url: '/admin/routing/rules' },
+      { title: 'Routing Logs', url: '/admin/routing/logs' },
+    ],
   },
   {
     title: 'Products',
@@ -198,8 +207,10 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {visibleMain.map((item) => {
-                const isActive = pathname === item.url || 
-                  (item.url !== '/admin' && pathname.startsWith(item.url))
+                const isActive =
+                  pathname === item.url ||
+                  (item.url !== '/admin' && pathname.startsWith(item.url)) ||
+                  (item.children?.some((child) => pathname === child.url || pathname.startsWith(`${child.url}/`)) ?? false)
                 return (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton
@@ -217,6 +228,20 @@ export function AppSidebar() {
                         <span>{item.title}</span>
                       </Link>
                     </SidebarMenuButton>
+                    {item.children?.length ? (
+                      <SidebarMenuSub>
+                        {item.children.map((child) => {
+                          const childActive = pathname === child.url || pathname.startsWith(`${child.url}/`)
+                          return (
+                            <SidebarMenuSubItem key={child.url}>
+                              <SidebarMenuSubButton asChild isActive={childActive}>
+                                <Link href={child.url}>{child.title}</Link>
+                              </SidebarMenuSubButton>
+                            </SidebarMenuSubItem>
+                          )
+                        })}
+                      </SidebarMenuSub>
+                    ) : null}
                   </SidebarMenuItem>
                 )
               })}

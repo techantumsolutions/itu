@@ -1,13 +1,31 @@
 import { NextResponse } from 'next/server'
-import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
+import { adminCanUseAnyFeature } from '@/lib/auth/require-admin-feature'
 import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-rest'
-import { aggListRawPlans, aggListSystemPlans, isMissingAggregatorSchemaError } from '@/lib/aggregator/repository'
+import {
+  aggListRawPlans,
+  aggListSystemPlans,
+  isAggregatorSchemaReady,
+  isMissingAggregatorSchemaError,
+} from '@/lib/aggregator/repository'
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseFeature(request, 'integrations', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseAnyFeature(request, ['integrations', 'products'], { allowLegacyHeader: true }))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
-  if (!isSupabaseCatalogConfigured()) return NextResponse.json({ rawPlans: [], systemPlans: [], configured: false })
+  if (!isSupabaseCatalogConfigured()) {
+    return NextResponse.json({ rawPlans: [], systemPlans: [], configured: false, schemaReady: false })
+  }
+
+  const schemaReady = await isAggregatorSchemaReady()
+  if (!schemaReady) {
+    return NextResponse.json({
+      configured: true,
+      schemaReady: false,
+      rawPlans: [],
+      systemPlans: [],
+      message: 'Apply supabase/multi_provider_aggregator_schema.sql to enable system plans and raw operator normalization.',
+    })
+  }
 
   const { searchParams } = new URL(request.url)
   const limit = Number(searchParams.get('limit') ?? '50')
@@ -62,6 +80,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     configured: true,
+    schemaReady: true,
     rawPlans,
     systemPlans: systemPlans.map((plan: any) => ({
       ...plan,

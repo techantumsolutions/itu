@@ -1,5 +1,5 @@
-import { fetchDtoneProducts } from '@/lib/dtone'
-import type { ProviderConnector, ProviderConfig, RawPlanRecord, NormalizedPlan, NormalizedBenefit } from '@/lib/providers/types'
+import { fetchAllDtoneProducts } from '@/lib/dtone'
+import type { ProviderConnector, ProviderConfig, RawPlanRecord, NormalizedPlan, NormalizedBenefit, FetchRawPlansOptions } from '@/lib/providers/types'
 
 function text(v: unknown): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
@@ -35,13 +35,16 @@ function toBenefit(b: any): NormalizedBenefit {
 export const dtoneConnector: ProviderConnector = {
   adapterKey: 'dtone',
 
-  async fetchRawPlans(config: ProviderConfig): Promise<RawPlanRecord[]> {
+  async fetchRawPlans(config: ProviderConfig, options?: FetchRawPlansOptions): Promise<RawPlanRecord[]> {
     const a = config.auth
-    const data = await fetchDtoneProducts({
-      apiKey: a?.apiKey,
-      apiSecret: a?.apiSecret,
-      baseUrl: config.baseUrl,
-    })
+    const data = await fetchAllDtoneProducts(
+      {
+        apiKey: a?.apiKey,
+        apiSecret: a?.apiSecret,
+        baseUrl: config.baseUrl,
+      },
+      options?.countries,
+    )
     const items = Array.isArray(data) ? (data as any[]) : []
     return items.map((p) => ({ providerPlanId: text(p?.id), raw: p }))
   },

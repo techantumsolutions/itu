@@ -21,22 +21,14 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { OperatorsMarquee } from '@/components/operators-marquee'
 
-const allCountries = [
-  { code: 'US', name: 'United States', flag: '🇺🇸', dialCode: '+1' },
-  { code: 'GB', name: 'United Kingdom', flag: '🇬🇧', dialCode: '+44' },
-  { code: 'IN', name: 'India', flag: '🇮🇳', dialCode: '+91' },
-  { code: 'NG', name: 'Nigeria', flag: '🇳🇬', dialCode: '+234' },
-  { code: 'PH', name: 'Philippines', flag: '🇵🇭', dialCode: '+63' },
-  { code: 'MX', name: 'Mexico', flag: '🇲🇽', dialCode: '+52' },
-  { code: 'BD', name: 'Bangladesh', flag: '🇧🇩', dialCode: '+880' },
-  { code: 'PK', name: 'Pakistan', flag: '🇵🇰', dialCode: '+92' },
-  { code: 'GH', name: 'Ghana', flag: '🇬🇭', dialCode: '+233' },
-  { code: 'KE', name: 'Kenya', flag: '🇰🇪', dialCode: '+254' },
-  { code: 'BR', name: 'Brazil', flag: '🇧🇷', dialCode: '+55' },
-  { code: 'CO', name: 'Colombia', flag: '🇨🇴', dialCode: '+57' },
-  { code: 'JM', name: 'Jamaica', flag: '🇯🇲', dialCode: '+1' },
-  { code: 'HT', name: 'Haiti', flag: '🇭🇹', dialCode: '+509' },
-]
+import { useTopupStore } from '@/store/topupStore'
+
+type CatalogCountry = {
+  code: string
+  name: string
+  flag: string
+  dialCode: string
+}
 
 /** Default operator logos if CMS items are missing or have no image yet */
 const SECTION3_ICON_FALLBACKS = [
@@ -365,9 +357,10 @@ export default function HomePage() {
   const router = useRouter()
   const { user } = useAuthStore()
   const { setCountry, setPhoneNumber, resetRecharge } = useRechargeStore()
+  const setTopupPhone = useTopupStore((s) => s.setPhoneDetails)
   const { content } = useCMSStore()
-  const indiaDefault = allCountries.find((c) => c.code === 'IN') ?? allCountries[0]!
-  const [selectedCountry, setSelectedCountry] = useState<(typeof allCountries)[0] | null>(indiaDefault)
+  const [catalogCountries, setCatalogCountries] = useState<CatalogCountry[]>([])
+  const [selectedCountry, setSelectedCountry] = useState<CatalogCountry | null>(null)
   const [phoneInput, setPhoneInput] = useState('')
   const [countryOpen, setCountryOpen] = useState(false)
   const [operatorCountsByIso, setOperatorCountsByIso] = useState<Record<string, number> | null>(null)
@@ -375,6 +368,27 @@ export default function HomePage() {
   useEffect(() => {
     resetRecharge()
   }, [resetRecharge])
+
+  useEffect(() => {
+    let cancelled = false
+    void fetch('/api/countries', { credentials: 'include', cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('countries'))))
+      .then((data: { countries?: CatalogCountry[] }) => {
+        if (cancelled) return
+        const rows = Array.isArray(data.countries) ? data.countries : []
+        setCatalogCountries(rows)
+        if (!selectedCountry && rows.length) {
+          setSelectedCountry(rows.find((c) => c.code === 'IN') ?? rows[0] ?? null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogCountries([])
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const gridCountryCodesKey = useMemo(() => {
     const codes = new Set<string>()
@@ -418,6 +432,7 @@ export default function HomePage() {
         dialingInfo: [{ prefix: selectedCountry.dialCode, minLength: 10, maxLength: 15 }],
       })
       setPhoneNumber(phoneInput)
+      setTopupPhone({ countryCode: selectedCountry.code, phoneNumber: phoneInput })
     }
     router.push('/topup')
   }
@@ -461,7 +476,7 @@ export default function HomePage() {
   const heroLine2 = welcomeHero ? '' : (titleParts[1] ?? 'anytime anywhere')
 
   const goRechargeWithCountry = (code: string) => {
-    const c = allCountries.find((x) => x.code === code)
+    const c = catalogCountries.find((x) => x.code === code)
     if (!c) {
       router.push('/recharge')
       return
@@ -576,7 +591,7 @@ export default function HomePage() {
                                 key={country.code}
                                 value={country.name}
                                 onSelect={() => {
-                                  const full = allCountries.find((c) => c.code === country.code)
+                                  const full = catalogCountries.find((c) => c.code === country.code)
                                   if (full) setSelectedCountry(full)
                                   setCountryOpen(false)
                                 }}
@@ -594,7 +609,7 @@ export default function HomePage() {
                             ))}
                           </CommandGroup>
                           <CommandGroup heading="All Countries">
-                            {allCountries
+                            {catalogCountries
                               .filter((c) => !popularCountries.find((p) => p.code === c.code))
                               .map((country) => (
                                 <CommandItem

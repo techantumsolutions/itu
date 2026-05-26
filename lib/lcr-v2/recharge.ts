@@ -85,18 +85,27 @@ export async function processLcrV2Recharge(request: Request, body: LcrV2Recharge
     return { ok: false as const, status: 400, error: 'Invalid phone number' }
   }
 
+  const distributorRef = `TUG-${Date.now()}-${Math.random().toString(36).substring(2, 10).toUpperCase()}`
+
   const decision = await routeInternalPlan({
     internalPlanId,
     countryIso3: plan.country_iso3,
     operatorRef: plan.operator_ref,
     service: plan.service,
+    productType: plan.category,
+    transactionId: distributorRef,
+    transactionAmount: body.sendAmount,
   })
 
   if (!decision.selected) {
     return { ok: false as const, status: 400, error: 'No eligible provider mapping for this plan', decision }
   }
 
-  const distributorRef = `TUG-${Date.now()}-${Math.random().toString(36).substring(2, 10).toUpperCase()}`
+  const retrySettings = decision.settings
+  const maxHops =
+    retrySettings?.retryEnabled === false
+      ? 1
+      : 1 + Math.max(0, retrySettings?.retryAttempts ?? decision.fallbacks.length)
 
   const attempt = await dbInsertRechargeAttempt({
     idempotencyKey: idem,
@@ -110,15 +119,10 @@ export async function processLcrV2Recharge(request: Request, body: LcrV2Recharge
 
   const chain = [
     decision.selected,
-    ...decision.fallbacks.map((f) => ({
-      providerId: f.providerId,
-      providerPlanId: f.providerPlanId,
-      providerCode: undefined as string | undefined,
-      providerName: undefined as string | undefined,
-      price: f.price,
-      currency: f.currency,
-    })),
-  ].filter(Boolean) as Array<{
+    ...(retrySettings?.autoFailover === false ? [] : decision.fallbacks),
+  ]
+    .filter(Boolean)
+    .slice(0, maxHops) as Array<{
     providerId: string
     providerPlanId: string
     providerCode?: string
