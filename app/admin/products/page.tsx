@@ -1,22 +1,17 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Package, RefreshCcw } from 'lucide-react'
+import { Check, ChevronsUpDown, Package, RefreshCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { normalizeCountryIso3 } from '@/lib/lcr/countries'
+import { cn } from '@/lib/utils'
+import { normalizeCountryIso3, countryDisplayName } from '@/lib/lcr/countries'
 
 type ProductPlan = {
   id: string
@@ -30,6 +25,87 @@ type ProductPlan = {
 type CountryOption = { iso3: string; planCount: number }
 
 const CATEGORIES = ['topup', 'data', 'combo', 'airtime'] as const
+
+/* Searchable combo-filter: type to search + pick from dropdown */
+function ComboFilter({
+  value,
+  onValueChange,
+  options,
+  placeholder,
+  allLabel = 'All',
+}: {
+  value: string
+  onValueChange: (v: string) => void
+  options: { value: string; label: string }[]
+  placeholder: string
+  allLabel?: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return options
+    const q = search.toLowerCase()
+    return options.filter(
+      (o) => o.label.toLowerCase().includes(q) || o.value.toLowerCase().includes(q),
+    )
+  }, [options, search])
+
+  const displayLabel = value === 'all' ? allLabel : (options.find((o) => o.value === value)?.label ?? value)
+
+  return (
+    <Popover open={open} onOpenChange={(v) => { setOpen(v); if (v) setTimeout(() => inputRef.current?.focus(), 50) }}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            'flex h-8 w-full items-center justify-between rounded-md border border-input bg-background px-2 text-xs font-normal ring-offset-background hover:bg-accent hover:text-accent-foreground',
+            !value || value === 'all' ? 'text-muted-foreground' : '',
+          )}
+        >
+          <span className="truncate">{displayLabel}</span>
+          <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-[220px] p-0" align="start">
+        <div className="border-b px-2 py-1.5">
+          <Input
+            ref={inputRef}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={`Search ${placeholder.toLowerCase()}…`}
+            className="h-7 border-0 bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
+          />
+        </div>
+        <div className="max-h-[220px] overflow-y-auto p-1">
+          <button
+            type="button"
+            className={cn('flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent', value === 'all' && 'font-semibold')}
+            onClick={() => { onValueChange('all'); setOpen(false); setSearch('') }}
+          >
+            {value === 'all' ? <Check className="h-3 w-3" /> : <span className="w-3" />}
+            {allLabel}
+          </button>
+          {filtered.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              className={cn('flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs hover:bg-accent', value === opt.value && 'font-semibold')}
+              onClick={() => { onValueChange(opt.value); setOpen(false); setSearch('') }}
+            >
+              {value === opt.value ? <Check className="h-3 w-3" /> : <span className="w-3" />}
+              {opt.label}
+            </button>
+          ))}
+          {filtered.length === 0 ? (
+            <p className="px-2 py-3 text-center text-xs text-muted-foreground">No results</p>
+          ) : null}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 function buildQuery(params: Record<string, string | undefined>) {
   const q = new URLSearchParams()
@@ -218,19 +294,16 @@ export default function AdminProductsPage() {
                   />
                 </TableHead>
                 <TableHead className="py-2 font-normal normal-case">
-                  <Select value={countryFilter} onValueChange={setCountryFilter}>
-                    <SelectTrigger className="h-8 text-xs font-normal">
-                      <SelectValue placeholder="All countries" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All countries</SelectItem>
-                      {countryOptions.map((c) => (
-                        <SelectItem key={c.iso3} value={c.iso3}>
-                          {c.iso3} ({c.planCount})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <ComboFilter
+                    value={countryFilter}
+                    onValueChange={setCountryFilter}
+                    placeholder="Country"
+                    allLabel="All countries"
+                    options={countryOptions.map((c) => ({
+                      value: c.iso3,
+                      label: `${c.iso3} — ${countryDisplayName(c.iso3, c.iso3)} (${c.planCount})`,
+                    }))}
+                  />
                 </TableHead>
                 <TableHead className="py-2 font-normal normal-case">
                   <Input
@@ -241,31 +314,25 @@ export default function AdminProductsPage() {
                   />
                 </TableHead>
                 <TableHead className="py-2 font-normal normal-case">
-                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                    <SelectTrigger className="h-8 text-xs font-normal">
-                      <SelectValue placeholder="All categories" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All categories</SelectItem>
-                      {CATEGORIES.map((cat) => (
-                        <SelectItem key={cat} value={cat}>
-                          {cat}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <ComboFilter
+                    value={categoryFilter}
+                    onValueChange={setCategoryFilter}
+                    placeholder="Category"
+                    allLabel="All categories"
+                    options={CATEGORIES.map((cat) => ({ value: cat, label: cat }))}
+                  />
                 </TableHead>
                 <TableHead className="py-2 font-normal normal-case">
-                  <Select value={statusFilter} onValueChange={setStatusFilter}>
-                    <SelectTrigger className="h-8 text-xs font-normal">
-                      <SelectValue placeholder="All statuses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All statuses</SelectItem>
-                      <SelectItem value="active">Active</SelectItem>
-                      <SelectItem value="inactive">Inactive</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <ComboFilter
+                    value={statusFilter}
+                    onValueChange={setStatusFilter}
+                    placeholder="Status"
+                    allLabel="All statuses"
+                    options={[
+                      { value: 'active', label: 'Active' },
+                      { value: 'inactive', label: 'Inactive' },
+                    ]}
+                  />
                 </TableHead>
               </TableRow>
             </TableHeader>

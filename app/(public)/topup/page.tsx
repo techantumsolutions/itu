@@ -143,14 +143,20 @@ export default function TopupPlanSelectionPage() {
         const res = await fetch(`/api/plans?${params}`, { credentials: 'include', cache: 'no-store' })
         const json = (await res.json().catch(() => ({}))) as { plans?: DbPlan[]; error?: string }
         const raw = Array.isArray(json.plans) ? json.plans : []
-        // Filter out plans with invalid data (negative validity, zero price, etc.)
+        // Filter out plans with zero/negative prices only; keep -1 validity (DT One uses it for 'no expiry')
         const valid = raw.filter((p) => {
-          const vNum = parseInt(p.validity, 10)
-          if (Number.isFinite(vNum) && vNum <= 0) return false
           if (p.price_inr <= 0 && p.price_eur <= 0) return false
           return true
         })
-        setPlans(valid)
+        // Normalize -1 validity to a human-readable label
+        const normalized = valid.map((p) => {
+          const vNum = parseInt(p.validity, 10)
+          if (Number.isFinite(vNum) && vNum <= 0) {
+            return { ...p, validity: 'No Expiry' }
+          }
+          return p
+        })
+        setPlans(normalized)
       } finally {
         setLoadingPlans(false)
       }

@@ -11,10 +11,7 @@ import { useTopupStore } from '@/store/topupStore'
 import { useAuthStore } from '@/lib/stores'
 import { Check, ChevronRight, Eye, EyeOff, Loader2, LogIn, Shield, Smartphone } from 'lucide-react'
 
-const DIAL_CODES: Record<string, string> = { IN: '91', US: '1', GB: '44', AE: '971', SA: '966', BD: '880', PK: '92', NP: '977', LK: '94', NG: '234', KE: '254', GH: '233', ZA: '27', PH: '63', MY: '60', SG: '65' }
-function dialCode(countryIso: string): string {
-  return DIAL_CODES[countryIso.toUpperCase()] ?? countryIso
-}
+import { getDialCode } from '@/lib/lcr/countries'
 
 declare global {
   interface Window {
@@ -42,12 +39,15 @@ function InlineLoginDialog({
   onOpenChange,
   onSuccess,
   defaultPhone,
+  countryIso,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   onSuccess: () => void
   defaultPhone: string
+  countryIso: string
 }) {
+  const dialPrefix = getDialCode(countryIso)
   const { login, setSession } = useAuthStore()
   const [tab, setTab] = useState<'mobile' | 'email'>('mobile')
 
@@ -94,7 +94,7 @@ function InlineLoginDialog({
       const res = await fetch('/api/auth/otp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: `+91${normalizedPhone}` }),
+        body: JSON.stringify({ phone: `+${dialPrefix}${normalizedPhone}` }),
       })
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
       if (!res.ok || !data.ok) throw new Error(data.error || 'Failed to send OTP')
@@ -116,7 +116,7 @@ function InlineLoginDialog({
       const res = await fetch('/api/auth/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: `+91${normalizedPhone}`, otp: otpValue }),
+        body: JSON.stringify({ phone: `+${dialPrefix}${normalizedPhone}`, otp: otpValue }),
       })
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
       if (!res.ok || !data.ok) throw new Error(data.error || 'OTP verification failed')
@@ -178,7 +178,7 @@ function InlineLoginDialog({
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-neutral-700">Mobile Number</p>
                   <div className="flex items-center gap-2">
-                    <span className="flex h-11 items-center rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm font-semibold text-neutral-700">+91</span>
+                    <span className="flex h-11 items-center rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm font-semibold text-neutral-700">+{dialPrefix}</span>
                     <Input
                       value={phone}
                       onChange={(e) => setPhone(e.target.value.replace(/[^\d]/g, ''))}
@@ -200,7 +200,7 @@ function InlineLoginDialog({
             ) : (
               <>
                 <p className="text-center text-sm text-neutral-600">
-                  Enter the 6-digit code sent to <span className="font-semibold">+91 {normalizedPhone}</span>
+                  Enter the 6-digit code sent to <span className="font-semibold">+{dialPrefix} {normalizedPhone}</span>
                 </p>
                 <Input
                   value={otpValue}
@@ -330,7 +330,7 @@ export default function TopupSummaryPage() {
           planId: selectedPlan.internalPlanId || selectedPlan.id,
           amount: razorpayAmount,
           currency: 'INR',
-          mobileNumber: `+${dialCode(countryCode)}${phoneNumber}`,
+          mobileNumber: `+${getDialCode(countryCode)}${phoneNumber}`,
           operatorId: operator,
           countryId: countryCode,
         }),
@@ -352,7 +352,7 @@ export default function TopupSummaryPage() {
         description: `Recharge ${selectedPlan.planName || selectedPlan.id}`,
         order_id: razorpay_order_id,
         prefill: {
-          contact: `+${dialCode(countryCode)}${phoneNumber}`,
+          contact: `+${getDialCode(countryCode)}${phoneNumber}`,
         },
         handler: async (response: any) => {
           try {
@@ -439,6 +439,7 @@ export default function TopupSummaryPage() {
         onOpenChange={setLoginOpen}
         onSuccess={() => setPayAfterLogin(true)}
         defaultPhone={phoneNumber}
+        countryIso={countryCode}
       />
 
       <div className="mx-auto w-full max-w-6xl px-4 py-10">
@@ -458,7 +459,7 @@ export default function TopupSummaryPage() {
               <div className="rounded-xl border border-neutral-200/80 bg-white p-5">
                 <p className="text-sm font-semibold text-neutral-900">Recharge Details</p>
                 <div className="mt-3 space-y-2 text-sm">
-                  <DetailRow label="Mobile Number" value={`+${dialCode(countryCode)} ${phoneNumber}`} />
+                  <DetailRow label="Mobile Number" value={`+${getDialCode(countryCode)} ${phoneNumber}`} />
                   <DetailRow label="Country" value={countryCode} />
                   <DetailRow label="Operator" value={operator} />
                   <DetailRow label="Plan Name" value={selectedPlan.planName || `₹${selectedPlan.price_inr} • ${selectedPlan.validity}`} />
@@ -495,7 +496,7 @@ export default function TopupSummaryPage() {
               <div className="rounded-xl border border-neutral-200/80 bg-white p-5">
                 <p className="text-sm font-semibold text-neutral-900">Customer Information</p>
                 <div className="mt-3 space-y-2 text-sm">
-                  <DetailRow label="Phone" value={`+${dialCode(countryCode)} ${phoneNumber}`} />
+                  <DetailRow label="Phone" value={`+${getDialCode(countryCode)} ${phoneNumber}`} />
                 </div>
               </div>
             </div>

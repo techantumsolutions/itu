@@ -6,10 +6,7 @@ import { cn } from '@/lib/utils'
 import { useTopupStore } from '@/store/topupStore'
 import { AlertTriangle, HeadphonesIcon, RotateCcw } from 'lucide-react'
 
-const DIAL_CODES: Record<string, string> = { IN: '91', US: '1', GB: '44', AE: '971', SA: '966', BD: '880', PK: '92', NP: '977', LK: '94', NG: '234', KE: '254', GH: '233', ZA: '27', PH: '63', MY: '60', SG: '65' }
-function dialCode(countryIso: string): string {
-  return DIAL_CODES[countryIso.toUpperCase()] ?? countryIso
-}
+import { getDialCode } from '@/lib/lcr/countries'
 
 export default function TopupFailedPage() {
   const { transactionId, errorMessage, phoneNumber, countryCode, operator, selectedPlan, resetSession } =
@@ -39,7 +36,7 @@ export default function TopupFailedPage() {
                 <Row label="Reason" value="An unexpected error occurred during recharge processing" />
               )}
               {transactionId ? <Row label="Transaction ID" value={transactionId.slice(0, 12).toUpperCase()} mono /> : null}
-              {phoneNumber ? <Row label="Mobile Number" value={`+${dialCode(countryCode)} ${phoneNumber}`} /> : null}
+              {phoneNumber ? <Row label="Mobile Number" value={`+${getDialCode(countryCode)} ${phoneNumber}`} /> : null}
               {operator ? <Row label="Operator" value={operator} /> : null}
               {selectedPlan ? (
                 <Row label="Plan" value={selectedPlan.planName || `₹${selectedPlan.price_inr} • ${selectedPlan.validity}`} />

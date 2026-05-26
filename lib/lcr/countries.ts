@@ -88,6 +88,39 @@ export const DIAL_CODES: Record<string, string> = {
   BGD: '+880',
   BRA: '+55',
   COL: '+57',
+  LKA: '+94',
+  NPL: '+977',
+  ARE: '+971',
+  SAU: '+966',
+  CAN: '+1',
+  AUS: '+61',
+  DEU: '+49',
+  FRA: '+33',
+  ITA: '+39',
+  ESP: '+34',
+  ZAF: '+27',
+  EGY: '+20',
+  TUR: '+90',
+  IDN: '+62',
+  MYS: '+60',
+  SGP: '+65',
+  THA: '+66',
+  VNM: '+84',
+}
+
+/** Resolve dial code from ISO2 (IN) or ISO3 (IND). Returns e.g. '91' (without +). */
+export function getDialCode(countryIso: string): string {
+  const u = countryIso.trim().toUpperCase()
+  // Try ISO3 first
+  const fromIso3 = DIAL_CODES[u]
+  if (fromIso3) return fromIso3.replace('+', '')
+  // Try ISO2 → ISO3
+  const iso3 = ISO2_TO_ISO3[u]
+  if (iso3) {
+    const code = DIAL_CODES[iso3]
+    if (code) return code.replace('+', '')
+  }
+  return u // fallback to the input itself
 }
 
 /** Normalize user input to ISO 3166-1 alpha-3 (uppercase). Accepts alpha-2 or alpha-3. */

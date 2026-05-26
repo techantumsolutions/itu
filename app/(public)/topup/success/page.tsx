@@ -7,10 +7,7 @@ import { cn } from '@/lib/utils'
 import { useTopupStore } from '@/store/topupStore'
 import { Download, RotateCcw } from 'lucide-react'
 
-const DIAL_CODES: Record<string, string> = { IN: '91', US: '1', GB: '44', AE: '971', SA: '966', BD: '880', PK: '92', NP: '977', LK: '94', NG: '234', KE: '254', GH: '233', ZA: '27', PH: '63', MY: '60', SG: '65' }
-function dialCode(countryIso: string): string {
-  return DIAL_CODES[countryIso.toUpperCase()] ?? countryIso
-}
+import { getDialCode } from '@/lib/lcr/countries'
 
 export default function TopupSuccessPage() {
   const { orderId, phoneNumber, countryCode, operator, selectedPlan, pricing, totalAmount, resetSession, transactionId, providerRef, providerName } =
@@ -51,7 +48,7 @@ export default function TopupSuccessPage() {
           <div className="px-6 py-6">
             <div className="space-y-3 text-xs text-neutral-700">
               <Row label="Transaction ID" value={refId} mono />
-              <Row label="Mobile Number" value={`+${dialCode(countryCode)} ${phoneNumber}`} />
+              <Row label="Mobile Number" value={`+${getDialCode(countryCode)} ${phoneNumber}`} />
               <Row label="Operator" value={operator} />
               <Row label="Plan Name" value={selectedPlan.planName || `₹${selectedPlan.price_inr} • ${selectedPlan.validity}`} />
               <Row
