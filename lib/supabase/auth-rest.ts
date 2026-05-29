@@ -32,6 +32,7 @@ export async function supabaseSignUpEmail(payload: {
   password: string
   data?: Record<string, unknown>
 }): Promise<{ user: SupabaseUser | null; session: SupabaseSession | null }> {
+  console.log("Registering with the email:::")
   const res = await fetch(`${supabaseAuthBaseUrl()}/auth/v1/signup`, {
     method: 'POST',
     headers: {
@@ -42,6 +43,7 @@ export async function supabaseSignUpEmail(payload: {
     body: JSON.stringify(payload),
     cache: 'no-store',
   })
+  console.log("response register with email is:::", res);
   const json = (await res.json().catch(() => ({}))) as any
   if (!res.ok) throw new Error(json?.msg || json?.error_description || json?.message || 'signup_failed')
   return { user: json?.user ?? null, session: json?.session ?? null }
