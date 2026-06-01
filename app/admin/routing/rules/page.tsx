@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
@@ -25,6 +26,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { ROUTING_CATEGORY_LABELS } from '@/lib/routing/cascade-options'
+import {
+  ROUTING_ANY,
+  ROUTING_RULE_NAME_OPTIONS,
+  fromNullableRuleField,
+  toNullableRuleField,
+} from '@/lib/routing/rule-form-options'
 import { ROUTING_CATEGORY_LABELS } from '@/lib/routing/cascade-options'
 import {
   ROUTING_ANY,
@@ -68,12 +76,32 @@ const emptyForm: RuleForm = {
   countryId: ROUTING_ANY,
   operatorId: ROUTING_ANY,
   productType: ROUTING_ANY,
-  providerId: '',
-  priority: 100,
-}
+  type CountryOption = { iso3: string; label: string }
+type OperatorOption = { id: string; label: string; countryId: string }
+type ProductTypeOption = { value: string; label: string }
+type CascadeProvider = { id: string; code: string; name: string; label: string }
+type SelectOption = { value: string; label: string }
+
+type RuleForm = {
+    ruleName: string
+  countryId: string
+  operatorId: string
+  productType: string
+  providerId: string
+  priority: number
+  }
+
+const emptyForm: RuleForm = {
+    ruleName: ROUTING_RULE_NAME_OPTIONS[0].value,
+    countryId: ROUTING_ANY,
+    operatorId: ROUTING_ANY,
+    productType: ROUTING_ANY,
+    providerId: '',
+    priority: 100,
+  }
 
 function displayWildcard(value: string | null, label = 'Any') {
-  return value?.trim() ? value : label
+    return value?.trim() ? value : label
 }
 
 function isConcrete(value: string) {
@@ -99,7 +127,13 @@ export default function RoutingRulesPage() {
   const [cascadeProductTypes, setCascadeProductTypes] = useState<ProductTypeOption[]>([])
   const [cascadeProviders, setCascadeProviders] = useState<CascadeProvider[]>([])
   const [operatorLabelCache, setOperatorLabelCache] = useState<Record<string, string>>({})
+  const [countries, setCountries] = useState<CountryOption[]>([])
+  const [cascadeOperators, setCascadeOperators] = useState<OperatorOption[]>([])
+  const [cascadeProductTypes, setCascadeProductTypes] = useState<ProductTypeOption[]>([])
+  const [cascadeProviders, setCascadeProviders] = useState<CascadeProvider[]>([])
+  const [operatorLabelCache, setOperatorLabelCache] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
+  const [cascadeLoading, setCascadeLoading] = useState(false)
   const [cascadeLoading, setCascadeLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL')
@@ -111,20 +145,26 @@ export default function RoutingRulesPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Rule | null>(null)
   const [form, setForm] = useState<RuleForm>(emptyForm)
+  const [form, setForm] = useState<RuleForm>(emptyForm)
   const [saving, setSaving] = useState(false)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
       const [rulesRes, optionsRes] = await Promise.all([
+      const [rulesRes, optionsRes] = await Promise.all([
         fetch('/api/admin/routing-rules', { credentials: 'include', cache: 'no-store' }),
+        fetch('/api/admin/routing-rules/options', { credentials: 'include', cache: 'no-store' }),
         fetch('/api/admin/routing-rules/options', { credentials: 'include', cache: 'no-store' }),
       ])
       const rulesData = await rulesRes.json().catch(() => ({}))
       const optionsData = await optionsRes.json().catch(() => ({}))
+      const optionsData = await optionsRes.json().catch(() => ({}))
       if (!rulesRes.ok) throw new Error(rulesData.error ?? 'Failed to load rules')
       setRules(Array.isArray(rulesData.rules) ? rulesData.rules : [])
+      setCountries(Array.isArray(optionsData.countries) ? optionsData.countries : [])
       setCountries(Array.isArray(optionsData.countries) ? optionsData.countries : [])
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Load failed')
@@ -137,6 +177,104 @@ export default function RoutingRulesPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  const cacheOperatorLabels = useCallback((operators: OperatorOption[]) => {
+    if (!operators.length) return
+    setOperatorLabelCache((prev) => {
+      const next = { ...prev }
+      for (const o of operators) next[o.id] = o.label
+      return next
+    })
+  }, [])
+
+  const loadOperatorsForCountry = useCallback(
+    async (countryIso3: string) => {
+      setCascadeLoading(true)
+      try {
+        const data = await fetchCascade(`?country=${encodeURIComponent(countryIso3)}`)
+        const operators = Array.isArray(data.operators) ? (data.operators as OperatorOption[]) : []
+        setCascadeOperators(operators)
+        cacheOperatorLabels(operators)
+        return operators
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to load operators')
+        setCascadeOperators([])
+        return []
+      } finally {
+        setCascadeLoading(false)
+      }
+    },
+    [cacheOperatorLabels],
+  )
+
+  const loadProductTypesAndProviders = useCallback(
+    async (countryIso3: string, operatorId: string, productType?: string) => {
+      setCascadeLoading(true)
+      try {
+        const base = `?country=${encodeURIComponent(countryIso3)}&operatorId=${encodeURIComponent(operatorId)}`
+        const path = productType && isConcrete(productType) ? `${base}&productType=${encodeURIComponent(productType)}` : base
+        const data = await fetchCascade(path)
+        if (!productType || !isConcrete(productType)) {
+          setCascadeProductTypes(
+            Array.isArray(data.productTypes) ? (data.productTypes as ProductTypeOption[]) : [],
+          )
+        }
+        setCascadeProviders(Array.isArray(data.providers) ? (data.providers as CascadeProvider[]) : [])
+        return data
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Failed to load catalog options')
+        setCascadeProductTypes([])
+        setCascadeProviders([])
+        return null
+      } finally {
+        setCascadeLoading(false)
+      }
+    },
+    [],
+  )
+
+  const hydrateCascade = useCallback(
+    async (countryId: string, operatorId: string, productType: string) => {
+      setCascadeOperators([])
+      setCascadeProductTypes([])
+      setCascadeProviders([])
+      if (!isConcrete(countryId)) return
+
+      const operators = await loadOperatorsForCountry(countryId)
+      if (!isConcrete(operatorId)) return
+
+      if (!operators.some((o) => o.id === operatorId)) return
+
+      await loadProductTypesAndProviders(countryId, operatorId)
+      if (isConcrete(productType)) {
+        await loadProductTypesAndProviders(countryId, operatorId, productType)
+      }
+    },
+    [loadOperatorsForCountry, loadProductTypesAndProviders],
+  )
+
+  const ruleNameOptions = useMemo((): SelectOption[] => {
+    const base: SelectOption[] = ROUTING_RULE_NAME_OPTIONS.map((o) => ({ value: o.value, label: o.label }))
+    if (form.ruleName && !base.some((o) => o.value === form.ruleName)) {
+      base.unshift({ value: form.ruleName, label: form.ruleName })
+    }
+    return base
+  }, [form.ruleName])
+
+  const productTypeOptions = useMemo(() => {
+    const items: SelectOption[] = [{ value: ROUTING_ANY, label: 'Any product type' }]
+    for (const p of cascadeProductTypes) {
+      if (!items.some((i) => i.value === p.value)) items.push(p)
+    }
+    if (isConcrete(form.productType) && !items.some((i) => i.value === form.productType)) {
+      items.push({ value: form.productType, label: form.productType })
+    }
+    return items
+  }, [cascadeProductTypes, form.productType])
+
+  const countrySelected = isConcrete(form.countryId)
+  const operatorSelected = isConcrete(form.operatorId)
+  const productTypeSelected = isConcrete(form.productType)
 
   const cacheOperatorLabels = useCallback((operators: OperatorOption[]) => {
     if (!operators.length) return
@@ -266,6 +404,7 @@ export default function RoutingRulesPage() {
     setEditing(null)
     setForm(emptyForm)
     resetCascade()
+    resetCascade()
     setDialogOpen(true)
   }
 
@@ -274,8 +413,14 @@ export default function RoutingRulesPage() {
     const countryId = fromNullableRuleField(rule.countryId)
     const operatorId = fromNullableRuleField(rule.operatorId)
     const productType = fromNullableRuleField(rule.productType)
+    const countryId = fromNullableRuleField(rule.countryId)
+    const operatorId = fromNullableRuleField(rule.operatorId)
+    const productType = fromNullableRuleField(rule.productType)
     setForm({
       ruleName: rule.ruleName,
+      countryId,
+      operatorId,
+      productType,
       countryId,
       operatorId,
       productType,
@@ -283,7 +428,50 @@ export default function RoutingRulesPage() {
       priority: rule.priority,
     })
     resetCascade()
+    resetCascade()
     setDialogOpen(true)
+    void hydrateCascade(countryId, operatorId, productType)
+  }
+
+  async function onCountryChange(countryId: string) {
+    setForm((f) => ({
+      ...f,
+      countryId,
+      operatorId: ROUTING_ANY,
+      productType: ROUTING_ANY,
+      providerId: '',
+    }))
+    resetCascade()
+    if (!isConcrete(countryId)) return
+    await loadOperatorsForCountry(countryId)
+  }
+
+  async function onOperatorChange(operatorId: string) {
+    setForm((f) => ({
+      ...f,
+      operatorId,
+      productType: ROUTING_ANY,
+      providerId: '',
+    }))
+    setCascadeProductTypes([])
+    setCascadeProviders([])
+    if (!isConcrete(form.countryId) || !isConcrete(operatorId)) return
+    await loadProductTypesAndProviders(form.countryId, operatorId)
+  }
+
+  async function onProductTypeChange(productType: string) {
+    setForm((f) => ({
+      ...f,
+      productType,
+      providerId: '',
+    }))
+    setCascadeProviders([])
+    if (!isConcrete(form.countryId) || !isConcrete(form.operatorId)) return
+    if (!isConcrete(productType)) {
+      await loadProductTypesAndProviders(form.countryId, form.operatorId)
+      return
+    }
+    await loadProductTypesAndProviders(form.countryId, form.operatorId, productType)
     void hydrateCascade(countryId, operatorId, productType)
   }
 
@@ -337,6 +525,10 @@ export default function RoutingRulesPage() {
       toast.error('Select country, operator, and product type to choose a provider')
       return
     }
+    if (!isConcrete(form.countryId) || !isConcrete(form.operatorId) || !isConcrete(form.productType)) {
+      toast.error('Select country, operator, and product type to choose a provider')
+      return
+    }
     setSaving(true)
     try {
       const payload = {
@@ -346,6 +538,7 @@ export default function RoutingRulesPage() {
         productType: toNullableRuleField(form.productType)?.toLowerCase() ?? null,
         providerId: form.providerId,
         priority: form.priority,
+        status: editing?.status ?? 'ACTIVE',
         status: editing?.status ?? 'ACTIVE',
       }
       const res = editing
@@ -370,6 +563,27 @@ export default function RoutingRulesPage() {
       toast.error(error instanceof Error ? error.message : 'Save failed')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function toggleRuleStatus(rule: Rule, active: boolean) {
+    setTogglingId(rule.id)
+    try {
+      const res = await fetch(`/api/admin/routing-rules/${encodeURIComponent(rule.id)}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: active ? 'ACTIVE' : 'INACTIVE' }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? 'Update failed')
+      setRules((prev) =>
+        prev.map((r) => (r.id === rule.id ? { ...r, status: active ? 'ACTIVE' : 'INACTIVE' } : r)),
+      )
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Update failed')
+    } finally {
+      setTogglingId(null)
     }
   }
 
@@ -421,6 +635,17 @@ export default function RoutingRulesPage() {
     return ROUTING_CATEGORY_LABELS[key] ?? key
   }
 
+  function operatorLabel(operatorId: string | null) {
+    if (!operatorId) return 'Any'
+    return operatorLabelCache[operatorId] ?? operatorId.slice(0, 12)
+  }
+
+  function productTypeLabel(value: string | null) {
+    if (!value) return 'Any'
+    const key = value.toLowerCase()
+    return ROUTING_CATEGORY_LABELS[key] ?? key
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -434,6 +659,7 @@ export default function RoutingRulesPage() {
             Refresh
           </Button>
           <Button onClick={openCreate} disabled={!countries.length}>
+          <Button onClick={openCreate} disabled={!countries.length}>
             <Plus className="mr-2 size-4" />
             Add rule
           </Button>
@@ -445,6 +671,9 @@ export default function RoutingRulesPage() {
       <Card>
         <CardHeader>
           <CardTitle>Active rules</CardTitle>
+          <CardDescription>
+            Select country → operator → product type → provider. Lower priority number wins first.
+          </CardDescription>
           <CardDescription>
             Select country → operator → product type → provider. Lower priority number wins first.
           </CardDescription>
@@ -518,6 +747,17 @@ export default function RoutingRulesPage() {
                           {rule.status === 'ACTIVE' ? 'On' : 'Off'}
                         </span>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={rule.status === 'ACTIVE'}
+                          disabled={togglingId === rule.id}
+                          onCheckedChange={(v) => void toggleRuleStatus(rule, v)}
+                          className="scale-90"
+                        />
+                        <span className="text-[11px] text-muted-foreground">
+                          {rule.status === 'ACTIVE' ? 'On' : 'Off'}
+                        </span>
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex justify-end gap-1 sm:gap-2">
@@ -556,10 +796,26 @@ export default function RoutingRulesPage() {
               Pick country, then operator, then product type. Providers listed have catalog coverage for that
               combination.
             </DialogDescription>
+            <DialogDescription>
+              Pick country, then operator, then product type. Providers listed have catalog coverage for that
+              combination.
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="space-y-2">
               <Label>Rule name</Label>
+              <Select value={form.ruleName} onValueChange={(v) => setForm((f) => ({ ...f, ruleName: v }))}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select rule type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ruleNameOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Select value={form.ruleName} onValueChange={(v) => setForm((f) => ({ ...f, ruleName: v }))}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select rule type" />
@@ -588,11 +844,40 @@ export default function RoutingRulesPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                <Label>Country</Label>
+                <Select value={form.countryId} onValueChange={(v) => void onCountryChange(v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select country" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {countries.map((c) => (
+                      <SelectItem key={c.iso3} value={c.iso3}>
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-2">
                 <Label>Operator</Label>
                 <Select
+                <Label>Operator</Label>
+                <Select
                   value={form.operatorId}
+                  disabled={!countrySelected || cascadeLoading}
+                  onValueChange={(v) => void onOperatorChange(v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={countrySelected ? 'Select operator' : 'Select country first'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cascadeOperators.map((o) => (
+                      <SelectItem key={o.id} value={o.id}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                   disabled={!countrySelected || cascadeLoading}
                   onValueChange={(v) => void onOperatorChange(v)}
                 >
@@ -613,7 +898,24 @@ export default function RoutingRulesPage() {
               <div className="space-y-2">
                 <Label>Product type</Label>
                 <Select
+                <Select
                   value={form.productType}
+                  disabled={!operatorSelected || cascadeLoading}
+                  onValueChange={(v) => void onProductTypeChange(v)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={operatorSelected ? 'Select product type' : 'Select operator first'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {productTypeOptions
+                      .filter((opt) => opt.value !== ROUTING_ANY)
+                      .map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
                   disabled={!operatorSelected || cascadeLoading}
                   onValueChange={(v) => void onProductTypeChange(v)}
                 >
@@ -647,7 +949,21 @@ export default function RoutingRulesPage() {
                 disabled={!productTypeSelected || cascadeLoading || cascadeProviders.length === 0}
                 onValueChange={(v) => setForm((f) => ({ ...f, providerId: v }))}
               >
+              <Select
+                value={form.providerId}
+                disabled={!productTypeSelected || cascadeLoading || cascadeProviders.length === 0}
+                onValueChange={(v) => setForm((f) => ({ ...f, providerId: v }))}
+              >
                 <SelectTrigger>
+                  <SelectValue
+                    placeholder={
+                      !productTypeSelected
+                        ? 'Select product type first'
+                        : cascadeProviders.length === 0
+                          ? 'No providers for this combination'
+                          : 'Select provider'
+                    }
+                  />
                   <SelectValue
                     placeholder={
                       !productTypeSelected
@@ -660,7 +976,9 @@ export default function RoutingRulesPage() {
                 </SelectTrigger>
                 <SelectContent>
                   {cascadeProviders.map((p) => (
+                  {cascadeProviders.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
+                      {p.label}
                       {p.label}
                     </SelectItem>
                   ))}
@@ -668,20 +986,25 @@ export default function RoutingRulesPage() {
                     !cascadeProviders.some((p) => p.id === form.providerId) && (
                       <SelectItem value={form.providerId}>Current selection</SelectItem>
                     )}
+                  {form.providerId &&
+                    !cascadeProviders.some((p) => p.id === form.providerId) && (
+                      <SelectItem value={form.providerId}>Current selection</SelectItem>
+                    )}
                 </SelectContent>
               </Select>
             </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={() => void saveRule()} disabled={saving || cascadeLoading}>
-              {saving ? 'Saving…' : 'Save'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
+          </div >
+    <DialogFooter>
+      <Button variant="outline" onClick={() => setDialogOpen(false)}>
+        Cancel
+      </Button>
+      <Button onClick={() => void saveRule()} disabled={saving || cascadeLoading}>
+        <Button onClick={() => void saveRule()} disabled={saving || cascadeLoading}>
+          {saving ? 'Saving…' : 'Save'}
+        </Button>
+    </DialogFooter>
+        </DialogContent >
+      </Dialog >
+    </div >
   )
 }
