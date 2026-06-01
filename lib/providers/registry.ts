@@ -1,8 +1,10 @@
 import type { ProviderAdapterKey, ProviderConnector } from '@/lib/providers/types'
 import { dtoneConnector } from '@/lib/providers/dtone-connector'
+import { valuetopupConnector } from '@/lib/providers/valuetopup-connector'
 
 const connectors: Record<ProviderAdapterKey, ProviderConnector> = {
   dtone: dtoneConnector,
+  valuetopup: valuetopupConnector,
   ding: {
     adapterKey: 'ding',
     async fetchRawPlans(_config, _options) {

@@ -10,6 +10,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 
   const patch: Record<string, unknown> = {}
   if (typeof body.name === 'string') patch.name = body.name.trim()
+  if (typeof body.adapterKey === 'string') patch.adapter_key = body.adapterKey.trim().toLowerCase()
   if (typeof body.baseUrl === 'string') patch.base_url = body.baseUrl.trim()
   if (typeof body.isActive === 'boolean') patch.is_active = body.isActive
   if (typeof body.priority === 'number') patch.priority = body.priority

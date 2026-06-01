@@ -1,4 +1,11 @@
-import type { ProviderAuth, ProviderConfig } from '@/lib/providers/types'
+import type { ProviderAdapterKey, ProviderAuth, ProviderConfig } from '@/lib/providers/types'
+
+/** Map legacy/misconfigured registry rows to the implemented connector. */
+export function resolveAdapterKey(code: string, adapterKey: string): ProviderAdapterKey {
+  const key = adapterKey.trim().toLowerCase()
+  if (key === 'custom' && code.trim().toUpperCase() === 'VALUETOPUP') return 'valuetopup'
+  return key as ProviderAdapterKey
+}
 import { decryptProviderCredentials } from '@/lib/aggregator/credentials'
 
 /** Parse JSON stored in `lcr_providers.credentials_encrypted` (plain JSON for now). */
@@ -28,7 +35,7 @@ export function rowToProviderConfig(p: Record<string, unknown>): ProviderConfig 
     id: String(p.id),
     code: String(p.code),
     name: String(p.name),
-    adapterKey: p.adapter_key as ProviderConfig['adapterKey'],
+    adapterKey: resolveAdapterKey(String(p.code), String(p.adapter_key ?? '')),
     isActive: Boolean(p.is_active),
     priority: Number(p.priority ?? 100),
     refreshIntervalMinutes: Number(p.refresh_interval_minutes ?? 60),

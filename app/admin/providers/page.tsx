@@ -289,6 +289,7 @@ export default function AdminProvidersPage() {
         headers: h,
         body: JSON.stringify({
           name: editingProvider.name,
+          adapterKey: editingProvider.adapter_key,
           baseUrl: editingProvider.base_url || undefined,
           priority: editingProvider.priority,
           refreshIntervalMinutes: editingProvider.refresh_interval_minutes,
@@ -554,6 +555,14 @@ export default function AdminProvidersPage() {
                   <Label>Name</Label>
                   <Input value={editingProvider.name} onChange={(e) => setEditingProvider({ ...editingProvider, name: e.target.value })} />
                 </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Adapter</Label>
+                <Input
+                  value={editingProvider.adapter_key}
+                  onChange={(e) => setEditingProvider({ ...editingProvider, adapter_key: e.target.value.trim().toLowerCase() })}
+                  placeholder="dtone, valuetopup, ding, reloadly"
+                />
               </div>
               <div className="grid gap-2">
                 <Label>API base URL</Label>

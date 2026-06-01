@@ -19,9 +19,13 @@ export async function POST(request: Request) {
     body.countries ?? body.countryIso3 ?? body.country ?? body.countryCode ?? '',
   )
 
-  const result = await syncProviderCatalog(providerId, countries.length ? { countries } : undefined)
-
-  await invalidatePublicCatalogCache().catch(() => {})
-
-  return NextResponse.json({ success: true, result })
+  try {
+    const result = await syncProviderCatalog(providerId, countries.length ? { countries } : undefined)
+    await invalidatePublicCatalogCache().catch(() => {})
+    return NextResponse.json({ success: true, result })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'sync_failed'
+    console.error('[lcr/sync]', message)
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
 }

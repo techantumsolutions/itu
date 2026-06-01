@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { isAdminRequest, getRequestUser } from '@/lib/tickets/auth-headers'
 import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-rest'
 import { getDtoneCredentialsFromEnv } from '@/lib/dtone'
+import { getValuetopupCredentialsFromEnv } from '@/lib/valuetopup'
 import { adminCanManageProviders } from '@/lib/auth/require-admin-feature'
 
 function readEnv(name: string): string | undefined {
@@ -55,6 +56,31 @@ export async function POST(request: Request) {
     }
   }
 
+  const valuetopup = getValuetopupCredentialsFromEnv()
+  if (valuetopup && !existing.has('VALUETOPUP')) {
+    const res = await supabaseRest('lcr_providers', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        code: 'VALUETOPUP',
+        name: 'Value Topup',
+        adapter_key: 'valuetopup',
+        is_active: true,
+        priority: 30,
+        base_url: valuetopup.baseUrl,
+        refresh_interval_minutes: 60,
+        supported_countries: ['MYS'],
+        credentials_encrypted: JSON.stringify({ source: 'env' }),
+      }),
+    })
+    if (res.ok) {
+      created.push('VALUETOPUP')
+      existing.add('VALUETOPUP')
+    } else {
+      errors.push({ code: 'VALUETOPUP', detail: (await res.text()).slice(0, 500) })
+    }
+  }
+
   if (dingEnvConfigured() && !existing.has('DING')) {
     const baseUrl = readEnv('DING_API_BASE_URL') || 'https://api.dingconnect.com'
     const res = await supabaseRest('lcr_providers', {
@@ -94,6 +120,7 @@ export async function POST(request: Request) {
     created,
     errors,
     dtoneEnvDetected: !!dtone,
+    valuetopupEnvDetected: !!valuetopup,
     dingEnvDetected: dingEnvConfigured(),
   })
 }
