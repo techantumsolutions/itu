@@ -1,4 +1,4 @@
-export type ProviderAdapterKey = 'dtone' | 'ding' | 'reloadly' | 'custom'
+export type ProviderAdapterKey = 'dtone' | 'ding' | 'reloadly' | 'valuetopup' | 'custom'
 
 export type ProviderAuth = {
   kind: 'basic' | 'bearer' | 'apiKey' | 'custom'

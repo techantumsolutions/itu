@@ -35,7 +35,7 @@ Create provider.
 Body:
 - `code` (string, required): e.g. `DTONE`
 - `name` (string, required)
-- `adapterKey` (string, required): `dtone|ding|reloadly|custom`
+- `adapterKey` (string, required): `dtone|ding|reloadly|valuetopup|custom`
 - `priority` (number, optional)
 - `isActive` (boolean, optional)
 - `baseUrl` (string, optional)

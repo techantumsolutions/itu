@@ -46,3 +46,9 @@ coverage/
 
 # Local support ticket store (JSON)
 /data/
+# Supabase local setup
+supabase-local/
+
+# Docker
+docker-data/
+volumes/

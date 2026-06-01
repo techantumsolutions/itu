@@ -170,6 +170,7 @@ export default function AdminAddProviderPage() {
                   <SelectItem value="dtone">DT One (dtone)</SelectItem>
                   <SelectItem value="ding">Ding (ding)</SelectItem>
                   <SelectItem value="reloadly">Reloadly (reloadly)</SelectItem>
+                  <SelectItem value="valuetopup">Value Topup (valuetopup)</SelectItem>
                   <SelectItem value="custom">Custom (custom)</SelectItem>
                 </SelectContent>
               </Select>
@@ -199,7 +200,10 @@ export default function AdminAddProviderPage() {
 
             <div className="border-t pt-6 space-y-4">
               <h3 className="text-sm font-medium">API credentials</h3>
-              <p className="text-xs text-muted-foreground">Optional if the adapter reads from environment variables.</p>
+              <p className="text-xs text-muted-foreground">
+                Optional if the adapter reads from environment variables. Value Topup uses API key + HMAC secret
+                (VALUE_TOPUP_API_KEY, VALUE_TOPUP_HMAC_SECRET).
+              </p>
               <div className="grid gap-2">
                 <Label htmlFor="apiKey">API key / username</Label>
                 <Input

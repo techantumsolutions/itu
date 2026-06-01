@@ -1,4 +1,5 @@
 import { createDtoneTransaction } from '@/lib/dtone'
+import { createValuetopupTransaction } from '@/lib/valuetopup'
 import { isApiConfigured, sendTransfer } from '@/lib/api/ding-connect'
 
 export type ExecuteResult = { ok: boolean; providerRef?: string; raw?: unknown; error?: string }
@@ -36,6 +37,38 @@ export async function executeMappedRecharge(input: {
     }
   }
 
+  if (key === 'valuetopup') {
+    const sep = input.providerPlanId.indexOf(':')
+    const product = sep > 0 ? input.providerPlanId.slice(0, sep) : input.providerPlanId
+    const amountFromId = sep > 0 ? Number(input.providerPlanId.slice(sep + 1)) : NaN
+    const amount =
+      Number.isFinite(amountFromId) && amountFromId > 0
+        ? amountFromId
+        : typeof input.sendAmount === 'number' && input.sendAmount > 0
+          ? input.sendAmount
+          : 0
+    if (!product || !amount) return { ok: false, error: 'VALUETOPUP_AMOUNT_REQUIRED' }
+    try {
+      const raw = await createValuetopupTransaction({
+        refid: input.externalId.slice(0, 50),
+        product,
+        account: input.phoneDigits,
+        amount,
+      })
+      const status = textStatus(raw?.status)
+      if (status === 'failed') {
+        return { ok: false, error: textStatus(raw?.remarks) || 'VALUETOPUP_FAILED', raw }
+      }
+      if (status === 'succesful' || status === 'successful' || status === 'accepted' || status === 'processing') {
+        const ref = raw?.refid != null ? String(raw.refid) : input.externalId
+        return { ok: true, providerRef: ref, raw }
+      }
+      return { ok: false, error: 'VALUETOPUP_UNKNOWN_STATUS', raw }
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : 'VALUETOPUP_ERROR' }
+    }
+  }
+
   if (key === 'ding') {
     if (!isApiConfigured()) {
       return { ok: false, error: 'DING_NOT_CONFIGURED' }
@@ -61,4 +94,8 @@ export async function executeMappedRecharge(input: {
   }
 
   return { ok: false, error: `ADAPTER_NOT_IMPLEMENTED:${input.adapterKey}` }
+}
+
+function textStatus(v: unknown): string {
+  return typeof v === 'string' ? v.trim().toLowerCase() : ''
 }

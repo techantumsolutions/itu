@@ -10,7 +10,7 @@ import { getRequestUser } from '@/lib/tickets/auth-headers'
 const providerSchema = z.object({
   code: z.string().min(2).max(40),
   name: z.string().min(2).max(120),
-  adapterKey: z.enum(['dtone', 'ding', 'reloadly', 'custom']),
+  adapterKey: z.enum(['dtone', 'ding', 'reloadly', 'valuetopup', 'custom']),
   providerType: z.string().optional(),
   authType: z.string().optional(),
   baseUrl: z.string().url().optional().or(z.literal('')),
