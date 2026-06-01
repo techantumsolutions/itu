@@ -667,31 +667,31 @@ export default function HomePage() {
                   </Button>
                 </div>
 
-                
+
               </div>
               {heroStoreBadgesVisible ? (
-                  <div className="mt-5 space-y-3 pt-5">
-                    <p className="text-center text-sm text-white/75 lg:text-left">{heroStoreBadgesTitle}</p>
-                    <div className="flex flex-wrap justify-center gap-3 lg:justify-start">
-                      {showHeroAppStoreBadge ? (
-                        <StoreBadgeLink
-                          href={content.appPromo.appStoreUrl || '#'}
-                          imageSrc={heroAppStoreBadgeSrc}
-                          label="Download on the App Store"
-                          variant="apple"
-                        />
-                      ) : null}
-                      {showHeroGooglePlayBadge ? (
-                        <StoreBadgeLink
-                          href={content.appPromo.googlePlayUrl || '#'}
-                          imageSrc={heroGooglePlayBadgeSrc}
-                          label="Get it on Google Play"
-                          variant="google"
-                        />
-                      ) : null}
-                    </div>
+                <div className="mt-5 space-y-3 pt-5">
+                  <p className="text-center text-sm text-white/75 lg:text-left">{heroStoreBadgesTitle}</p>
+                  <div className="flex flex-wrap justify-center gap-3 lg:justify-start">
+                    {showHeroAppStoreBadge ? (
+                      <StoreBadgeLink
+                        href={content.appPromo.appStoreUrl || '#'}
+                        imageSrc={heroAppStoreBadgeSrc}
+                        label="Download on the App Store"
+                        variant="apple"
+                      />
+                    ) : null}
+                    {showHeroGooglePlayBadge ? (
+                      <StoreBadgeLink
+                        href={content.appPromo.googlePlayUrl || '#'}
+                        imageSrc={heroGooglePlayBadgeSrc}
+                        label="Get it on Google Play"
+                        variant="google"
+                      />
+                    ) : null}
                   </div>
-                ) : null}
+                </div>
+              ) : null}
             </div>
 
             <div className="relative flex justify-center lg:justify-end">
@@ -718,7 +718,7 @@ export default function HomePage() {
             </div>
           </div>
         </div>
-        
+
       </section>
 
       {/* Section 2 — image marquee + phone; CMS title/body for screen readers & SEO */}
@@ -726,14 +726,14 @@ export default function HomePage() {
         <div className="container mx-auto px-4 w-full max-w-6xl">
           <h2 className="sr-only">{content.operatorsSlider?.sectionTitle ?? ''}</h2>
           <p className="sr-only">{content.operatorsSlider?.sectionBody ?? ''}</p>
-            <div className="mx-auto w-full max-w-6xl overflow-hidden">
-              <OperatorsMarquee
-                logos={operatorMarqueeLogos}
-                variant="light"
-                durationSec={Math.max(18, (content.operatorsSlider?.marqueeDurationSec || 42) + 8)}
-                className="border-0"
-              />
-            </div>
+          <div className="mx-auto w-full max-w-6xl overflow-hidden">
+            <OperatorsMarquee
+              logos={operatorMarqueeLogos}
+              variant="light"
+              durationSec={Math.max(18, (content.operatorsSlider?.marqueeDurationSec || 42) + 8)}
+              className="border-0"
+            />
+          </div>
         </div>
       </section>
 
@@ -827,37 +827,37 @@ export default function HomePage() {
               .filter((x) => x.isActive)
               .sort((a, b) => a.order - b.order)
               .map((row) => (
-              <div
-                key={row.id}
-                className="relative rounded-2xl border border-neutral-200/90 bg-white p-4 shadow-sm"
-              >
-                {row.isPopular ? (
-                  <span className="absolute right-3 top-3 rounded-sm bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold text-neutral-600">
-                    Popular
-                  </span>
-                ) : null}
-                <div className="flex items-center gap-3">
-                  <CountryFlagThumb src={row.flagImageSrc} alt={row.countryName} />
-                  <p className="text-sm font-semibold text-neutral-900">{row.countryName}</p>
-                </div>
-                <p className="mt-2 text-sm text-neutral-500">
-                  {operatorCountsByIso === null ? (
-                    <span className="text-neutral-400">Loading…</span>
-                  ) : (
-                    <>{operatorCountsByIso[row.countryCode.trim().toUpperCase()] ?? 0} operators available</>
-                  )}
-                </p>
-                <Button
-                  variant="outline"
-                  className="mt-4 w-full rounded-md bg-neutral-50 font-semibold text-neutral-800 hover:border-blue-600 hover:bg-blue-600 hover:text-white"
-                  onClick={() => goRechargeWithCountry(row.countryCode)}
+                <div
+                  key={row.id}
+                  className="relative rounded-2xl border border-neutral-200/90 bg-white p-4 shadow-sm"
                 >
-                  <span className="flex items-center justify-center gap-2">
-                    {content.countriesGrid?.ctaLabel ?? 'Recharge Now'}
-                    <ArrowRight className="size-4" />
-                  </span>
-                </Button>
-              </div>
+                  {row.isPopular ? (
+                    <span className="absolute right-3 top-3 rounded-sm bg-neutral-100 px-2 py-0.5 text-[10px] font-semibold text-neutral-600">
+                      Popular
+                    </span>
+                  ) : null}
+                  <div className="flex items-center gap-3">
+                    <CountryFlagThumb src={row.flagImageSrc} alt={row.countryName} />
+                    <p className="text-sm font-semibold text-neutral-900">{row.countryName}</p>
+                  </div>
+                  <p className="mt-2 text-sm text-neutral-500">
+                    {operatorCountsByIso === null ? (
+                      <span className="text-neutral-400">Loading…</span>
+                    ) : (
+                      <>{operatorCountsByIso[row.countryCode.trim().toUpperCase()] ?? 0} operators available</>
+                    )}
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="mt-4 w-full rounded-md bg-neutral-50 font-semibold text-neutral-800 hover:border-blue-600 hover:bg-blue-600 hover:text-white"
+                    onClick={() => goRechargeWithCountry(row.countryCode)}
+                  >
+                    <span className="flex items-center justify-center gap-2">
+                      {content.countriesGrid?.ctaLabel ?? 'Recharge Now'}
+                      <ArrowRight className="size-4" />
+                    </span>
+                  </Button>
+                </div>
               ))}
           </div>
         </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,13 +8,24 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { useAuthStore } from '@/lib/stores'
-import { Camera, Mail, Phone, Calendar, Gift } from 'lucide-react'
+import { Camera, Mail, Phone, Calendar, Gift, Loader2 } from 'lucide-react'
 
 export default function AccountProfilePage() {
-  const { user } = useAuthStore()
+  const { user, setSession } = useAuthStore()
   const [isEditing, setIsEditing] = useState(false)
   const [name, setName] = useState(user?.name || '')
   const [email, setEmail] = useState(user?.email || '')
+  const [phone, setPhone] = useState(user?.phone || '')
+  const [error, setError] = useState('')
+  const [updating, setUpdating] = useState(false)
+
+  useEffect(() => {
+    if (user) {
+      setName(user.name || '')
+      setEmail(user.email || '')
+      setPhone(user.phone || '')
+    }
+  }, [user])
 
   if (!user) return null
 
@@ -24,6 +35,37 @@ export default function AccountProfilePage() {
         month: 'long',
       })
     : 'N/A'
+
+  const handleSaveChanges = async () => {
+    setUpdating(true)
+    setError('')
+    try {
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim(), phone: phone.trim() }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'Failed to update profile.')
+      }
+
+      setSession(data.user)
+      setIsEditing(false)
+    } catch (err: any) {
+      setError(err?.message || 'Failed to update profile.')
+    } finally {
+      setUpdating(false)
+    }
+  }
+
+  const handleCancel = () => {
+    setName(user.name || '')
+    setEmail(user.email || '')
+    setPhone(user.phone || '')
+    setError('')
+    setIsEditing(false)
+  }
 
   return (
     <div className="space-y-6">
@@ -63,7 +105,13 @@ export default function AccountProfilePage() {
             </div>
             <Button
               variant={isEditing ? 'outline' : 'default'}
-              onClick={() => setIsEditing(!isEditing)}
+              onClick={() => {
+                if (isEditing) {
+                  handleCancel()
+                } else {
+                  setIsEditing(true)
+                }
+              }}
             >
               {isEditing ? 'Cancel' : 'Edit Profile'}
             </Button>
@@ -78,6 +126,12 @@ export default function AccountProfilePage() {
           <CardDescription>Your personal information</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {error ? (
+            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+              {error}
+            </div>
+          ) : null}
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <label className="text-sm font-medium">Full Name</label>
@@ -91,14 +145,15 @@ export default function AccountProfilePage() {
                 <p className="text-sm text-muted-foreground">{user.name}</p>
               )}
             </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Email Address</label>
               {isEditing ? (
                 <Input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Enter your email"
+                  disabled
+                  className="bg-neutral-50 text-neutral-500 cursor-not-allowed border-neutral-200"
                 />
               ) : (
                 <div className="flex items-center gap-2">
@@ -109,15 +164,26 @@ export default function AccountProfilePage() {
                 </div>
               )}
             </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Phone Number</label>
-              <div className="flex items-center gap-2">
-                <Phone className="h-4 w-4 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">
-                  {user.phone || 'Not set'}
-                </p>
-              </div>
+              {isEditing ? (
+                <Input
+                  type="text"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="Enter your phone number"
+                />
+              ) : (
+                <div className="flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">
+                    {user.phone || 'Not set'}
+                  </p>
+                </div>
+              )}
             </div>
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Member Since</label>
               <div className="flex items-center gap-2">
@@ -131,11 +197,18 @@ export default function AccountProfilePage() {
             <>
               <Separator />
               <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setIsEditing(false)}>
+                <Button variant="outline" onClick={handleCancel} disabled={updating}>
                   Cancel
                 </Button>
-                <Button onClick={() => setIsEditing(false)}>
-                  Save Changes
+                <Button onClick={handleSaveChanges} disabled={updating}>
+                  {updating ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
                 </Button>
               </div>
             </>
