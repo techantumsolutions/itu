@@ -3,6 +3,7 @@
  * Sources (in order): system_operators/system_plans → internal_plans → legacy operators/plans tables.
  */
 import { supabaseRest } from '@/lib/db/supabase-rest'
+import { isGenuineTelecomOperatorName } from '@/lib/aggregator/operator-classifier'
 import { isAggregatorSchemaReady } from '@/lib/aggregator/repository'
 import { aggListSystemOperators, aggListSystemPlans } from '@/lib/aggregator/repository'
 import { dbFetchCountries, dbFetchOperators, dbFetchPlans, pickOperatorForPhone } from '@/lib/db/catalog'
@@ -78,8 +79,10 @@ async function loadSystemOperatorNames(ids: string[]): Promise<Map<string, strin
     `system_operators?id=in.(${ids.map(enc).join(',')})&select=id,system_operator_name&limit=${ids.length}`,
     { cache: 'no-store' },
   ).catch(() => null)
+
   if (!res?.ok) return map
   const rows = (await res.json()) as { id: string; system_operator_name?: string }[]
+  console.log("operators in system operator table")
   for (const row of rows) {
     if (row.id && row.system_operator_name) map.set(row.id, row.system_operator_name)
   }
@@ -93,6 +96,7 @@ async function listCountriesFromInternalPlans(): Promise<PublicCountry[]> {
   )
   if (!res.ok) return []
   const rows = (await res.json()) as { country_iso3: string }[]
+  console.log("rows of list of countries")
   const counts = new Map<string, number>()
   for (const row of rows) {
     const c = (row.country_iso3 ?? '').toUpperCase()
@@ -121,6 +125,7 @@ async function listCountriesFromSystemOperators(): Promise<PublicCountry[]> {
     if (!c) continue
     counts.set(c, (counts.get(c) ?? 0) + 1)
   }
+  console.log("rows of list of countries from system operator")
   return [...counts.entries()]
     .sort((a, b) => countryDisplayName(a[0]).localeCompare(countryDisplayName(b[0])))
     .map(([iso3, operatorCount]) => ({
@@ -146,6 +151,7 @@ export async function fetchPublicCountries(): Promise<PublicCountry[]> {
     const legacy = await dbFetchCountries()
     return legacy.map((c) => {
       const iso3 = normalizeCountryIso3(c.country_iso)
+      console.log("rows of list of countries from legacy")
       return {
         code: c.country_iso,
         iso3,
@@ -191,7 +197,7 @@ async function listOperatorsFromInternalPlans(countryIso3: string): Promise<Publ
 export async function fetchPublicOperators(countryInput: string): Promise<PublicOperator[]> {
   const countryIso3 = normalizeCountryIso3(countryInput)
   if (!countryIso3) return []
-
+  console.log("fetchPublicOperators called")
   if (await isAggregatorSchemaReady()) {
     const rows = (await aggListSystemOperators({ country: countryIso3, limit: 500, offset: 0 })) as Array<{
       id: string
@@ -200,25 +206,30 @@ export async function fetchPublicOperators(countryInput: string): Promise<Public
       slug?: string
       logo?: string | null
     }>
-    if (rows.length) {
-      return rows.map((row) => ({
-        id: row.id,
-        code: row.id,
-        name: row.system_operator_name,
-        shortName: row.system_operator_name,
-        countryCode: toPublicCountryCode(row.country_id),
-        countryIso3: row.country_id,
-        logo: row.logo ?? null,
-      }))
+    const beforeFilter = rows.length
+    const filtered = rows.filter((row) =>
+      isGenuineTelecomOperatorName(row.system_operator_name, row.country_id),
+    )
+    console.log(
+      `[Public Catalog] fetchPublicOperators — Country: ${countryIso3} | DB rows: ${beforeFilter} | After filter: ${filtered.length}`,
+    )
+    if (filtered.length) {
+      return filtered.map((row) => ({
+          id: row.id,
+          code: row.id,
+          name: row.system_operator_name,
+          shortName: row.system_operator_name,
+          countryCode: toPublicCountryCode(row.country_id),
+          countryIso3: row.country_id,
+          logo: row.logo ?? null,
+        }))
     }
   }
-
-  const fromInternal = await listOperatorsFromInternalPlans(countryIso3)
-  if (fromInternal.length) return fromInternal
 
   try {
     const iso2 = toPublicCountryCode(countryIso3)
     const legacy = await dbFetchOperators(iso2.length === 2 ? iso2 : countryInput.toUpperCase())
+    console.log("legacy operators")
     return legacy.map((p) => ({
       id: p.code,
       code: p.code,

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cacheGetJson, cacheSetJson } from '@/lib/cache/redis'
 import { rateLimit } from '@/lib/security/rate-limit'
+import { isGenuineTelecomOperatorName } from '@/lib/aggregator/operator-classifier'
 import { aggListSystemOperators } from '@/lib/aggregator/repository'
 
 export async function GET(request: Request) {
@@ -23,8 +24,11 @@ export async function GET(request: Request) {
     limit: Number.isFinite(limit) ? limit : 50,
     offset: Number.isFinite(offset) ? offset : 0,
   })
+  const telecomRows = rows.filter((row: any) =>
+    isGenuineTelecomOperatorName(String(row.system_operator_name ?? ''), row.country_id),
+  )
   const payload = {
-    operators: rows.map((row: any) => ({
+    operators: telecomRows.map((row: any) => ({
       id: row.id,
       name: row.system_operator_name,
       slug: row.slug,
@@ -33,7 +37,11 @@ export async function GET(request: Request) {
       operatorType: row.operator_type,
       status: row.status,
     })),
-    pagination: { limit: Number.isFinite(limit) ? limit : 50, offset: Number.isFinite(offset) ? offset : 0, returned: rows.length },
+    pagination: {
+      limit: Number.isFinite(limit) ? limit : 50,
+      offset: Number.isFinite(offset) ? offset : 0,
+      returned: telecomRows.length,
+    },
   }
   await cacheSetJson(cacheKey, payload, 300)
   return NextResponse.json(payload)

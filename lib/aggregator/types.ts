@@ -107,6 +107,10 @@ export type AggregatorSyncResult = {
   systemPlans: number
   mappedPlans: number
   duplicateSuggestions: number
+  skippedOperators?: number
+  operatorMappings?: number
   durationMs: number
   syncedCountries?: string[]
+  warnings?: string[]
+  diagnostics?: Record<string, unknown>
 }

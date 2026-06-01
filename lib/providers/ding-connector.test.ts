@@ -58,6 +58,8 @@ describe('dingConnector', () => {
     expect(plan.providerPlanId).toBe('sku-ng-airtel-100')
     expect(plan.countryIso3).toBe('NGA') // NG successfully normalized to NGA
     expect(plan.operatorRef).toBe('ding:AIRTEL_NG')
+    expect(plan.operatorName).toBe('Airtel Nigeria')
+    expect(plan.name).toBe('Airtel NGN 100 Airtime')
     expect(plan.service).toBe('Mobile')
     expect(plan.planType).toBe('AIRTIME')
     expect(plan.retailAmount).toBe(10)
