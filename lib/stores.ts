@@ -102,6 +102,7 @@ interface WalletState {
   deduct: (amount: number, description: string, metadata?: Transaction['metadata']) => Promise<boolean>
   addRewardPoints: (points: number, orderId: string) => void
   getTransactions: () => Transaction[]
+  fetchTransactions: () => Promise<void>
 }
 
 export const useWalletStore = create<WalletState>()(
@@ -147,6 +148,22 @@ export const useWalletStore = create<WalletState>()(
         }).catch(() => {})
       },
       getTransactions: () => get().transactions,
+      fetchTransactions: async () => {
+        set({ isLoading: true })
+        try {
+          const res = await fetch('/api/profile/transactions', { credentials: 'include', cache: 'no-store' })
+          if (res.ok) {
+            const data = await res.json()
+            if (data && Array.isArray(data.transactions)) {
+              set({ transactions: data.transactions })
+            }
+          }
+        } catch {
+          // ignore
+        } finally {
+          set({ isLoading: false })
+        }
+      },
     }),
     {
       name: 'wallet-storage',

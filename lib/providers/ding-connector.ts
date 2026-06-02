@@ -1,4 +1,5 @@
-import { getProducts, getCountries } from '@/lib/api/ding-connect'
+import { getProducts, getCountries, getProviders } from '@/lib/api/ding-connect'
+import type { DingProvider } from '@/lib/types'
 import { normalizeCountryIso3, toPublicCountryCode } from '@/lib/lcr/countries'
 import type {
   ProviderConnector,
@@ -114,6 +115,27 @@ export const dingConnector: ProviderConnector = {
 
   async normalizePlans({ config, raw }): Promise<NormalizedPlan[]> {
     console.log(`[Ding Sync] Initiating normalizePlans execution for ${raw.length} raw records...`)
+
+    const providerNameByCode = new Map<string, string>()
+    const countriesInBatch = new Set(
+      raw
+        .map((r) => text((r.raw as any)?.CountryIso3 || normalizeCountryIso3((r.raw as any)?.CountryIso)))
+        .filter(Boolean),
+    )
+    for (const countryIso3 of countriesInBatch) {
+      const countryIso2 = toPublicCountryCode(countryIso3)
+      try {
+        const providers = await getProviders(countryIso2)
+        for (const provider of providers as DingProvider[]) {
+          const code = text(provider.ProviderCode)
+          const label = text(provider.ShortName) || text(provider.Name)
+          if (code && label) providerNameByCode.set(code, label)
+        }
+      } catch (err) {
+        console.warn(`[Ding Sync] Could not load provider names for ${countryIso3}:`, err)
+      }
+    }
+
     const normalizedList = raw
       .map((r, index) => {
         const p: any = r.raw ?? {}
@@ -139,17 +161,23 @@ export const dingConnector: ProviderConnector = {
         const rawWholesale = retailAmount * (1 - (num(p?.CommissionRate) || 0) / 100)
         const wholesaleAmount = Math.round(rawWholesale * 100) / 100
 
+        const providerOperatorName =
+          providerNameByCode.get(operatorId) ||
+          text(p?.LocalizationKey)?.split(/\d/)[0]?.trim() ||
+          operatorId.replace(/[_-]+/g, ' ')
+        const planDisplayName = text(p?.DefaultDisplayText) || undefined
+
         return {
           providerId: config.id,
           providerCode: config.code,
           providerPlanId,
           countryIso3,
           operatorRef: `ding:${operatorId}`,
-          operatorName: text(p?.DefaultDisplayText) || undefined,
+          operatorName: providerOperatorName,
           service: hasData ? 'Data' : 'Mobile',
           planType: hasData ? 'DATA' : 'AIRTIME',
-          name: text(p?.DefaultDisplayText) || undefined,
-          description: text(p?.DefaultDisplayText) || undefined,
+          name: planDisplayName,
+          description: planDisplayName,
           destinationAmount: num(p?.Minimum?.ReceiveValue),
           destinationUnit: text(p?.Minimum?.ReceiveCurrencyIso) || undefined,
           retailAmount,
@@ -159,7 +187,7 @@ export const dingConnector: ProviderConnector = {
           validityDays,
           benefits,
           requiredFields: [], // Ding standard sendsAccountNumber normalized, handled by core transfer service
-          raw: p,
+          raw: { ...p, dingProviderName: providerNameByCode.get(operatorId) ?? null, providerName: providerOperatorName },
         } satisfies NormalizedPlan
       })
       .filter(Boolean) as NormalizedPlan[]

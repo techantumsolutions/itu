@@ -56,6 +56,7 @@ import { cn } from '@/lib/utils'
 import Link from 'next/link'
 import { useAuthStore } from '@/lib/stores'
 import { toast } from 'sonner'
+import { getCountryName, getFlagEmoji } from '@/lib/country-codes'
 
 type RecurringSchedule = {
   id: string
@@ -75,8 +76,12 @@ type RecurringSchedule = {
 const RECURRING_STORAGE_KEY = 'itu-recurring-schedules'
 
 export default function TransactionsPage() {
-  const { transactions } = useWalletStore()
+  const { transactions, fetchTransactions } = useWalletStore()
   const user = useAuthStore((s) => s.user)
+
+  useEffect(() => {
+    void fetchTransactions()
+  }, [fetchTransactions])
   const [searchQuery, setSearchQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
@@ -127,7 +132,9 @@ export default function TransactionsPage() {
         txn.description.toLowerCase().includes(query) ||
         txn.id.toLowerCase().includes(query) ||
         txn.metadata?.phoneNumber?.includes(query) ||
-        txn.metadata?.carrierName?.toLowerCase().includes(query)
+        txn.metadata?.mobile_number?.includes(query) ||
+        txn.metadata?.carrierName?.toLowerCase().includes(query) ||
+        txn.metadata?.operator_id?.toLowerCase().includes(query)
       if (!matchesSearch) return false
     }
 
@@ -200,8 +207,13 @@ export default function TransactionsPage() {
 
   const openTransactionDetail = (txn: (typeof transactions)[number]) => {
     const routingType = txn.metadata?.carrier ? 'Cheapest' : '—'
-    const destinationCountry = txn.metadata?.countryName || txn.metadata?.country || '—'
-    const networkOperator = txn.metadata?.carrierName || txn.metadata?.carrier || '—'
+    
+    let destinationCountry = txn.metadata?.countryName || txn.metadata?.country || txn.metadata?.country_id || '—'
+    if (typeof destinationCountry === 'string' && destinationCountry.length === 2) {
+      destinationCountry = `${getFlagEmoji(destinationCountry)} ${getCountryName(destinationCountry)}`
+    }
+    
+    const networkOperator = txn.metadata?.carrierName || txn.metadata?.carrier || txn.metadata?.operator_id || '—'
     const normalizedStatus = txn.status === 'completed' ? 'success' : txn.status === 'failed' ? 'failed' : 'pending'
     setDetailModel({
       id: txn.id,
@@ -214,7 +226,7 @@ export default function TransactionsPage() {
       customerCountry: user?.countryCode || '—',
       destinationCountry,
       networkOperator,
-      mobileNumber: txn.metadata?.phoneNumber || '—',
+      mobileNumber: txn.metadata?.mobile_number || txn.metadata?.phoneNumber || '—',
       paymentMethod: txn.type === 'topup' ? 'Card/Wallet' : 'Wallet',
       paymentStatus: txn.status,
       paymentReferenceId: txn.metadata?.providerRef || txn.metadata?.orderId || txn.id,
@@ -274,9 +286,16 @@ export default function TransactionsPage() {
       id: `rec-${Date.now()}`,
       transactionId: txn.id,
       planName: txn.metadata?.productName || txn.description,
-      mobileNumber: txn.metadata?.phoneNumber || '—',
-      country: txn.metadata?.countryName || txn.metadata?.country || '—',
-      operator: txn.metadata?.carrierName || txn.metadata?.carrier || '—',
+      mobileNumber: txn.metadata?.mobile_number || txn.metadata?.phoneNumber || '—',
+      country: (() => {
+        const countryId = txn.metadata?.country_id || txn.metadata?.country || txn.metadata?.countryName;
+        if (!countryId) return '—';
+        if (typeof countryId === 'string' && countryId.length === 2) {
+          return `${getFlagEmoji(countryId)} ${getCountryName(countryId)}`;
+        }
+        return countryId;
+      })(),
+      operator: txn.metadata?.carrierName || txn.metadata?.carrier || txn.metadata?.operator_id || '—',
       frequency: recurringFrequency,
       customIntervalDays: recurringFrequency === 'custom' ? intervalDays : undefined,
       paymentMethod: txn.type === 'topup' ? 'Card/Wallet' : 'Wallet',
@@ -357,109 +376,122 @@ export default function TransactionsPage() {
       {/* Transactions Table */}
       <Card>
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Mobile Number</TableHead>
-                <TableHead>Country</TableHead>
-                <TableHead>Operator</TableHead>
-                <TableHead>Recharge Amount</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Date & Time</TableHead>
-                <TableHead>Reward Points</TableHead>
-                <TableHead className="w-[50px]"></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredTransactions.length === 0 ? (
+          <div className="w-full overflow-x-auto">
+            <Table className="min-w-[900px]">
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
-                    No transactions found
-                  </TableCell>
+                  <TableHead>Mobile Number</TableHead>
+                  <TableHead>Country</TableHead>
+                  <TableHead>Operator</TableHead>
+                  <TableHead>Recharge Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Date & Time</TableHead>
+                  <TableHead>Reward Points</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
-              ) : (
-                filteredTransactions.map((txn) => (
-                  <TableRow key={txn.id}>
-                    <TableCell>
-                      <div className="flex items-start gap-2">
-                        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted">
-                          {getTypeIcon(txn.type)}
-                        </div>
-                        <div>
-                          <p className="font-medium">{txn.metadata?.phoneNumber || '—'}</p>
-                          <p className="text-xs text-muted-foreground font-mono">{txn.id}</p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>{txn.metadata?.countryName || txn.metadata?.country || '—'}</TableCell>
-                    <TableCell>{txn.metadata?.carrierName || txn.metadata?.carrier || '—'}</TableCell>
-                    <TableCell className="font-semibold">
-                      {txn.currency === 'PTS' ? `${txn.amount} pts` : `$${txn.amount.toFixed(2)}`}
-                    </TableCell>
-                    <TableCell>{getStatusBadge(txn.status)}</TableCell>
-                    <TableCell>
-                      <p className="text-sm">{formatDate(txn.createdAt)}</p>
-                      <p className="text-xs text-muted-foreground">{formatTime(txn.createdAt)}</p>
-                    </TableCell>
-                    <TableCell>
-                      {user ? (
-                        <span className={cn('text-sm font-medium', txn.rewardPoints ? 'text-primary' : 'text-muted-foreground')}>
-                          {txn.rewardPoints ? `+${txn.rewardPoints} pts` : '—'}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openTransactionDetail(txn)}>
-                            <Eye className="mr-2 h-4 w-4" />
-                            View Details
-                          </DropdownMenuItem>
-                          {txn.type === 'recharge' && txn.status === 'completed' && (
-                            <DropdownMenuItem asChild>
-                              <Link href="/">
-                                <RotateCcw className="mr-2 h-4 w-4" />
-                                Send Again
-                              </Link>
-                            </DropdownMenuItem>
-                          )}
-                          {txn.type === 'recharge' && (
-                            <DropdownMenuItem onClick={() => saveAsContact(txn.metadata?.phoneNumber)}>
-                              <UserPlus className="mr-2 h-4 w-4" />
-                              Save Number as Contact
-                            </DropdownMenuItem>
-                          )}
-                          {txn.type === 'recharge' && (
-                            <DropdownMenuItem onClick={() => openRecurringSetup(txn.id)}>
-                              <Repeat className="mr-2 h-4 w-4" />
-                              Enable Auto Recharge
-                            </DropdownMenuItem>
-                          )}
-                          {txn.type === 'recharge' && (
-                            <DropdownMenuItem onClick={() => openTransactionDetail(txn)}>
-                              <MessageSquarePlus className="mr-2 h-4 w-4" />
-                              Raise Complaint
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem>
-                            <Download className="mr-2 h-4 w-4" />
-                            Download Receipt
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+              </TableHeader>
+              <TableBody>
+                {filteredTransactions.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      No transactions found
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : (
+                  filteredTransactions.map((txn) => (
+                    <TableRow key={txn.id}>
+                      <TableCell>
+                        <div className="flex items-start gap-2">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted">
+                            {getTypeIcon(txn.type)}
+                          </div>
+                          <div>
+                            <p className="font-medium">{txn.metadata?.mobile_number || txn.metadata?.phoneNumber || '—'}</p>
+                            <p className="text-xs text-muted-foreground font-mono">{txn.id}</p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {(() => {
+                          const countryId = txn.metadata?.country_id || txn.metadata?.country || txn.metadata?.countryName;
+                          if (!countryId) return '—';
+                          if (typeof countryId === 'string' && countryId.length === 2) {
+                            const name = getCountryName(countryId);
+                            const flag = getFlagEmoji(countryId);
+                            return `${flag} ${name}`;
+                          }
+                          return countryId;
+                        })()}
+                      </TableCell>
+                      <TableCell>{txn.metadata?.carrierName || txn.metadata?.carrier || txn.metadata?.operator_id || '—'}</TableCell>
+                      <TableCell className="font-semibold">
+                        {txn.currency === 'PTS' ? `${txn.amount} pts` : `$${txn.amount.toFixed(2)}`}
+                      </TableCell>
+                      <TableCell>{getStatusBadge(txn.status)}</TableCell>
+                      <TableCell>
+                        <p className="text-sm">{formatDate(txn.createdAt)}</p>
+                        <p className="text-xs text-muted-foreground">{formatTime(txn.createdAt)}</p>
+                      </TableCell>
+                      <TableCell>
+                        {user ? (
+                          <span className={cn('text-sm font-medium', txn.rewardPoints ? 'text-primary' : 'text-muted-foreground')}>
+                            {txn.rewardPoints ? `+${txn.rewardPoints} pts` : '—'}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openTransactionDetail(txn)}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              View Details
+                            </DropdownMenuItem>
+                            {txn.type === 'recharge' && txn.status === 'completed' && (
+                              <DropdownMenuItem asChild>
+                                <Link href="/">
+                                  <RotateCcw className="mr-2 h-4 w-4" />
+                                  Send Again
+                                </Link>
+                              </DropdownMenuItem>
+                            )}
+                            {txn.type === 'recharge' && (
+                              <DropdownMenuItem onClick={() => saveAsContact(txn.metadata?.mobile_number || txn.metadata?.phoneNumber)}>
+                                <UserPlus className="mr-2 h-4 w-4" />
+                                Save Number as Contact
+                              </DropdownMenuItem>
+                            )}
+                            {txn.type === 'recharge' && (
+                              <DropdownMenuItem onClick={() => openRecurringSetup(txn.id)}>
+                                <Repeat className="mr-2 h-4 w-4" />
+                                Enable Auto Recharge
+                              </DropdownMenuItem>
+                            )}
+                            {txn.type === 'recharge' && (
+                              <DropdownMenuItem onClick={() => openTransactionDetail(txn)}>
+                                <MessageSquarePlus className="mr-2 h-4 w-4" />
+                                Raise Complaint
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuItem>
+                              <Download className="mr-2 h-4 w-4" />
+                              Download Receipt
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
 
@@ -473,8 +505,8 @@ export default function TransactionsPage() {
             Payment authorization validity, card expiry and insufficient funds are handled by payment gateway rules.
             If auto-payment fails, the system sends an email asking user to update payment method.
           </p>
-          <div className="rounded-md border">
-            <Table>
+          <div className="rounded-md border w-full overflow-x-auto">
+            <Table className="min-w-[800px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Plan</TableHead>

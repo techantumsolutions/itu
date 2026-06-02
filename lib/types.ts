@@ -48,6 +48,10 @@ export interface Transaction {
     productName?: string
     skuCode?: string
     providerRef?: string
+    mobile_number?: string
+    country_id?: string
+    operator_id?: string
+    plan_id?: string
   }
 }
 

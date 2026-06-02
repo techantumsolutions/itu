@@ -3,6 +3,7 @@ import { verifyOtp } from '@/lib/security/otp'
 import { rateLimit } from '@/lib/security/rate-limit'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import crypto from 'crypto'
+import { parsePhoneNumberFromString, CountryCode } from 'libphonenumber-js'
 
 export const runtime = 'nodejs'
 
@@ -31,22 +32,45 @@ export async function POST(req: Request) {
     if (!result.ok) return NextResponse.json(result, { status: 400 })
 
     // Persist OTP user in DB (profiles) so it works across browsers/devices.
-    const userId = crypto.randomUUID()
+    let userId: string = crypto.randomUUID()
+    const parsed = parsePhoneNumberFromString(phone)
+    let nationalNumber = phone.replace(/[^\d]/g, '')
+    let dialCode = '91'
+    let countryIso = 'IN'
+    if (parsed) {
+      nationalNumber = parsed.nationalNumber as string
+      dialCode = parsed.countryCallingCode as string
+      countryIso = parsed.country as string
+    }
+
     try {
-      await supabaseRest('profiles', {
-        method: 'POST',
-        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-        body: JSON.stringify([
-          {
-            id: userId,
-            phone,
-            country_code: 'IN',
-            updated_at: new Date().toISOString(),
-          },
-        ]),
-      })
-    } catch {
-      // ignore if profiles table not installed yet
+      // Query profiles supporting both format layouts
+      const checkRes = await supabaseRest(
+        `profiles?or=(and(phone.eq.${encodeURIComponent(nationalNumber)},country_code.eq.${encodeURIComponent(dialCode)}),phone.eq.${encodeURIComponent(phone)})&select=id&limit=1`
+      )
+      if (checkRes.ok) {
+        const rows = (await checkRes.json().catch(() => [])) as { id: string }[]
+        if (rows && rows.length > 0) {
+          userId = rows[0]!.id
+        } else {
+          // If profile doesn't exist under this phone number, insert a new record
+          await supabaseRest('profiles', {
+            method: 'POST',
+            headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+            body: JSON.stringify([
+              {
+                id: userId,
+                phone: nationalNumber,
+                country_code: dialCode,
+                country: countryIso,
+                updated_at: new Date().toISOString(),
+              },
+            ]),
+          })
+        }
+      }
+    } catch (e) {
+      console.error('OTP check/insert profile database error:', e)
     }
 
     const res = NextResponse.json({ ok: true, user: { id: userId, phone } })

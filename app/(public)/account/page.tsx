@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { useAuthStore } from '@/lib/stores'
@@ -18,6 +18,8 @@ export default function AccountProfilePage() {
   const [phone, setPhone] = useState(user?.phone || '')
   const [error, setError] = useState('')
   const [updating, setUpdating] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (user) {
@@ -67,6 +69,37 @@ export default function AccountProfilePage() {
     setIsEditing(false)
   }
 
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploadingImage(true)
+    setError('')
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const res = await fetch('/api/profile/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'Failed to upload image.')
+      }
+
+      setSession(data.user)
+    } catch (err: any) {
+      setError(err?.message || 'Failed to upload image.')
+    } finally {
+      setUploadingImage(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -79,7 +112,17 @@ export default function AccountProfilePage() {
         <CardContent className="pt-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
             <div className="relative">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleImageChange}
+                accept="image/png, image/jpeg, image/jpg"
+                className="hidden"
+              />
               <Avatar className="h-24 w-24">
+                {user.avatar && (
+                  <AvatarImage src={user.avatar} alt={user.name} className="object-cover" />
+                )}
                 <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
                   {user.name.charAt(0).toUpperCase()}
                 </AvatarFallback>
@@ -88,8 +131,14 @@ export default function AccountProfilePage() {
                 size="icon"
                 variant="secondary"
                 className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingImage}
               >
-                <Camera className="h-4 w-4" />
+                {uploadingImage ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Camera className="h-4 w-4" />
+                )}
               </Button>
             </div>
             <div className="flex-1">

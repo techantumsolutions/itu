@@ -14,7 +14,7 @@ export async function GET(req: Request) {
     if (!otpUserId) return NextResponse.json({ ok: true, user: null })
     try {
       const res = await supabaseRest(
-        `profiles?id=eq.${encodeURIComponent(otpUserId)}&select=id,email,name,phone,country_code,app_role,admin_permissions&limit=1`,
+        `profiles?id=eq.${encodeURIComponent(otpUserId)}&select=id,email,name,phone,country_code,app_role,admin_permissions,image&limit=1`,
       )
       if (!res.ok) return NextResponse.json({ ok: true, user: null })
       const rows = (await res.json()) as Array<Record<string, unknown>>
@@ -33,6 +33,7 @@ export async function GET(req: Request) {
         country_code: p.country_code,
         app_role: p.app_role,
         admin_permissions: p.admin_permissions,
+        image: p.image,
       }
       return NextResponse.json({ ok: true, user: buildUserFromProfile(u, profile as any) })
     } catch {

@@ -1,3 +1,4 @@
+import { isGenuineTelecomOperatorName } from '@/lib/aggregator/operator-classifier'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { aggListSystemOperators } from '@/lib/aggregator/repository'
 import { countryDisplayName } from '@/lib/lcr/countries'
@@ -45,8 +46,12 @@ export async function fetchRoutingCountries(): Promise<{ iso3: string; label: st
 
 export async function fetchRoutingOperators(countryIso3: string) {
   const country = countryIso3.trim().toUpperCase()
-  const rows = await aggListSystemOperators({ country, limit: 500, offset: 0 })
-  return (rows as Record<string, unknown>[]).map((row) => {
+  const rows = (await aggListSystemOperators({ country, limit: 500, offset: 0 })) as Record<string, unknown>[]
+  return rows
+    .filter((row) =>
+      isGenuineTelecomOperatorName(String(row.system_operator_name ?? ''), country),
+    )
+    .map((row) => {
     const id = String(row.id ?? '')
     const name = String(row.system_operator_name ?? row.slug ?? id)
     return {

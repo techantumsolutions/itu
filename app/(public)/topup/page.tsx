@@ -14,6 +14,70 @@ import { useLocalePreferencesStore } from '@/lib/stores'
 import { getDialCode } from '@/lib/lcr/countries'
 import { flagEmojiFromIso } from '@/lib/lcr/countries'
 
+function cleanOperatorName(name: string): string {
+  let val = (name ?? '').trim()
+  if (!val) return ''
+  // Strip country suffixes like " India", " Mexico", " Jamaica", " Puerto Rico", " IND", " MX", " JM", " PR"
+  const suffixPattern = /\s+(India|Mexico|Jamaica|Puerto\s+Rico|IND|MX|JM|PR|NGA|GHA|KEN|PHL|IDN|BGD|USA|GBR|ESP|FRA|DEU|ITA)$/i
+  return val.replace(suffixPattern, '').trim()
+}
+
+function translateBenefits(text: string | null | undefined, lang: string): string {
+  let val = (text ?? '').trim()
+  if (!val) return ''
+
+  const currentLang = (lang ?? 'en').toLowerCase().split('-')[0] ?? 'en'
+
+  const dict: Record<string, Record<string, string>> = {
+    en: {
+      "tiempo de conversación de": "Talktime of",
+      "se requiere un plan de validez activo para comprar este producto": "An active validity plan is required to purchase this product",
+      "datos ilimitados; después de usar 20gb por día, la velocidad de datos será de hasta 64kbps; válido por 1 día": "Unlimited data; after using 20GB/day, speed will throttled to 64Kbps; valid for 1 day",
+      "se requiere un plan de validez activo para comprar este producto. datos ilimitados; después de usar 20gb por día, la velocidad de datos será de hasta 64kbps; válido por 1 día.": "An active validity plan is required to purchase this product. Unlimited data; after using 20GB/day, speed will throttled to 64Kbps; valid for 1 day.",
+      "obtén llamadas locales, std y en roaming ilimitadas": "Get unlimited local, STD and roaming calls",
+      "de datos": "data",
+      "sms/día": "SMS/day",
+      "días": "days",
+      "la primera red de lucha contra el spam de la india": "India's first anti-spam network",
+      "solo compatible con clientes seleccionados": "Only compatible with selected customers",
+    },
+    fr: {
+      "tiempo de conversación de": "Temps de conversation de",
+      "se requiere un plan de validez activo para comprar este producto": "Un forfait de validité actif est requis pour acheter ce produit",
+      "datos ilimitados; después de usar 20gb por día, la velocidad de datos será de hasta 64kbps; válido por 1 día": "Données illimitées; après 20 Go/jour, vitesse réduite à 64 Kbps; valide 1 jour",
+      "se requiere un plan de validez activo para comprar este producto. datos ilimitados; después de usar 20gb por día, la velocidad de datos será de hasta 64kbps; válido por 1 día.": "Un forfait de validité actif est requis pour acheter ce produit. Données illimitées; après 20 Go/jour, vitesse réduite à 64 Kbps; valide 1 jour.",
+      "obtén llamadas locales, std y en roaming ilimitadas": "Appels locaux, STD et itinérance illimités",
+      "de datos": "de données",
+      "sms/día": "SMS/jour",
+      "días": "jours",
+      "la primera red de lucha contra el spam de la india": "Le premier réseau anti-spam d'Inde",
+      "solo compatible con clientes seleccionados": "Uniquement compatible avec certains clients",
+    },
+    es: {
+      "talktime of": "Tiempo de conversación de",
+      "an active validity plan is required to purchase this product": "Se requiere un plan de validez activo para comprar este producto",
+      "unlimited data; after using 20gb/day, speed will throttled to 64kbps; valid for 1 day": "Datos ilimitados; después de usar 20GB/día, la velocidad será de 64Kbps; válido por 1 día",
+      "get unlimited local, std and roaming calls": "Obtén llamadas locales, STD y en roaming ilimitadas",
+      "data": "de datos",
+      "sms/day": "SMS/día",
+      "days": "días",
+      "india's first anti-spam network": "La primera red de lucha contra el spam de la India",
+      "only compatible with selected customers": "Solo compatible con clientes seleccionados",
+    }
+  }
+
+  const translations = dict[currentLang]
+  if (!translations) return val
+
+  let result = val
+  for (const [key, replacement] of Object.entries(translations)) {
+    const regex = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+    result = result.replace(regex, replacement)
+  }
+
+  return result
+}
+
 type OperatorDetectResponse = { operator: string; country: string; providerCode?: string; source?: string }
 type DbProvider = { code: string; name: string; shortName: string }
 type DbPlan = TopupPlan
@@ -29,7 +93,7 @@ export default function TopupPlanSelectionPage() {
   const router = useRouter()
   const { countryCode, phoneNumber, operator, setPhoneDetails, setOperator, selectPlan, calculatePricing } =
     useTopupStore()
-  const { currencyCode } = useLocalePreferencesStore()
+  const { currencyCode, languageCode } = useLocalePreferencesStore()
   const userCurrency: 'INR' | 'EUR' = currencyCode === 'INR' ? 'INR' : 'EUR'
   const dialPrefix = getDialCode(countryCode)
   const countryFlag = flagEmojiFromIso(countryCode)
@@ -213,7 +277,7 @@ export default function TopupPlanSelectionPage() {
             </div>
             <div className="flex items-center justify-between rounded-xl bg-white px-4 py-3 ring-1 ring-black/10">
               <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-neutral-900">{operator || '—'}</span>
+                <span className="text-sm font-semibold text-neutral-900">{cleanOperatorName(operator) || '—'}</span>
                 {detecting ? <span className="text-xs text-neutral-400">…</span> : null}
               </div>
               <button
@@ -227,7 +291,7 @@ export default function TopupPlanSelectionPage() {
             <div className="rounded-xl bg-[#f8f6f7] px-4 py-3 text-[11px] text-neutral-600 ring-1 ring-black/10">
               Recharge will be sent to
               <div className="mt-1 text-[11px] font-semibold text-neutral-700">
-                +{dialPrefix}-{localPhone || '__________'} {operator ? ` ${operator}` : ''}
+                +{dialPrefix}-{localPhone || '__________'}{operator ? ` ${cleanOperatorName(operator)}` : ''}
               </div>
             </div>
           </div>
@@ -358,8 +422,8 @@ export default function TopupPlanSelectionPage() {
                           </div>
                         </div>
                         <div className="mt-4 border-t border-neutral-200/70 pt-3 text-[11px] text-neutral-600">
-                          <span className="font-semibold text-neutral-800">{operator || '—'}</span>
-                          <span className="ml-2">{plan.benefits || 'Thanks app: Free hello tunes + Wynk music'}</span>
+                          <span className="font-semibold text-neutral-800">{cleanOperatorName(operator) || '—'}</span>
+                          <span className="ml-2">{translateBenefits(plan.benefits, languageCode) || 'Thanks app: Free hello tunes + Wynk music'}</span>
                         </div>
                       </div>
 

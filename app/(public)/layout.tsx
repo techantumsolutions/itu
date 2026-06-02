@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -11,7 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   Menu,
   User,
@@ -50,6 +50,7 @@ export default function PublicLayout({
   children: React.ReactNode
 }) {
   const pathname = usePathname()
+  const router = useRouter()
   const { user, isAuthenticated, logout } = useAuthStore()
   const { content, setContent, hasHydrated } = useCMSStore()
   const {
@@ -71,6 +72,11 @@ export default function PublicLayout({
   const language =
     content.header.languages.find((l) => l.code === languageCode) ?? content.header.languages[0]!
   const currency = NAV_CURRENCIES.find((c) => c.code === currencyCode) ?? NAV_CURRENCIES[0]!
+
+  const handleSignOut = () => {
+    logout()
+    router.push('/')
+  }
 
   useEffect(() => {
     document.documentElement.lang = languageCode
@@ -409,6 +415,9 @@ export default function PublicLayout({
                     )}
                   >
                     <Avatar className={cn('size-8', onHeroTop ? 'ring-1 ring-white/40' : 'ring-1 ring-neutral-200')}>
+                      {user.avatar && (
+                        <AvatarImage src={user.avatar} alt={user.name} className="object-cover" />
+                      )}
                       <AvatarFallback
                         className={cn(
                           'text-xs font-bold',
@@ -452,7 +461,7 @@ export default function PublicLayout({
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={logout} className="rounded-xl text-destructive focus:text-destructive">
+                  <DropdownMenuItem onClick={handleSignOut} className="rounded-xl text-destructive focus:text-destructive">
                     <LogOut className="mr-2 h-4 w-4" />
                     Sign Out
                   </DropdownMenuItem>
@@ -609,7 +618,7 @@ export default function PublicLayout({
                       </Link>
                       <button
                         type="button"
-                        onClick={() => logout()}
+                        onClick={handleSignOut}
                         className="rounded-2xl px-4 py-3 text-left text-sm font-semibold text-destructive hover:bg-red-50"
                       >
                         Sign out

@@ -28,6 +28,7 @@ export type CheckoutInput = {
   amount: number
   currency: string
   razorpayPaymentId: string
+  userId?: string
 }
 
 export type CheckoutResult = {
@@ -48,6 +49,7 @@ async function createTransaction(input: CheckoutInput): Promise<string | null> {
     headers: { Prefer: 'return=representation' },
     body: JSON.stringify([
       {
+        user_id: input.userId || null,
         type: 'recharge',
         amount: input.amount,
         currency: input.currency,
@@ -97,6 +99,7 @@ async function createRechargeOrder(input: CheckoutInput & { transactionId: strin
     headers: { Prefer: 'return=representation' },
     body: JSON.stringify([
       {
+        user_id: input.userId || null,
         transaction_id: input.transactionId,
         phone_number: input.mobileNumber,
         operator_code: input.operatorId,
