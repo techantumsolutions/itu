@@ -9,28 +9,7 @@ export async function GET(request: Request) {
   }
 
   const priorities = await listProviderPriorities()
-
-  if (priorities.length === 0 && isSupabaseCatalogConfigured()) {
-    const res = await supabaseRest(
-      'lcr_providers?select=id,code,name,priority&is_active=eq.true&order=priority.asc',
-      { cache: 'no-store' },
-    )
-    if (res.ok) {
-      const providers = (await res.json()) as Array<{ id: string; code: string; name: string; priority: number }>
-      return NextResponse.json({
-        priorities: providers.map((p) => ({
-          id: p.id,
-          providerId: p.id,
-          providerCode: p.code,
-          providerName: p.name,
-          priority: p.priority,
-        })),
-        source: 'lcr_providers',
-      })
-    }
-  }
-
-  return NextResponse.json({ priorities, source: 'provider_priorities' })
+  return NextResponse.json({ priorities, source: 'lcr_providers' })
 }
 
 export async function PUT(request: Request) {

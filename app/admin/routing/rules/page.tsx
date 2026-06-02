@@ -90,6 +90,8 @@ async function fetchCascade(path: string) {
   return data
 }
 
+const PAGE_SIZE = 10
+
 export default function RoutingRulesPage() {
   const [rules, setRules] = useState<Rule[]>([])
   const [countries, setCountries] = useState<CountryOption[]>([])
@@ -101,11 +103,16 @@ export default function RoutingRulesPage() {
   const [cascadeLoading, setCascadeLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL')
+  const [page, setPage] = useState(1)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<Rule | null>(null)
   const [form, setForm] = useState<RuleForm>(emptyForm)
   const [saving, setSaving] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+
+  useEffect(() => {
+    setPage(1)
+  }, [search, statusFilter])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -243,6 +250,12 @@ export default function RoutingRulesPage() {
     })
   }, [rules, search, statusFilter])
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
+  const paginatedRules = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE
+    return filtered.slice(start, start + PAGE_SIZE)
+  }, [filtered, page])
+
   function resetCascade() {
     setCascadeOperators([])
     setCascadeProductTypes([])
@@ -328,26 +341,26 @@ export default function RoutingRulesPage() {
     try {
       const payload = {
         ruleName: form.ruleName.trim(),
-        countryId: form.countryId.trim().toUpperCase(),
-        operatorId: form.operatorId.trim(),
-        productType: form.productType.trim().toLowerCase(),
+        countryId: toNullableRuleField(form.countryId)?.toUpperCase() ?? null,
+        operatorId: toNullableRuleField(form.operatorId) ?? null,
+        productType: toNullableRuleField(form.productType)?.toLowerCase() ?? null,
         providerId: form.providerId,
         priority: form.priority,
         status: editing?.status ?? 'ACTIVE',
       }
       const res = editing
         ? await fetch(`/api/admin/routing-rules/${encodeURIComponent(editing.id)}`, {
-            method: 'PUT',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          })
+          method: 'PUT',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
         : await fetch('/api/admin/routing-rules', {
-            method: 'POST',
-            credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-          })
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error ?? 'Save failed')
       toast.success(editing ? 'Rule updated' : 'Rule created')
@@ -456,17 +469,17 @@ export default function RoutingRulesPage() {
             </Select>
           </div>
 
-          <Table>
+          <Table className="min-w-[800px]">
             <TableHeader>
               <TableRow>
-                <TableHead>Rule</TableHead>
-                <TableHead>Country</TableHead>
-                <TableHead>Operator</TableHead>
-                <TableHead>Product</TableHead>
-                <TableHead>Provider</TableHead>
-                <TableHead>Priority</TableHead>
-                <TableHead>Enabled</TableHead>
-                <TableHead className="w-[100px]">Actions</TableHead>
+                <TableHead className="w-[15%]">Rule</TableHead>
+                <TableHead className="w-[10%]">Country</TableHead>
+                <TableHead className="w-[10%]">Operator</TableHead>
+                <TableHead className="w-[10%]">Product</TableHead>
+                <TableHead className="w-[10%]">Provider</TableHead>
+                <TableHead className="w-[10%]">Priority</TableHead>
+                <TableHead className="w-[8%]">Enabled</TableHead>
+                <TableHead className="w-[8%] text-right pr-4">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -483,13 +496,15 @@ export default function RoutingRulesPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                filtered.map((rule) => (
+                paginatedRules.map((rule) => (
                   <TableRow key={rule.id}>
                     <TableCell className="font-medium">{rule.ruleName}</TableCell>
                     <TableCell>{displayWildcard(rule.countryId)}</TableCell>
                     <TableCell>{operatorLabel(rule.operatorId)}</TableCell>
                     <TableCell>{productTypeLabel(rule.productType)}</TableCell>
-                    <TableCell>{rule.providerName ?? rule.providerCode ?? rule.providerId.slice(0, 8)}</TableCell>
+                    <TableCell>
+                      {rule.providerName ?? rule.providerCode ?? rule.providerId.slice(0, 8)}
+                    </TableCell>
                     <TableCell>{rule.priority}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
@@ -505,13 +520,18 @@ export default function RoutingRulesPage() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(rule)}>
-                          <Pencil className="size-4" />
+                      <div className="flex justify-end gap-1 sm:gap-2">
+                        <Button variant="outline" size="sm" onClick={() => openEdit(rule)} title="Edit">
+                          <Pencil className="size-4 sm:mr-2" /> <span className="hidden sm:inline">Edit</span>
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => void deleteRule(rule.id)}>
-                          <Trash2 className="size-4" />
-                        </Button>
+                        {/* <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void deleteRule(rule.id)}
+                          title="Delete"
+                        >
+                          <Trash2 className="size-4 sm:mr-2" /> <span className="hidden sm:inline">Delete</span>
+                        </Button> */}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -519,6 +539,20 @@ export default function RoutingRulesPage() {
               )}
             </TableBody>
           </Table>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between">
+              <Button variant="outline" disabled={page === 1 || loading} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {page} of {totalPages}
+              </span>
+              <Button variant="outline" disabled={page >= totalPages || loading} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+                Next
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
 

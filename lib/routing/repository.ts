@@ -80,41 +80,32 @@ export async function upsertLcrEngineSettings(input: Partial<LcrEngineSettings>)
 
 export async function listProviderPriorities(): Promise<ProviderPriorityRow[]> {
   const res = await supabaseRest(
-    'provider_priorities?select=id,provider_id,priority,lcr_providers(code,name)&order=priority.asc',
+    'lcr_providers?select=id,code,name,priority&is_active=eq.true&order=priority.asc',
     { cache: 'no-store' },
   )
   if (!res.ok) return []
   const rows = (await res.json()) as Array<Record<string, unknown>>
-  return rows.map((r) => {
-    const prov = r.lcr_providers as { code?: string; name?: string } | null
-    return {
-      id: String(r.id),
-      providerId: String(r.provider_id),
-      priority: Number(r.priority ?? 100),
-      providerCode: prov?.code,
-      providerName: prov?.name,
-    }
-  })
+  return rows.map((r) => ({
+    id: String(r.id),
+    providerId: String(r.id),
+    priority: Number(r.priority ?? 100),
+    providerCode: String(r.code ?? ''),
+    providerName: String(r.name ?? ''),
+  }))
 }
 
 export async function replaceProviderPriorities(
   items: Array<{ providerId: string; priority: number }>,
 ): Promise<ProviderPriorityRow[]> {
   for (const item of items) {
-    const res = await supabaseRest(
-      `provider_priorities?provider_id=eq.${enc(item.providerId)}`,
+    await supabaseRest(
+      `lcr_providers?id=eq.${enc(item.providerId)}`,
       {
         method: 'PATCH',
         headers: { Prefer: 'return=representation' },
         body: JSON.stringify({ priority: item.priority }),
       },
     )
-    if (!res.ok) {
-      await supabaseRest('provider_priorities', {
-        method: 'POST',
-        body: JSON.stringify({ provider_id: item.providerId, priority: item.priority }),
-      })
-    }
   }
   return listProviderPriorities()
 }
@@ -291,8 +282,18 @@ export async function listRoutingLogs(filters: {
   params.push(`limit=${limit}`)
   params.push(`offset=${offset}`)
 
-  const res = await supabaseRest(`routing_logs?${params.join('&')}`, { cache: 'no-store' })
+  const res = await supabaseRest(`routing_logs?${params.join('&')}`, {
+    cache: 'no-store',
+    headers: { Prefer: 'count=exact' },
+  })
   if (!res.ok) return { logs: [], total: 0 }
+
+  let totalCount = 0
+  const rangeHeader = res.headers.get('content-range')
+  if (rangeHeader) {
+    const match = rangeHeader.match(/\/(\d+)$/)
+    if (match) totalCount = Number(match[1])
+  }
 
   const rows = (await res.json()) as Record<string, unknown>[]
   const logs: RoutingLogRow[] = rows.map((row) => {
@@ -314,5 +315,5 @@ export async function listRoutingLogs(filters: {
     }
   })
 
-  return { logs, total: logs.length }
+  return { logs, total: totalCount > 0 ? totalCount : logs.length }
 }

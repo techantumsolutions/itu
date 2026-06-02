@@ -34,10 +34,11 @@ type LogRow = {
 
 type Provider = { id: string; code: string; name: string }
 
-const PAGE_SIZE = 50
+const PAGE_SIZE = 10
 
 export default function RoutingLogsPage() {
   const [logs, setLogs] = useState<LogRow[]>([])
+  const [totalLogs, setTotalLogs] = useState(0)
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
   const [offset, setOffset] = useState(0)
@@ -67,6 +68,7 @@ export default function RoutingLogsPage() {
       const logsData = await logsRes.json().catch(() => ({}))
       if (!logsRes.ok) throw new Error(logsData.error ?? 'Failed to load logs')
       setLogs(Array.isArray(logsData.logs) ? logsData.logs : [])
+      setTotalLogs(logsData.total || 0)
 
       if (providersRes) {
         const providersData = await providersRes.json().catch(() => ({}))
@@ -88,7 +90,9 @@ export default function RoutingLogsPage() {
     void load()
   }, [load])
 
-  const hasMore = useMemo(() => logs.length === PAGE_SIZE, [logs.length])
+  const currentPage = Math.floor(offset / PAGE_SIZE) + 1
+  const totalPages = Math.max(1, Math.ceil(totalLogs / PAGE_SIZE))
+  const hasMore = offset + PAGE_SIZE < totalLogs
 
   return (
     <div className="space-y-6">
@@ -111,36 +115,39 @@ export default function RoutingLogsPage() {
           <CardDescription>Filter by country, operator, provider, or date range.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-            <Input placeholder="Country ISO3" value={countryId} onChange={(e) => setCountryId(e.target.value)} />
-            <Input placeholder="Operator ID" value={operatorId} onChange={(e) => setOperatorId(e.target.value)} />
-            <Select value={providerId} onValueChange={setProviderId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Provider" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All providers</SelectItem>
-                {providers.map((p) => (
-                  <SelectItem key={p.id} value={p.id}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
-            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap xl:flex-nowrap">
+            <Input placeholder="Country ISO3" value={countryId} onChange={(e) => setCountryId(e.target.value)} className="flex-1 min-w-[110px]" />
+            <Input placeholder="Operator ID" value={operatorId} onChange={(e) => setOperatorId(e.target.value)} className="flex-1 min-w-[110px]" />
+            <div className="flex-1 min-w-[130px]">
+              <Select value={providerId} onValueChange={setProviderId}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All providers</SelectItem>
+                  {providers.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="flex-1 min-w-[130px]" />
+            <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="flex-1 min-w-[130px]" />
+            <Button
+              variant="secondary"
+              className="shrink-0"
+              onClick={() => {
+                setOffset(0)
+                void load()
+              }}
+            >
+              Apply filters
+            </Button>
           </div>
-          <Button
-            variant="secondary"
-            onClick={() => {
-              setOffset(0)
-              void load()
-            }}
-          >
-            Apply filters
-          </Button>
 
-          <Table>
+          <Table className="min-w-[800px]">
             <TableHeader>
               <TableRow>
                 <TableHead>Time</TableHead>
@@ -185,10 +192,13 @@ export default function RoutingLogsPage() {
             </TableBody>
           </Table>
 
-          <div className="flex justify-between">
+          <div className="flex items-center justify-between">
             <Button variant="outline" disabled={offset === 0 || loading} onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}>
               Previous
             </Button>
+            <span className="text-sm text-muted-foreground">
+              Page {currentPage} of {totalPages}
+            </span>
             <Button variant="outline" disabled={!hasMore || loading} onClick={() => setOffset((o) => o + PAGE_SIZE)}>
               Next
             </Button>
