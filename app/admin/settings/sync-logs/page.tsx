@@ -12,6 +12,7 @@ export default function SyncLogsPage() {
       endpoint="/api/admin/aggregator/sync-logs"
       collectionKey="logs"
       enableBulkSync={false}
+      backLink={{ href: '/admin/settings?tab=system', label: 'Back to settings' }}
       filters={{ searchPlaceholder: 'Search type, stage, status…', hideCountry: true }}
       actions={
         <Button variant="outline" asChild>

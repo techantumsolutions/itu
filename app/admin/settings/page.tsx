@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
-import { User, Bell, Shield, Palette, Globe, Save } from "lucide-react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState, useEffect, Suspense } from "react"
+import { useSearchParams, useRouter } from "next/navigation"
+import { User, Bell, Shield, Palette, Globe, Save, Settings, ArrowRight, LayoutDashboard, Clock } from "lucide-react"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -19,9 +20,22 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useAuthStore } from "@/lib/stores"
 
-export default function SettingsPage() {
+function SettingsContent() {
   const { user } = useAuthStore()
+  const searchParams = useSearchParams()
+  const router = useRouter()
   const [isSaving, setIsSaving] = useState(false)
+  const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "profile")
+
+  useEffect(() => {
+    const tab = searchParams.get("tab")
+    if (tab) setActiveTab(tab)
+  }, [searchParams])
+
+  const handleTabChange = (val: string) => {
+    setActiveTab(val)
+    router.replace(`/admin/settings?tab=${val}`, { scroll: false })
+  }
 
   // Profile form state
   const [name, setName] = useState(user?.name || "")
@@ -55,8 +69,8 @@ export default function SettingsPage() {
         <p className="text-muted-foreground">Manage your account settings and preferences</p>
       </div>
 
-      <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="profile" className="gap-2">
             <User className="h-4 w-4" />
             <span className="hidden sm:inline">Profile</span>
@@ -72,6 +86,10 @@ export default function SettingsPage() {
           <TabsTrigger value="appearance" className="gap-2">
             <Palette className="h-4 w-4" />
             <span className="hidden sm:inline">Appearance</span>
+          </TabsTrigger>
+          <TabsTrigger value="system" className="gap-2">
+            <Settings className="h-4 w-4" />
+            <span className="hidden sm:inline">System</span>
           </TabsTrigger>
         </TabsList>
 
@@ -322,7 +340,68 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* System Tab */}
+        <TabsContent value="system">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <Card className="flex h-full flex-col">
+              <CardHeader>
+                <CardTitle>Duplicate Detection</CardTitle>
+                <CardDescription>Suggested duplicate plan matches for review.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1 text-sm text-muted-foreground">Manage duplicate detection.</CardContent>
+              <CardFooter>
+                <Button asChild className="w-full sm:w-auto">
+                  <a href="/admin/settings/duplicates">
+                    Open
+                    <ArrowRight className="ml-2 size-4" />
+                  </a>
+                </Button>
+              </CardFooter>
+            </Card>
+
+            <Card className="flex h-full flex-col">
+              <CardHeader>
+                <CardTitle>Sync Logs</CardTitle>
+                <CardDescription>Historical sync runs, counts, errors, and retries.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1 text-sm text-muted-foreground">Manage sync logs.</CardContent>
+              <CardFooter>
+                <Button asChild className="w-full sm:w-auto">
+                  <a href="/admin/settings/sync-logs">
+                    Open
+                    <ArrowRight className="ml-2 size-4" />
+                  </a>
+                </Button>
+              </CardFooter>
+            </Card>
+
+            <Card className="flex h-full flex-col">
+              <CardHeader>
+                <CardTitle>Cron Status</CardTitle>
+                <CardDescription>Cron and queue status.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1 text-sm text-muted-foreground">Manage cron status.</CardContent>
+              <CardFooter>
+                <Button asChild className="w-full sm:w-auto">
+                  <a href="/admin/settings/cron-status">
+                    Open
+                    <ArrowRight className="ml-2 size-4" />
+                  </a>
+                </Button>
+              </CardFooter>
+            </Card>
+          </div>
+        </TabsContent>
       </Tabs>
     </div>
+  )
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-muted-foreground">Loading settings...</div>}>
+      <SettingsContent />
+    </Suspense>
   )
 }

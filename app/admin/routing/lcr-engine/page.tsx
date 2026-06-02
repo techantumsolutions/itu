@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { RefreshCcw, Save } from 'lucide-react'
-import { RoutingSubnav } from '@/app/admin/routing/_components/routing-subnav'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -123,7 +122,7 @@ export default function LcrEnginePage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Routing</h1>
+          <h1 className="text-2xl font-bold">LCR Engine</h1>
           <p className="text-muted-foreground">Configure LCR behavior, provider ranking, and failover.</p>
         </div>
         <Button variant="outline" onClick={() => void load()} disabled={loading}>
@@ -131,8 +130,6 @@ export default function LcrEnginePage() {
           Refresh
         </Button>
       </div>
-
-      <RoutingSubnav />
 
       {!schemaReady ? (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -183,8 +180,8 @@ export default function LcrEnginePage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="LEAST_COST">Least cost</SelectItem>
-                  <SelectItem value="PRIORITY">Priority</SelectItem>
+                  {/* <SelectItem value="LEAST_COST">Least cost</SelectItem>
+                  <SelectItem value="PRIORITY">Priority</SelectItem> */}
                   <SelectItem value="HIGHEST_MARGIN">Highest margin</SelectItem>
                 </SelectContent>
               </Select>
@@ -240,7 +237,7 @@ export default function LcrEnginePage() {
         </CardContent>
       </Card>
 
-      <Card>
+      {/* <Card>
         <CardHeader>
           <CardTitle>Provider priorities</CardTitle>
           <CardDescription>
@@ -294,7 +291,7 @@ export default function LcrEnginePage() {
             Save priorities
           </Button>
         </CardContent>
-      </Card>
+      </Card> */}
     </div>
   )
 }

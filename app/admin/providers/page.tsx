@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -9,6 +9,13 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Table,
   TableBody,
@@ -103,6 +110,27 @@ export default function AdminProvidersPage() {
   const [editingProvider, setEditingProvider] = useState<LcrProviderRow | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [syncingId, setSyncingId] = useState<string | null>(null)
+
+  const sortedProviders = useMemo(() => {
+    return [...providers].sort((a, b) => {
+      // Priority 0 = unset, always sink to bottom
+      if (a.priority === 0 && b.priority === 0) return 0
+      if (a.priority === 0) return 1
+      if (b.priority === 0) return -1
+      return a.priority - b.priority
+    })
+  }, [providers])
+
+  const priorityOptions = useMemo(() => {
+    // Priority slots available for the current provider in the dialog
+    const takenByOthers = new Set(
+      providers.filter((p) => p.id !== editingProvider?.id && p.priority > 0).map((p) => p.priority)
+    )
+    const activeSlots = providers.filter((p) => p.id !== editingProvider?.id && p.priority > 0).length
+    const total = activeSlots + 1
+    const numbered = Array.from({ length: total }, (_, i) => i + 1).filter((n) => !takenByOthers.has(n))
+    return [0, ...numbered]
+  }, [providers, editingProvider])
 
   const loadAll = useCallback(async () => {
     if (!user || !isClientAdminUser(user)) return
@@ -408,14 +436,14 @@ export default function AdminProvidersPage() {
                       Loading…
                     </TableCell>
                   </TableRow>
-                ) : providers.length === 0 ? (
+                ) : sortedProviders.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
                       No providers yet. Use Add provider, or set DTONE_API_KEY + DTONE_API_SECRET in env (bootstrap runs on load). Ensure Supabase is configured.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  providers.map((provider) => (
+                  sortedProviders.map((provider) => (
                     <TableRow key={provider.id} className="group">
                       <TableCell>
                         <div className="min-w-0 leading-tight">
@@ -574,13 +602,22 @@ export default function AdminProvidersPage() {
               <div className="grid grid-cols-3 gap-4">
                 <div className="grid gap-2">
                   <Label>Priority</Label>
-                  <Input
-                    type="number"
-                    value={editingProvider.priority}
-                    onChange={(e) =>
-                      setEditingProvider({ ...editingProvider, priority: Number(e.target.value) || 0 })
-                    }
-                  />
+                  <Select
+                    value={String(editingProvider.priority)}
+                    onValueChange={(v) => setEditingProvider({ ...editingProvider, priority: Number(v) || 0 })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select priority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {priorityOptions.map((n) => (
+                        <SelectItem key={n} value={String(n)}>
+                          {String(n)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] text-muted-foreground">Lower number = higher priority</p>
                 </div>
                 <div className="grid gap-2">
                   <Label>Refresh interval (min)</Label>

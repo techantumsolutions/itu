@@ -57,7 +57,7 @@ export async function POST(request: Request) {
   try {
     const created = await supabaseAdminCreateUser({ email, password, name })
     const permissions = mergePermissions(body?.permissions ?? {})
-    const pr = await supabaseRest('profiles', {
+    const pr = await supabaseRest('profiles?on_conflict=id', {
       method: 'POST',
       headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
       body: JSON.stringify([

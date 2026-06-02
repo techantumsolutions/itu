@@ -29,7 +29,7 @@ export async function POST(req: Request) {
     let profile = user?.id ? await fetchProfileForUser(user.id) : null
     if (user?.id && !profile) {
       try {
-        await supabaseRest('profiles', {
+        await supabaseRest('profiles?on_conflict=id', {
           method: 'POST',
           headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
           body: JSON.stringify([

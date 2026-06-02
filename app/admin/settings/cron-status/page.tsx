@@ -49,7 +49,10 @@ export default function CronStatusPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Cron Status</h1>
-          <p className="text-muted-foreground">Daily provider sync and BullMQ queue health.</p>
+          <Link href="/admin/settings?tab=system" className="text-sm font-medium text-primary hover:underline">
+            Back to settings
+          </Link>
+          <p className="mt-1 text-muted-foreground">Daily provider sync and BullMQ queue health.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" onClick={load}>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -40,12 +40,14 @@ export default function AdminAddProviderPage() {
   const [addCode, setAddCode] = useState('')
   const [addAdapter, setAddAdapter] = useState('dtone')
   const [addBaseUrl, setAddBaseUrl] = useState('')
-  const [addPriority, setAddPriority] = useState('100')
+  const [addPriority, setAddPriority] = useState('0')
   const [addCountries, setAddCountries] = useState('')
   const [addApiKey, setAddApiKey] = useState('')
   const [addApiSecret, setAddApiSecret] = useState('')
   const [addClientId, setAddClientId] = useState('')
   const [addClientSecret, setAddClientSecret] = useState('')
+
+  const [providers, setProviders] = useState<{ priority: number }[]>([])
 
   useEffect(() => {
     if (!user) return
@@ -57,8 +59,26 @@ export default function AdminAddProviderPage() {
     if (!isClientSuperAdmin(user) && !clientHasAdminFeature(user, 'providers_manage')) {
       toast.error('You do not have permission to add providers')
       router.replace('/admin/providers')
+      return
     }
+    const h = adminHeaders(user)
+    fetch('/api/admin/lcr/providers', { credentials: 'include', headers: h, cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data.providers)) {
+          setProviders(data.providers)
+        }
+      })
+      .catch(() => {})
   }, [user, router])
+
+  const priorityOptions = useMemo(() => {
+    const takenByOthers = new Set(providers.filter((p) => p.priority > 0).map((p) => p.priority))
+    const activeSlots = providers.filter((p) => p.priority > 0).length
+    const total = activeSlots + 1
+    const numbered = Array.from({ length: total }, (_, i) => i + 1).filter((n) => !takenByOthers.has(n))
+    return [0, ...numbered]
+  }, [providers])
 
   const handleSubmit = async () => {
     if (!user || !isClientAdminUser(user)) return
@@ -87,7 +107,7 @@ export default function AdminAddProviderPage() {
           name,
           adapterKey: addAdapter,
           baseUrl: addBaseUrl.trim() || undefined,
-          priority: Number(addPriority) || 100,
+          priority: Number(addPriority) || 0,
           supportedCountries: addCountries
             .split(/[\s,]+/)
             .map((s) => s.trim().toUpperCase())
@@ -185,8 +205,19 @@ export default function AdminAddProviderPage() {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="priority">Priority (lower = preferred)</Label>
-              <Input id="priority" type="number" value={addPriority} onChange={(e) => setAddPriority(e.target.value)} />
+              <Label>Priority (lower = preferred)</Label>
+              <Select value={addPriority} onValueChange={setAddPriority}>
+                <SelectTrigger id="priority">
+                  <SelectValue placeholder="Select priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  {priorityOptions.map((n) => (
+                    <SelectItem key={n} value={String(n)}>
+                      {String(n)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="countries">Supported countries (ISO2/3, comma-separated)</Label>

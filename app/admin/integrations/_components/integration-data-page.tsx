@@ -50,6 +50,7 @@ type IntegrationDataPageProps = {
     helpers: { syncProvider: (providerId: string) => Promise<void>; syncingId: string | null },
   ) => ReactNode
   enableBulkSync?: boolean
+  backLink?: { href: string; label: string }
 }
 
 const ACTIONS_COL =
@@ -152,6 +153,7 @@ export function IntegrationDataPage({
   actions,
   renderRowActions,
   enableBulkSync = true,
+  backLink = { href: '/admin/integrations', label: 'Back to integrations' },
 }: IntegrationDataPageProps) {
   const [rows, setRows] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(true)
@@ -294,8 +296,8 @@ export function IntegrationDataPage({
         <CardHeader className="pb-3">
           <CardTitle>{title}</CardTitle>
           <CardDescription>
-            <Link href="/admin/integrations" className="font-medium text-primary hover:underline">
-              Back to integrations
+            <Link href={backLink.href} className="font-medium text-primary hover:underline">
+              {backLink.label}
             </Link>
           </CardDescription>
         </CardHeader>

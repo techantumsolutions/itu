@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 
 const tabs = [
-  { href: '/admin/routing/lcr-engine', label: 'LCR Engine' },
   { href: '/admin/routing/rules', label: 'Routing Rules' },
   { href: '/admin/routing/logs', label: 'Routing Logs' },
 ] as const

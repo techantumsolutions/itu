@@ -7,11 +7,8 @@ const sections = [
   ['Service Providers', '/admin/integrations/providers', 'External aggregators, credentials, priority, and sync state.'],
   ['Provider Operators', '/admin/integrations/operators', 'Raw provider operators and unified system operators.'],
   ['Provider Plans', '/admin/integrations/plans', 'Raw provider plans and unified system plans.'],
-  ['Duplicate Detection', '/admin/integrations/duplicates', 'Suggested duplicate plan matches for review.'],
   ['Operator Mapping', '/admin/integrations/operator-mapping', 'Manual operator mapping controls.'],
   ['Plan Mapping', '/admin/integrations/plan-mapping', 'Manual plan mapping controls.'],
-  ['Sync Logs', '/admin/integrations/sync-logs', 'Historical sync runs, counts, errors, and retries.'],
-  ['Cron Status', '/admin/integrations/cron-status', 'Cron and queue status.'],
 ] as const
 
 export default function IntegrationsPage() {

@@ -12,6 +12,7 @@ export default function DuplicateDetectionPage() {
       endpoint="/api/admin/aggregator/duplicates"
       collectionKey="suggestions"
       enableBulkSync={false}
+      backLink={{ href: '/admin/settings?tab=system', label: 'Back to settings' }}
       filters={{ searchPlaceholder: 'Search match, reason, status…', hideCountry: true }}
       columns={[
         { key: 'match_score', label: 'Match', secondaryKey: 'match_reason' },
