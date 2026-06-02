@@ -1,11 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
+import { Loader2, ShieldAlert } from 'lucide-react'
 import { useAuthStore } from '@/lib/stores'
 import type { User } from '@/lib/types'
-import { isClientAdminUser } from '@/lib/tickets/auth-headers'
+import { isClientAdminUser, isClientSuperAdmin } from '@/lib/tickets/auth-headers'
+import { clientHasAdminFeature, getRequiredFeatureForPath } from '@/lib/auth/client-features'
 
 type AdminAuthGateProps = {
   children: React.ReactNode
@@ -14,7 +15,9 @@ type AdminAuthGateProps = {
 /** Ensures the admin shell only renders after the cookie-backed session is known. */
 export function AdminAuthGate({ children }: AdminAuthGateProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const setSession = useAuthStore((s) => s.setSession)
+  const user = useAuthStore((s) => s.user)
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
@@ -54,6 +57,30 @@ export function AdminAuthGate({ children }: AdminAuthGateProps) {
           <Loader2 className="size-5 animate-spin" />
           <span className="text-sm font-medium">Loading admin session…</span>
         </div>
+      </div>
+    )
+  }
+
+  // Check route-level permissions
+  const requiredFeature = getRequiredFeatureForPath(pathname)
+  let authorized = true
+
+  if (requiredFeature === 'super_admin') {
+    authorized = isClientSuperAdmin(user)
+  } else if (requiredFeature && requiredFeature !== 'super_admin') {
+    authorized = clientHasAdminFeature(user, requiredFeature)
+  }
+
+  if (!authorized) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background p-6">
+        <div className="flex h-20 w-20 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+          <ShieldAlert className="size-10" />
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight">Access Denied</h1>
+        <p className="max-w-md text-center text-muted-foreground">
+          You do not have the required permissions to view this page. If you believe this is an error, please contact a super administrator.
+        </p>
       </div>
     )
   }

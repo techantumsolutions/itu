@@ -32,7 +32,7 @@ type PriorityRow = {
   providerId: string
   providerCode?: string
   providerName?: string
-  priority: number
+  priority: number | string
 }
 
 export default function LcrEnginePage() {
@@ -113,9 +113,9 @@ export default function LcrEnginePage() {
     }
   }
 
-  function updatePriority(providerId: string, priority: number) {
+  function updatePriority(providerId: string, priority: number | string) {
     setPriorities((prev) =>
-      prev.map((p) => (p.providerId === providerId ? { ...p, priority } : p)).sort((a, b) => a.priority - b.priority),
+      prev.map((p) => (p.providerId === providerId ? { ...p, priority } : p)).sort((a, b) => Number(a.priority) - Number(b.priority)),
     )
   }
 
@@ -282,7 +282,7 @@ export default function LcrEnginePage() {
                         type="number"
                         className="w-24"
                         value={row.priority}
-                        onChange={(e) => updatePriority(row.providerId, Number(e.target.value) || 100)}
+                        onChange={(e) => updatePriority(row.providerId, e.target.value)}
                       />
                     </TableCell>
                   </TableRow>

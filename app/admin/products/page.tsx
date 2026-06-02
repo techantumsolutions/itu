@@ -117,6 +117,8 @@ function buildQuery(params: Record<string, string | undefined>) {
   return `?${q.toString()}`
 }
 
+const PAGE_SIZE = 20
+
 export default function AdminProductsPage() {
   const [plans, setPlans] = useState<ProductPlan[]>([])
   const [countryOptions, setCountryOptions] = useState<CountryOption[]>([])
@@ -130,6 +132,11 @@ export default function AdminProductsPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+
+  useEffect(() => {
+    setPage(1)
+  }, [countryFilter, operatorFilter, planNameFilter, categoryFilter, statusFilter])
 
   const appliedCountry = useMemo(
     () => (countryFilter === 'all' ? '' : normalizeCountryIso3(countryFilter)),
@@ -230,6 +237,12 @@ export default function AdminProductsPage() {
       setRefreshing(false)
     }
   }
+
+  const totalPages = Math.max(1, Math.ceil(plans.length / PAGE_SIZE))
+  const paginatedPlans = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE
+    return plans.slice(start, start + PAGE_SIZE)
+  }, [plans, page])
 
   return (
     <div className="space-y-6">
@@ -350,7 +363,7 @@ export default function AdminProductsPage() {
                   </TableCell>
                 </TableRow>
               ) : (
-                plans.map((plan) => (
+                paginatedPlans.map((plan) => (
                   <TableRow key={plan.id}>
                     <TableCell className="font-medium">{plan.plan_name}</TableCell>
                     <TableCell>{plan.country_iso3 || '—'}</TableCell>
@@ -366,6 +379,20 @@ export default function AdminProductsPage() {
               )}
             </TableBody>
           </Table>
+
+          {totalPages > 1 && (
+            <div className="mt-4 flex items-center justify-between">
+              <Button variant="outline" disabled={page === 1 || loading} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                Previous
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Page {page} of {totalPages}
+              </span>
+              <Button variant="outline" disabled={page >= totalPages || loading} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+                Next
+              </Button>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
