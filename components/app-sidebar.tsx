@@ -80,18 +80,12 @@ const mainMenuItems: {
       feature: 'integrations',
     },
     {
-      title: 'LCR Engine',
-      url: '/admin/routing/lcr-engine',
-      icon: PlugZap,
-      feature: 'lcr-engine',
-    },
-    {
       title: 'Routing',
       url: '/admin/routing/rules',
       icon: Route,
       feature: 'routing',
       children: [
-        // { title: 'LCR Engine', url: '/admin/routing/lcr-engine' },
+        { title: 'LCR Engine', url: '/admin/routing/lcr-engine' },
         { title: 'Routing Rules', url: '/admin/routing/rules' },
         { title: 'Routing Logs', url: '/admin/routing/logs' },
       ],
