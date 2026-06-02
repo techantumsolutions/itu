@@ -24,13 +24,23 @@ export default function AccountLayout({
 }) {
   const router = useRouter()
   const pathname = usePathname()
-  const { isAuthenticated, isLoading } = useAuthStore()
+  const { isAuthenticated, isLoading, user } = useAuthStore()
+  const isRegisteredWithEmail = user?.is_registered_with_email ?? false
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.push(`/login?redirect=${pathname}`)
+      return
     }
-  }, [isAuthenticated, isLoading, router, pathname])
+
+    if (!isLoading && isAuthenticated && !isRegisteredWithEmail) {
+      const allowedPaths = ['/account', '/account/tickets', '/account/transactions', '/account/wallet']
+      const isAllowed = allowedPaths.some(path => pathname === path || pathname.startsWith(path + '/'))
+      if (!isAllowed) {
+        router.push('/account')
+      }
+    }
+  }, [isAuthenticated, isRegisteredWithEmail, isLoading, router, pathname])
 
   if (!isAuthenticated) {
     return (
@@ -42,6 +52,13 @@ export default function AccountLayout({
     )
   }
 
+  const filteredNavItems = accountNavItems.filter((item) => {
+    if (!isRegisteredWithEmail) {
+      return ['/account', '/account/tickets', '/account/transactions', '/account/wallet'].includes(item.href)
+    }
+    return true
+  })
+
   return (
     <div className="border-b border-border/60 bg-mesh">
       <div className="w-full px-4 py-10 md:py-12 sm:px-6">
@@ -49,7 +66,7 @@ export default function AccountLayout({
           <aside className="h-fit rounded-2xl border border-border/70 bg-card/90 p-4 shadow-elevated-sm backdrop-blur-sm lg:sticky lg:top-24">
             <h2 className="mb-4 px-2 text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">My Account</h2>
             <nav className="flex flex-col gap-1">
-              {accountNavItems.map((item) => {
+              {filteredNavItems.map((item) => {
                 const isActive = pathname === item.href
                 return (
                   <Link

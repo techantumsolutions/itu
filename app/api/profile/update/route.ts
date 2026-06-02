@@ -40,6 +40,12 @@ export async function POST(req: Request) {
 
     // Resolve country context from the current profile
     const currentProfile = await fetchProfileForUser(userId)
+    if (currentProfile && !currentProfile.is_registered_with_email) {
+      return NextResponse.json(
+        { ok: false, error: 'Email & password registration is required to edit your profile.' },
+        { status: 403 }
+      )
+    }
     const defaultCountry = (currentProfile?.country || 'IN') as any
 
     const parsedGlobal = phone.startsWith('+') ? parsePhoneNumberFromString(phone) : parsePhoneNumberFromString(phone, defaultCountry)

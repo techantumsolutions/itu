@@ -11,6 +11,7 @@ export type ProfileRow = {
   app_role?: string | null
   admin_permissions?: unknown
   image?: string | null
+  is_registered_with_email?: boolean | null
 }
 
 const CANONICAL_SUPER_EMAIL = 'admin@itu.com'
@@ -59,5 +60,6 @@ export function buildUserFromProfile(
     adminPermissions: clientRole === 'admin' ? perms : null,
     appRole,
     avatar: profile?.image ?? undefined,
+    is_registered_with_email: profile?.is_registered_with_email ?? false,
   }
 }
