@@ -57,7 +57,7 @@ export async function POST(request: Request) {
 
       // Load payment order details for checkout execution
       const poRes = await supabaseRest(
-        `payment_orders?id=eq.${enc(paymentOrderId)}&select=id,plan_id,mobile_number,operator_id,country_id,amount,currency&limit=1`,
+        `payment_orders?id=eq.${enc(paymentOrderId)}&select=id,plan_id,mobile_number,operator_id,country_id,amount,currency,user_id&limit=1`,
         { cache: 'no-store' },
       )
       const poRows = poRes.ok ? ((await poRes.json()) as Array<Record<string, unknown>>) : []
@@ -77,6 +77,7 @@ export async function POST(request: Request) {
         amount: Number(po.amount ?? 0),
         currency: String(po.currency ?? 'INR'),
         razorpayPaymentId: razorpay_payment_id,
+        userId: po.user_id ? String(po.user_id) : undefined,
       })
 
       return NextResponse.json({

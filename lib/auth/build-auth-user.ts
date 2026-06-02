@@ -7,8 +7,10 @@ export type ProfileRow = {
   name?: string | null
   phone?: string | null
   country_code?: string | null
+  country?: string | null
   app_role?: string | null
   admin_permissions?: unknown
+  image?: string | null
 }
 
 const CANONICAL_SUPER_EMAIL = 'admin@itu.com'
@@ -40,16 +42,22 @@ export function buildUserFromProfile(
           ? 'reseller'
           : 'user'
 
+  let displayPhone = profile?.phone ?? undefined
+  if (displayPhone && profile?.country_code && !displayPhone.startsWith('+')) {
+    displayPhone = `+${profile.country_code.replace('+', '')}${displayPhone}`
+  }
+
   return {
     id: authUser.id,
     email,
     name,
     role: clientRole,
-    phone: profile?.phone ?? undefined,
+    phone: displayPhone,
     countryCode: profile?.country_code ?? undefined,
     rewardPoints: 0,
     createdAt: new Date().toISOString(),
     adminPermissions: clientRole === 'admin' ? perms : null,
     appRole,
+    avatar: profile?.image ?? undefined,
   }
 }

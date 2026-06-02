@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Check, ChevronDown, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,6 +13,16 @@ import { isClientAdminUser } from '@/lib/tickets/auth-headers'
 import { useCMSStore } from '@/lib/cms-store'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { readLocaleCookiesFromDocument } from '@/lib/locale/locale-cookies'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import { countriesList, getFlagEmoji, isValidPhoneNumber } from '@/lib/country-codes'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -28,9 +38,21 @@ export default function LoginPage() {
   const [otpValue, setOtpValue] = useState('')
   const [otpTimer, setOtpTimer] = useState(25)
   const [sendingOtp, setSendingOtp] = useState(false)
+  const [devOtp, setDevOtp] = useState('')
+  const [selectedCountryCode, setSelectedCountryCode] = useState('IN')
+  const [selectedDialCode, setSelectedDialCode] = useState('91')
+  const [openCountry, setOpenCountry] = useState(false)
+
+  const [authView, setAuthView] = useState<'login' | 'forgot' | 'forgot-success'>('login')
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [sendingReset, setSendingReset] = useState(false)
 
   const isEmail = useMemo(() => identifier.includes('@'), [identifier])
   const normalizedPhone = useMemo(() => identifier.replace(/[^\d]/g, ''), [identifier])
+  const isValidPhone = useMemo(() => {
+    if (isEmail) return false
+    return isValidPhoneNumber(identifier, selectedCountryCode)
+  }, [identifier, isEmail, selectedCountryCode])
   const maskedPhone = useMemo(() => {
     const p = normalizedPhone
     if (p.length < 4) return p
@@ -44,6 +66,12 @@ export default function LoginPage() {
     return () => clearInterval(t)
   }, [otpStep, otpTimer])
 
+  useEffect(() => {
+    if (isEmail) {
+      setForgotEmail(identifier)
+    }
+  }, [identifier, isEmail])
+
   const handleEmailLogin = async () => {
     setError('')
     const result = await login(identifier, password)
@@ -53,6 +81,27 @@ export default function LoginPage() {
       else router.push('/account')
     } else {
       setError(result.error ?? 'Invalid email or password.')
+    }
+  }
+
+  const handleSendResetLink = async () => {
+    setError('')
+    setSendingReset(true)
+    try {
+      const res = await fetch('/api/auth/reset-password/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'Failed to send reset link.')
+      }
+      setAuthView('forgot-success')
+    } catch (err: any) {
+      setError(err?.message || 'Failed to send reset link.')
+    } finally {
+      setSendingReset(false)
     }
   }
 
@@ -77,7 +126,25 @@ export default function LoginPage() {
 
         <Card className="w-full overflow-hidden rounded-2xl border-neutral-200 shadow-[0_22px_70px_-44px_rgba(15,23,42,0.35)]">
           <CardHeader className="space-y-2 text-center">
-            {otpStep === 'entry' ? (
+            {authView === 'forgot' ? (
+              <>
+                <div className="mx-auto mt-2">
+                  <Image src="/auth/icon-secure.png" alt="" width={70} height={70} className="mx-auto h-auto w-[70px]" />
+                </div>
+                <CardTitle className="text-xl font-bold text-neutral-900 md:text-2xl">Reset Password</CardTitle>
+                <p className="text-sm text-neutral-500">Enter your email to receive a password reset link.</p>
+              </>
+            ) : authView === 'forgot-success' ? (
+              <>
+                <div className="mx-auto mt-2">
+                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-green-50 text-green-600 ring-4 ring-green-50">
+                    <span className="text-2xl font-bold">✓</span>
+                  </div>
+                </div>
+                <CardTitle className="text-xl font-bold text-neutral-900 md:text-2xl">Check your email</CardTitle>
+                <p className="text-sm text-neutral-500">We have sent a secure link to reset your password.</p>
+              </>
+            ) : otpStep === 'entry' ? (
               <>
                 <div className="mx-auto mt-2">
                   <Image src="/auth/icon-secure.png" alt="" width={70} height={70} className="mx-auto h-auto w-[70px]" />
@@ -93,7 +160,7 @@ export default function LoginPage() {
                 <CardTitle className="text-base font-bold text-neutral-900 md:text-lg">Verify your mobile number</CardTitle>
                 <div className="space-y-0.5 text-xs text-neutral-500 md:text-sm">
                   <p>We just sent 6-digit code to</p>
-                  <p className="font-semibold text-neutral-700">+91 {maskedPhone}</p>
+                  <p className="font-semibold text-neutral-700">+{selectedDialCode} {maskedPhone}</p>
                 </div>
               </>
             )}
@@ -102,22 +169,140 @@ export default function LoginPage() {
           <CardContent className="max-h-[700px] overflow-y-auto px-6 pb-8 pt-2 md:px-8">
             {error ? <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</div> : null}
 
-            {otpStep === 'entry' ? (
+            {authView === 'forgot' ? (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-neutral-700">Email Address</p>
+                  <Input
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    className="h-12 rounded-xl"
+                  />
+                </div>
+
+                <Button
+                  className="h-12 w-full rounded-xl bg-[var(--hero-cta-orange)] text-base font-semibold text-white hover:brightness-105"
+                  disabled={sendingReset || !forgotEmail.trim().includes('@')}
+                  onClick={handleSendResetLink}
+                >
+                  {sendingReset ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Sending Link...
+                    </>
+                  ) : (
+                    'Send Reset Link'
+                  )}
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  className="h-11 w-full rounded-xl text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
+                  onClick={() => {
+                    setAuthView('login')
+                    setError('')
+                  }}
+                >
+                  Back to Login
+                </Button>
+              </div>
+            ) : authView === 'forgot-success' ? (
+              <div className="space-y-4">
+                <p className="text-center text-sm text-neutral-600">
+                  Please check your inbox at <strong>{forgotEmail}</strong> and click the link we sent to reset your password.
+                </p>
+                <div className="pt-2">
+                  <Button
+                    className="h-12 w-full rounded-xl bg-[var(--hero-cta-orange)] text-base font-semibold text-white hover:brightness-105"
+                    onClick={() => {
+                      setAuthView('login')
+                      setError('')
+                    }}
+                  >
+                    Back to Login
+                  </Button>
+                </div>
+              </div>
+            ) : otpStep === 'entry' ? (
               <div className="space-y-4">
                 <div className="space-y-2">
                   <p className="text-sm font-semibold text-neutral-700">Login with Mobile/ Email</p>
-                  <Input
-                    value={identifier}
-                    onChange={(e) => setIdentifier(e.target.value)}
-                    placeholder="+91 9949820346 or name@example.com"
-                    className="h-12 rounded-xl"
-                    autoComplete="username"
-                  />
+                  <div className="flex items-center gap-2">
+                    {!isEmail && (
+                      <Popover open={openCountry} onOpenChange={setOpenCountry}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={openCountry}
+                            className="flex h-12 items-center gap-1 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-100 shrink-0 min-w-[110px] justify-between shadow-none"
+                          >
+                            <span className="truncate">
+                              {selectedCountryCode ? `${getFlagEmoji(selectedCountryCode)} +${selectedDialCode}` : `+${selectedDialCode}`}
+                            </span>
+                            <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[300px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search country or code..." />
+                            <CommandList>
+                              <CommandEmpty>No country found.</CommandEmpty>
+                              <CommandGroup>
+                                {countriesList.map((c) => (
+                                  <CommandItem
+                                    key={c.code}
+                                    value={`${c.name} ${c.code} ${c.dialCode}`}
+                                    onSelect={() => {
+                                      setSelectedDialCode(c.dialCode)
+                                      setSelectedCountryCode(c.code)
+                                      setOpenCountry(false)
+                                    }}
+                                    className="flex items-center justify-between py-2 cursor-pointer"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-base">{c.flag}</span>
+                                      <span className="font-medium text-neutral-900">{c.name}</span>
+                                      <span className="text-neutral-400 font-normal">(+{c.dialCode})</span>
+                                    </div>
+                                    {selectedCountryCode === c.code && (
+                                      <Check className="h-4 w-4 text-[var(--hero-cta-orange)]" />
+                                    )}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    )}
+                    <Input
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
+                      placeholder={isEmail ? "name@example.com" : "9949820346"}
+                      className="h-12 rounded-xl flex-1"
+                      autoComplete="username"
+                    />
+                  </div>
                 </div>
 
                 {isEmail ? (
                   <div className="space-y-2">
-                    <p className="text-sm font-semibold text-neutral-700">Password</p>
+                    <div className="flex justify-between items-center">
+                      <p className="text-sm font-semibold text-neutral-700">Password</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setError('')
+                          setAuthView('forgot')
+                        }}
+                        className="text-xs font-semibold text-[var(--hero-cta-orange)] hover:underline"
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
                     <div className="relative">
                       <Input
                         type={showPassword ? 'text' : 'password'}
@@ -141,7 +326,7 @@ export default function LoginPage() {
 
                 <Button
                   className="h-12 w-full rounded-xl bg-[var(--hero-cta-orange)] text-base font-semibold text-white hover:brightness-105"
-                  disabled={isLoading || sendingOtp || !identifier.trim() || (!isEmail && normalizedPhone.length < 10) || (isEmail && !password)}
+                  disabled={isLoading || sendingOtp || !identifier.trim() || (!isEmail && !isValidPhone) || (isEmail && !password)}
                   onClick={async () => {
                     setError('')
                     if (isEmail) {
@@ -153,10 +338,15 @@ export default function LoginPage() {
                       const res = await fetch('/api/auth/otp/send', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ phone: `+91${normalizedPhone}` }),
+                        body: JSON.stringify({ phone: `+${selectedDialCode}${normalizedPhone}` }),
                       })
-                      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
+                      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; otp?: string }
                       if (!res.ok || !data.ok) throw new Error(data.error || 'otp_send_failed')
+                      if (data.otp) {
+                        setDevOtp(data.otp)
+                      } else {
+                        setDevOtp('')
+                      }
                       setOtpValue('')
                       setOtpTimer(25)
                       setOtpStep('otp')
@@ -227,6 +417,23 @@ export default function LoginPage() {
                       onClick={async () => {
                         setOtpTimer(25)
                         setOtpValue('')
+                        setError('')
+                        try {
+                          const res = await fetch('/api/auth/otp/send', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ phone: `+${selectedDialCode}${normalizedPhone}` }),
+                          })
+                          const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; otp?: string }
+                          if (!res.ok || !data.ok) throw new Error(data.error || 'otp_send_failed')
+                          if (data.otp) {
+                            setDevOtp(data.otp)
+                          } else {
+                            setDevOtp('')
+                          }
+                        } catch (e) {
+                          setError(e instanceof Error ? e.message : 'Failed to send OTP.')
+                        }
                       }}
                     >
                       Resend code
@@ -243,7 +450,7 @@ export default function LoginPage() {
                       const res = await fetch('/api/auth/otp/verify', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ phone: `+91${normalizedPhone}`, otp: otpValue }),
+                        body: JSON.stringify({ phone: `+${selectedDialCode}${normalizedPhone}`, otp: otpValue }),
                       })
                       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
                       if (!res.ok || !data.ok) throw new Error(data.error || 'otp_verify_failed')
@@ -290,10 +497,17 @@ export default function LoginPage() {
                     setOtpStep('entry')
                     setOtpValue('')
                     setError('')
+                    setDevOtp('')
                   }}
                 >
                   Change number / email
                 </Button>
+
+                {devOtp && (
+                  <div className="mt-2 rounded-lg bg-amber-50 p-2.5 text-center text-xs font-semibold text-amber-800 border border-amber-200">
+                    [Development Mode] Your OTP is: <strong className="text-sm font-bold text-amber-900">{devOtp}</strong>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>

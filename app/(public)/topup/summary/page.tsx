@@ -9,9 +9,20 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
 import { useTopupStore } from '@/store/topupStore'
 import { useAuthStore } from '@/lib/stores'
-import { Check, ChevronRight, Eye, EyeOff, Loader2, LogIn, Shield, Smartphone } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Eye, EyeOff, Loader2, LogIn, Shield, Smartphone } from 'lucide-react'
 
 import { getDialCode } from '@/lib/lcr/countries'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import { countriesList, getFlagEmoji, isValidPhoneNumber } from '@/lib/country-codes'
+import { getCountryCallingCode } from 'libphonenumber-js'
 
 declare global {
   interface Window {
@@ -52,12 +63,29 @@ function InlineLoginDialog({
   const [tab, setTab] = useState<'mobile' | 'email'>('mobile')
 
   // --- Mobile OTP state ---
-  const [phone, setPhone] = useState(defaultPhone)
+  const [phone, setPhone] = useState('')
   const [otpStep, setOtpStep] = useState<'phone' | 'otp'>('phone')
   const [otpValue, setOtpValue] = useState('')
   const [otpTimer, setOtpTimer] = useState(0)
   const [sendingOtp, setSendingOtp] = useState(false)
   const [verifyingOtp, setVerifyingOtp] = useState(false)
+  const [devOtp, setDevOtp] = useState('')
+
+  // --- Dynamic Country Code Select state ---
+  const [selectedCountryCode, setSelectedCountryCode] = useState(countryIso)
+  const [selectedDialCode, setSelectedDialCode] = useState(dialPrefix)
+  const [openCountry, setOpenCountry] = useState(false)
+
+  useEffect(() => {
+    if (countryIso) {
+      setSelectedCountryCode(countryIso)
+      try {
+        setSelectedDialCode(getCountryCallingCode(countryIso as any))
+      } catch {
+        setSelectedDialCode(dialPrefix)
+      }
+    }
+  }, [countryIso, dialPrefix])
 
   // --- Email state ---
   const [email, setEmail] = useState('')
@@ -80,24 +108,34 @@ function InlineLoginDialog({
       setErr('')
       setOtpStep('phone')
       setOtpValue('')
-      setPhone(defaultPhone)
+      setPhone('')
+      setDevOtp('')
     }
-  }, [open, defaultPhone])
+  }, [open])
 
   const normalizedPhone = phone.replace(/[^\d]/g, '')
+  const isValid = useMemo(() => {
+    if (!phone) return false
+    return isValidPhoneNumber(phone, selectedCountryCode)
+  }, [phone, selectedCountryCode])
 
   const sendOtp = async () => {
-    if (normalizedPhone.length < 10) return
+    if (!isValid) return
     setSendingOtp(true)
     setErr('')
     try {
       const res = await fetch('/api/auth/otp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: `+${dialPrefix}${normalizedPhone}` }),
+        body: JSON.stringify({ phone: `+${selectedDialCode}${normalizedPhone}` }),
       })
-      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; otp?: string }
       if (!res.ok || !data.ok) throw new Error(data.error || 'Failed to send OTP')
+      if (data.otp) {
+        setDevOtp(data.otp)
+      } else {
+        setDevOtp('')
+      }
       setOtpValue('')
       setOtpTimer(30)
       setOtpStep('otp')
@@ -116,7 +154,7 @@ function InlineLoginDialog({
       const res = await fetch('/api/auth/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: `+${dialPrefix}${normalizedPhone}`, otp: otpValue }),
+        body: JSON.stringify({ phone: `+${selectedDialCode}${normalizedPhone}`, otp: otpValue }),
       })
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
       if (!res.ok || !data.ok) throw new Error(data.error || 'OTP verification failed')
@@ -178,19 +216,64 @@ function InlineLoginDialog({
                 <div className="space-y-2">
                   <p className="text-sm font-medium text-neutral-700">Mobile Number</p>
                   <div className="flex items-center gap-2">
-                    <span className="flex h-11 items-center rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm font-semibold text-neutral-700">+{dialPrefix}</span>
+                    <Popover open={openCountry} onOpenChange={setOpenCountry}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={openCountry}
+                          className="flex h-11 items-center gap-1 rounded-lg border border-neutral-200 bg-neutral-50 px-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-100 shrink-0 min-w-[110px] justify-between"
+                        >
+                          <span className="truncate">
+                            {selectedCountryCode ? `${getFlagEmoji(selectedCountryCode)} +${selectedDialCode}` : `+${selectedDialCode}`}
+                          </span>
+                          <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[300px] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Search country or code..." />
+                          <CommandList>
+                            <CommandEmpty>No country found.</CommandEmpty>
+                            <CommandGroup>
+                              {countriesList.map((c) => (
+                                <CommandItem
+                                  key={c.code}
+                                  value={`${c.name} ${c.code} ${c.dialCode}`}
+                                  onSelect={() => {
+                                    setSelectedDialCode(c.dialCode)
+                                    setSelectedCountryCode(c.code)
+                                    setOpenCountry(false)
+                                  }}
+                                  className="flex items-center justify-between py-2 cursor-pointer"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-base">{c.flag}</span>
+                                    <span className="font-medium text-neutral-900">{c.name}</span>
+                                    <span className="text-neutral-400 font-normal">(+{c.dialCode})</span>
+                                  </div>
+                                  {selectedCountryCode === c.code && (
+                                    <Check className="h-4 w-4 text-[var(--hero-cta-orange)]" />
+                                  )}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
                     <Input
                       value={phone}
                       onChange={(e) => setPhone(e.target.value.replace(/[^\d]/g, ''))}
-                      placeholder="9999999999"
-                      className="h-11"
-                      maxLength={10}
+                      placeholder="Mobile Number"
+                      className="h-11 flex-1"
+                      maxLength={15}
                     />
                   </div>
                 </div>
                 <Button
                   className="h-11 w-full rounded-xl bg-[var(--hero-cta-orange)] font-semibold text-white hover:brightness-105"
-                  disabled={sendingOtp || normalizedPhone.length < 10}
+                  disabled={sendingOtp || !isValid}
                   onClick={sendOtp}
                 >
                   {sendingOtp ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -200,7 +283,7 @@ function InlineLoginDialog({
             ) : (
               <>
                 <p className="text-center text-sm text-neutral-600">
-                  Enter the 6-digit code sent to <span className="font-semibold">+{dialPrefix} {normalizedPhone}</span>
+                  Enter the 6-digit code sent to <span className="font-semibold">+{selectedDialCode} {normalizedPhone}</span>
                 </p>
                 <Input
                   value={otpValue}
@@ -227,6 +310,12 @@ function InlineLoginDialog({
                 <Button variant="ghost" className="h-9 w-full text-sm" onClick={() => { setOtpStep('phone'); setOtpValue(''); setErr('') }}>
                   Change number
                 </Button>
+
+                {devOtp && (
+                  <div className="mt-2 rounded-lg bg-amber-50 p-2.5 text-center text-xs font-semibold text-amber-800 border border-amber-200">
+                    [Development Mode] Your OTP is: <strong className="text-sm font-bold text-amber-900">{devOtp}</strong>
+                  </div>
+                )}
               </>
             )}
           </TabsContent>

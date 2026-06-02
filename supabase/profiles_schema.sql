@@ -9,6 +9,7 @@ create table if not exists profiles (
   country_code text,
   country text,
   language text,
+  image text,
   currency text,
   updated_at timestamptz not null default now()
 );
