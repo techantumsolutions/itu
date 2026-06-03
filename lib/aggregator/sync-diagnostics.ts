@@ -114,18 +114,18 @@ export function summarizeDiagnostics(diag: SyncPipelineDiagnostics) {
 
 export function printPipelineReport(diag: SyncPipelineDiagnostics): void {
   const s = diag.stages
-  //   console.log(`
-  // [Sync Diagnostics] Pipeline Report — ${diag.providerCode}
-  // ────────────────────────────────────────
-  // 1. Ding API / Fetch     received=${s.ding_api_fetch.recordsReceived} stored=${s.ding_api_fetch.recordsStored}
-  // 2. Normalization        received=${s.normalization.recordsReceived} stored=${s.normalization.recordsStored} filtered=${s.normalization.recordsFiltered}
-  // 3. Raw Operators        stored=${s.raw_operator_store.recordsStored} unique=${diag.uniqueRawOperatorIds.size} rejected=${s.raw_operator_store.recordsRejected}
-  // 4. Classification       received=${s.operator_classification.recordsReceived} rejected=${s.operator_classification.recordsRejected}
-  // 5. System Operators     created=${s.system_operator_create.recordsStored}
-  // 6. Operator Mappings    created=${s.operator_mapping.recordsMapped}
-  // 7. Plan Mappings        mapped=${s.plan_mapping.recordsMapped}
-  // ────────────────────────────────────────
-  // Country mappings: ${diag.countryMappings.length} (${diag.countryMappings.filter((c) => !c.success).length} failed)
-  // Operator decisions: ${diag.operatorDecisions.filter((d) => d.decision === 'ACCEPTED' || d.decision === 'RESOLVED').length} accepted, ${diag.operatorDecisions.filter((d) => d.decision === 'REJECTED').length} rejected
-  // `)
+  console.log(`
+[Sync Diagnostics] Pipeline Report — ${diag.providerCode}
+────────────────────────────────────────
+1. Ding API / Fetch     received=${s.ding_api_fetch.recordsReceived} stored=${s.ding_api_fetch.recordsStored}
+2. Normalization        received=${s.normalization.recordsReceived} stored=${s.normalization.recordsStored} filtered=${s.normalization.recordsFiltered}
+3. Raw Operators        stored=${s.raw_operator_store.recordsStored} unique=${diag.uniqueRawOperatorIds.size} rejected=${s.raw_operator_store.recordsRejected}
+4. Classification       received=${s.operator_classification.recordsReceived} rejected=${s.operator_classification.recordsRejected}
+5. System Operators     created=${s.system_operator_create.recordsStored}
+6. Operator Mappings    created=${s.operator_mapping.recordsMapped}
+7. Plan Mappings        mapped=${s.plan_mapping.recordsMapped}
+────────────────────────────────────────
+Country mappings: ${diag.countryMappings.length} (${diag.countryMappings.filter((c) => !c.success).length} failed)
+Operator decisions: ${diag.operatorDecisions.filter((d) => d.decision === 'ACCEPTED' || d.decision === 'RESOLVED').length} accepted, ${diag.operatorDecisions.filter((d) => d.decision === 'REJECTED').length} rejected
+`)
 }

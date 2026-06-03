@@ -179,12 +179,12 @@ export default function AdminProvidersPage() {
       providers.filter((p) => p.is_active && p.success_rate != null).length === 0
         ? 0
         : Math.round(
-            (providers
-              .filter((p) => p.is_active && p.success_rate != null)
-              .reduce((s, p) => s + Number(p.success_rate), 0) /
-              providers.filter((p) => p.is_active && p.success_rate != null).length) *
-              10,
-          ) / 10,
+          (providers
+            .filter((p) => p.is_active && p.success_rate != null)
+            .reduce((s, p) => s + Number(p.success_rate), 0) /
+            providers.filter((p) => p.is_active && p.success_rate != null).length) *
+          10,
+        ) / 10,
   }
 
   const handleSyncAll = async () => {
@@ -328,13 +328,13 @@ export default function AdminProvidersPage() {
           {user &&
             isClientAdminUser(user) &&
             (isClientSuperAdmin(user) || clientHasAdminFeature(user, 'providers_manage')) && (
-            <Button className="gap-2" asChild>
-              <Link href="/admin/providers/new">
-                <Plus className="h-4 w-4" />
-                Add provider
-              </Link>
-            </Button>
-          )}
+              <Button className="gap-2" asChild>
+                <Link href="/admin/providers/new">
+                  <Plus className="h-4 w-4" />
+                  Add provider
+                </Link>
+              </Button>
+            )}
         </div>
       </div>
 
@@ -483,7 +483,7 @@ export default function AdminProvidersPage() {
           </div>
         </CardContent>
       </Card>
-
+      {/* 
       <Card>
         <CardHeader>
           <CardTitle>Coverage matrix</CardTitle>
@@ -536,7 +536,7 @@ export default function AdminProvidersPage() {
             )}
           </div>
         </CardContent>
-      </Card>
+      </Card> */}
 
       <Dialog open={!!editingProvider} onOpenChange={(o) => !o && setEditingProvider(null)}>
         <DialogContent className="sm:max-w-[600px]">

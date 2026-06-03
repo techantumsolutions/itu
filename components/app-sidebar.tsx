@@ -54,97 +54,97 @@ const mainMenuItems: {
   superAdminOnly?: boolean
   children?: { title: string; url: string }[]
 }[] = [
-  {
-    title: 'Dashboard',
-    url: '/admin',
-    icon: LayoutDashboard,
-    feature: 'dashboard',
-  },
-  {
-    title: 'Admin users',
-    url: '/admin/staff',
-    icon: UserCog,
-    feature: 'dashboard',
-    superAdminOnly: true,
-  },
-  {
-    title: 'Providers',
-    url: '/admin/providers',
-    icon: Globe,
-    feature: 'providers',
-  },
-  {
-    title: 'Integrations',
-    url: '/admin/integrations',
-    icon: PlugZap,
-    feature: 'integrations',
-  },
-  {
-    title: 'Routing',
-    url: '/admin/routing/lcr-engine',
-    icon: Route,
-    feature: 'routing',
-    children: [
-      { title: 'LCR Engine', url: '/admin/routing/lcr-engine' },
-      { title: 'Routing Rules', url: '/admin/routing/rules' },
-      { title: 'Routing Logs', url: '/admin/routing/logs' },
-    ],
-  },
-  {
-    title: 'Products',
-    url: '/admin/products',
-    icon: Package,
-    feature: 'products',
-  },
-  {
-    title: 'Website CMS',
-    url: '/admin/cms',
-    icon: FileEdit,
-    feature: 'cms',
-  },
-  {
-    title: 'Customers',
-    url: '/admin/customers',
-    icon: Users,
-    feature: 'customers',
-  },
-  {
-    title: 'Support Tickets',
-    url: '/admin/support-tickets',
-    icon: MessageSquare,
-    feature: 'tickets',
-  },
-  {
-    title: 'Ads Manager',
-    url: '/admin/ads',
-    icon: Megaphone,
-    feature: 'ads',
-  },
-  {
-    title: 'Reconciliation',
-    url: '/admin/reconciliation',
-    icon: FileSpreadsheet,
-    feature: 'reconciliation',
-  },
-  {
-    title: 'Reports & Analytics',
-    url: '/admin/reports',
-    icon: ChartNoAxesCombined,
-    feature: 'reports',
-  },
-  {
-    title: 'Analytics',
-    url: '/admin/analytics',
-    icon: LineChart,
-    feature: 'analytics',
-  },
-  {
-    title: 'Statistics',
-    url: '/admin/statistics',
-    icon: BarChart3,
-    feature: 'statistics',
-  },
-]
+    {
+      title: 'Dashboard',
+      url: '/admin',
+      icon: LayoutDashboard,
+      feature: 'dashboard',
+    },
+    {
+      title: 'Admin users',
+      url: '/admin/staff',
+      icon: UserCog,
+      feature: 'dashboard',
+      superAdminOnly: true,
+    },
+    {
+      title: 'Providers',
+      url: '/admin/providers',
+      icon: Globe,
+      feature: 'providers',
+    },
+    {
+      title: 'Operators',
+      url: '/admin/integrations/operators',
+      icon: PlugZap,
+      feature: 'integrations',
+    },
+    {
+      title: 'Routing',
+      url: '/admin/routing/lcr-engine',
+      icon: Route,
+      feature: 'routing',
+      children: [
+        { title: 'LCR Engine', url: '/admin/routing/lcr-engine' },
+        { title: 'Routing Rules', url: '/admin/routing/rules' },
+        { title: 'Routing Logs', url: '/admin/routing/logs' },
+      ],
+    },
+    {
+      title: 'Products',
+      url: '/admin/products',
+      icon: Package,
+      feature: 'products',
+    },
+    {
+      title: 'Website CMS',
+      url: '/admin/cms',
+      icon: FileEdit,
+      feature: 'cms',
+    },
+    {
+      title: 'Customers',
+      url: '/admin/customers',
+      icon: Users,
+      feature: 'customers',
+    },
+    {
+      title: 'Support Tickets',
+      url: '/admin/support-tickets',
+      icon: MessageSquare,
+      feature: 'tickets',
+    },
+    {
+      title: 'Ads Manager',
+      url: '/admin/ads',
+      icon: Megaphone,
+      feature: 'ads',
+    },
+    {
+      title: 'Reconciliation',
+      url: '/admin/reconciliation',
+      icon: FileSpreadsheet,
+      feature: 'reconciliation',
+    },
+    {
+      title: 'Reports & Analytics',
+      url: '/admin/reports',
+      icon: ChartNoAxesCombined,
+      feature: 'reports',
+    },
+    {
+      title: 'Analytics',
+      url: '/admin/analytics',
+      icon: LineChart,
+      feature: 'analytics',
+    },
+    {
+      title: 'Statistics',
+      url: '/admin/statistics',
+      icon: BarChart3,
+      feature: 'statistics',
+    },
+  ]
 
 const helpCenterItems: {
   title: string
@@ -152,19 +152,19 @@ const helpCenterItems: {
   icon: typeof Settings
   feature: AdminFeatureKey
 }[] = [
-  {
-    title: 'Settings',
-    url: '/admin/settings',
-    icon: Settings,
-    feature: 'settings',
-  },
-  {
-    title: 'Help Center',
-    url: '/admin/help',
-    icon: HelpCircle,
-    feature: 'help',
-  },
-]
+    {
+      title: 'Settings',
+      url: '/admin/settings',
+      icon: Settings,
+      feature: 'settings',
+    },
+    {
+      title: 'Help Center',
+      url: '/admin/help',
+      icon: HelpCircle,
+      feature: 'help',
+    },
+  ]
 
 export function AppSidebar() {
   const pathname = usePathname()
@@ -220,7 +220,7 @@ export function AppSidebar() {
                       className={cn(
                         'rounded-xl border border-transparent transition-all duration-200',
                         isActive &&
-                          'border-primary/15 bg-primary/10 font-semibold text-primary shadow-elevated-sm ',
+                        'border-primary/15 bg-primary/10 font-semibold text-primary shadow-elevated-sm ',
                       )}
                     >
                       <Link href={item.url}>
@@ -268,7 +268,7 @@ export function AppSidebar() {
                       className={cn(
                         'rounded-xl border border-transparent transition-all duration-200',
                         isActive &&
-                          'border-primary/15 bg-primary/10 font-semibold text-primary shadow-elevated-sm ',
+                        'border-primary/15 bg-primary/10 font-semibold text-primary shadow-elevated-sm ',
                       )}
                     >
                       <Link href={item.url}>
