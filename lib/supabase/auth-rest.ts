@@ -81,3 +81,63 @@ export async function supabaseGetUser(accessToken: string): Promise<SupabaseUser
   return json ?? null
 }
 
+export async function supabaseAdminCreateUser(payload: {
+  id?: string
+  email: string
+  password: string
+  email_confirm?: boolean
+  user_metadata?: Record<string, unknown>
+}): Promise<{ user: SupabaseUser | null; error?: string }> {
+  const serviceKey = runtimeEnv('SUPABASE_SERVICE_ROLE_KEY')
+  if (!serviceKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY missing')
+
+  const res = await fetch(`${supabaseAuthBaseUrl()}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+  })
+
+  const json = (await res.json().catch(() => ({}))) as any
+  if (!res.ok) {
+    return { user: null, error: json?.msg || json?.error_description || json?.message || 'admin_create_failed' }
+  }
+  return { user: json ?? null }
+}
+
+export async function supabaseAdminUpdateUser(
+  userId: string,
+  payload: {
+    email?: string
+    email_confirm?: boolean
+    password?: string
+    user_metadata?: Record<string, unknown>
+  }
+): Promise<{ user: SupabaseUser | null; error?: string }> {
+  const serviceKey = runtimeEnv('SUPABASE_SERVICE_ROLE_KEY')
+  if (!serviceKey) throw new Error('SUPABASE_SERVICE_ROLE_KEY missing')
+
+  const res = await fetch(`${supabaseAuthBaseUrl()}/auth/v1/admin/users/${userId}`, {
+    method: 'PUT',
+    headers: {
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+    cache: 'no-store',
+  })
+
+  const json = (await res.json().catch(() => ({}))) as any
+  if (!res.ok) {
+    return { user: null, error: json?.msg || json?.error_description || json?.message || 'admin_update_failed' }
+  }
+  return { user: json ?? null }
+}
+
+
+
