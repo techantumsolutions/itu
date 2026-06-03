@@ -9,6 +9,8 @@ create table if not exists profiles (
   country_code text,
   country text,
   language text,
+  is_registered_with_email boolean default false,
+  is_active boolean default true,
   image text,
   currency text,
   updated_at timestamptz not null default now()

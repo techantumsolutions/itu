@@ -1,7 +1,19 @@
 import { NextResponse } from 'next/server'
 import { cacheGetJson, cacheDel } from '@/lib/cache/redis'
-import { supabaseSignUpEmail } from '@/lib/supabase/auth-rest'
+import { supabaseSignUpEmail, supabaseSignInWithPassword, supabaseAdminCreateUser } from '@/lib/supabase/auth-rest'
 import { supabaseRest } from '@/lib/db/supabase-rest'
+import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
+import { buildUserFromProfile } from '@/lib/auth/build-auth-user'
+
+function cookieOptions() {
+  const isProd = process.env.NODE_ENV === 'production'
+  return {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: 'lax' as const,
+    path: '/',
+  }
+}
 
 export async function POST(req: Request) {
   try {
@@ -24,19 +36,45 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Invalid verification code' }, { status: 400 })
     }
 
-    // OTP matches! Register user in Supabase.
-    // If GOTRUE_MAILER_AUTOCONFIRM=true is set in the container, it will return the user and session.
-    const { user } = await supabaseSignUpEmail({
-      email: record.email,
-      password: record.password || '',
-      data: { name: record.name },
-    })
+    // Check if the user is already logged in with a phone-only account
+    const cookie = req.headers.get('cookie') ?? ''
+    const om = cookie.match(/(?:^|;\s*)itu-user-id=([^;]+)/)
+    const otpUserId = om?.[1] ? decodeURIComponent(om[1]) : ''
 
-    if (!user?.id) {
-      throw new Error('Failed to create user in authentication service')
+    let oldProfile: any = null
+    if (otpUserId) {
+      oldProfile = await fetchProfileForUser(otpUserId)
     }
 
-    // Persist profile row
+    let user: any = null
+    let error: string | undefined = undefined
+
+    if (oldProfile) {
+      // Create user in GoTrue Auth using existing UUID via Admin API
+      const adminRes = await supabaseAdminCreateUser({
+        id: otpUserId,
+        email: record.email,
+        password: record.password || '',
+        email_confirm: true,
+        user_metadata: { name: record.name || oldProfile.name || '' }
+      })
+      user = adminRes.user
+      error = adminRes.error
+    } else {
+      // Normal signup via GoTrue Auth SignUp API
+      const signupRes = await supabaseSignUpEmail({
+        email: record.email,
+        password: record.password || '',
+        data: { name: record.name }
+      })
+      user = signupRes.user
+    }
+
+    if (!user?.id) {
+      throw new Error(error || 'Failed to create user in authentication service')
+    }
+
+    // Persist profile row (handles new profile creation or updating existing profile fields)
     try {
       await supabaseRest('profiles', {
         method: 'POST',
@@ -44,23 +82,50 @@ export async function POST(req: Request) {
         body: JSON.stringify([{
           id: user.id,
           email: record.email,
-          name: record.name,
-          app_role: 'user',
+          name: record.name || oldProfile?.name || '',
+          phone: oldProfile?.phone || null,
+          country_code: oldProfile?.country_code || null,
+          country: oldProfile?.country || null,
+          language: oldProfile?.language || null,
+          currency: oldProfile?.currency || null,
+          image: oldProfile?.image || null,
+          is_registered_with_email: true,
           updated_at: new Date().toISOString()
         }]),
       })
     } catch (err) {
       console.error('Failed to create database profile row:', err)
-      // We don't abort since the auth user is created, but we log it
     }
+
+    // Authenticate the user to retrieve session tokens
+    const { session } = await supabaseSignInWithPassword({
+      email: record.email,
+      password: record.password || '',
+    })
+
+    const updatedProfile = await fetchProfileForUser(user.id)
+    const clientUser = buildUserFromProfile(user, updatedProfile)
+
+    const res = NextResponse.json({
+      ok: true,
+      message: 'Account verified and created successfully',
+      user: clientUser
+    })
+
+    if (session?.access_token) {
+      res.cookies.set('sb-access-token', session.access_token, { ...cookieOptions(), maxAge: 60 * 60 * 24 * 7 })
+    }
+    if (session?.refresh_token) {
+      res.cookies.set('sb-refresh-token', session.refresh_token, { ...cookieOptions(), maxAge: 60 * 60 * 24 * 30 })
+    }
+
+    // Clear temporary OTP user cookie
+    res.cookies.set('itu-user-id', '', { ...cookieOptions(), maxAge: 0 })
 
     // Cleanup Redis cache
     await cacheDel(cacheKey)
 
-    return NextResponse.json({
-      ok: true,
-      message: 'Account verified and created successfully'
-    })
+    return res
   } catch (e: any) {
     console.error('Verification failed:', e)
     const msg = e instanceof Error ? e.message : 'Verification failed'

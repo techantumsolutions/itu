@@ -17,6 +17,19 @@ import {
   resolveTelecomOperatorName,
 } from '@/lib/aggregator/operator-classifier'
 import {
+  canUseDynamicClassification,
+  classifyTelecomRecordDynamic,
+  normalizeOperatorNameDynamic,
+  scoreAggregateOperatorCandidate,
+} from '@/lib/aggregator/dynamic-classifier'
+import {
+  aggInsertTransformAudit,
+  aggUpsertAggregateOperator,
+  aggUpsertAggregateOperatorMapping,
+  aggUpsertOperatorAlias,
+  aggUpsertSystemOperatorLineage,
+} from '@/lib/aggregator/dynamic-repository'
+import {
   createSyncDiagnostics,
   logCountryMapping,
   logOperatorDecision,
@@ -133,6 +146,7 @@ export async function syncAggregatorProvider(
 
   try {
     const diag = createSyncDiagnostics(providerId, config.code)
+    const dynamicMode = await canUseDynamicClassification().catch(() => false)
     const connector = getConnector(config.adapterKey)
     const raw = await connector.fetchRawPlans(config, { countries: syncedCountries.length ? syncedCountries : undefined })
     diag.stages.ding_api_fetch.recordsReceived = raw.length
@@ -169,7 +183,7 @@ export async function syncAggregatorProvider(
       const op = rawOperatorFromPlan(plan)
       if (!op.providerOperatorId || !op.providerOperatorName) continue
 
-      const classification = classifyProviderOperatorRecord({
+      const staticClassification = classifyProviderOperatorRecord({
         providerOperatorName: op.providerOperatorName,
         providerOperatorId: op.providerOperatorId,
         productName: plan.name ?? null,
@@ -180,6 +194,26 @@ export async function syncAggregatorProvider(
         plan,
         rawResponseJson: op.rawResponseJson,
       })
+
+      const dynamicClassification = dynamicMode
+        ? await classifyTelecomRecordDynamic({
+            providerOperatorName: op.providerOperatorName,
+            planName: plan.name ?? null,
+            serviceType: plan.service ?? null,
+            category: internalPlanCategory(plan),
+            tags: plan.tags ?? [],
+            benefits: plan.benefits,
+            metadata: op.rawResponseJson,
+          }).catch(() => null)
+        : null
+
+      const classification = dynamicClassification
+        ? {
+            kind: dynamicClassification.isTelecom ? 'MOBILE_OPERATOR' : 'UNKNOWN',
+            isTelecomOperator: dynamicClassification.isTelecom,
+            skipReason: dynamicClassification.isTelecom ? null : staticClassification.skipReason ?? 'NOT_TELECOM_OPERATOR',
+          }
+        : staticClassification
 
       let telecomOperatorName: string | null = null
       if (classification.kind === 'MOBILE_OPERATOR' && classification.isTelecomOperator) {
@@ -254,7 +288,51 @@ export async function syncAggregatorProvider(
       }
 
       let systemOperator: Awaited<ReturnType<typeof aggUpsertSystemOperator>> | null = null
+      let aggregateOperator: Awaited<ReturnType<typeof aggUpsertAggregateOperator>> | null = null
       if (systemOperatorInput) {
+        if (dynamicMode) {
+          const norm = await normalizeOperatorNameDynamic({
+            operatorName: telecomOperatorName ?? op.providerOperatorName,
+            countryIso3: op.countryCode,
+          })
+          const match = scoreAggregateOperatorCandidate({
+            normalizedName: norm.normalizedName,
+            countryIso3: op.countryCode,
+            aliasName: op.providerOperatorName,
+            classificationConfidence: dynamicClassification?.confidence ?? 75,
+          })
+          aggregateOperator = await aggUpsertAggregateOperator({
+            normalizedName: norm.normalizedName,
+            displayName: norm.displayName,
+            countryId: op.countryCode,
+            operatorClass: dynamicClassification?.category ?? 'MOBILE_OPERATOR',
+            confidenceScore: match.score,
+            duplicateConfidence: match.confidence,
+            metadata: {
+              provider_code: config.code,
+              dynamic_reasons: dynamicClassification?.reasons ?? [],
+            },
+          })
+
+          if (aggregateOperator?.id) {
+            await aggUpsertAggregateOperatorMapping({
+              providerId,
+              providerOperatorRawId: rawOperator.id,
+              aggregateOperatorId: aggregateOperator.id,
+              matchScore: match.score,
+              matchConfidence: match.confidence,
+              matchReason: 'Dynamic telecom normalization',
+            })
+            await aggUpsertOperatorAlias({
+              aggregateOperatorId: aggregateOperator.id,
+              aliasName: op.providerOperatorName,
+              providerId,
+              providerOperatorRawId: rawOperator.id,
+              confidenceScore: match.score,
+            })
+          }
+        }
+
         systemOperator = await aggUpsertSystemOperator(systemOperatorInput)
         if (systemOperator?.id) {
           systemOperators += 1
@@ -272,6 +350,31 @@ export async function syncAggregatorProvider(
             mappedSystemOperatorIds.add(systemOperator.id)
             diag.stages.operator_mapping.recordsMapped = mappedSystemOperatorIds.size
           }
+          if (dynamicMode && aggregateOperator?.id) {
+            await aggUpsertSystemOperatorLineage({
+              aggregateOperatorId: aggregateOperator.id,
+              systemOperatorId: systemOperator.id,
+              confidenceScore: dynamicClassification?.confidence ?? 80,
+              reason: 'Dynamic aggregate -> system linkage',
+            }).catch(() => {})
+          }
+          await aggInsertTransformAudit({
+            providerId,
+            stage: 'SYSTEM',
+            sourceTable: 'provider_operator_raw',
+            sourceId: rawOperator.id,
+            targetTable: 'system_operators',
+            targetId: systemOperator.id,
+            action: 'UPSERT',
+            reason: dynamicClassification?.reasons?.[0] ?? 'classification',
+            confidenceScore: dynamicClassification?.confidence ?? 80,
+            details: {
+              provider_operator_name: op.providerOperatorName,
+              resolved_operator_name: telecomOperatorName,
+              country: op.countryCode,
+              dynamic_mode: dynamicMode,
+            },
+          })
         }
       }
 

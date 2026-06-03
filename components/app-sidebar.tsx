@@ -74,14 +74,14 @@ const mainMenuItems: {
       feature: 'providers',
     },
     {
-      title: 'Integrations',
-      url: '/admin/integrations',
+      title: 'Operators',
+      url: '/admin/integrations/operators',
       icon: PlugZap,
       feature: 'integrations',
     },
     {
       title: 'Routing',
-      url: '/admin/routing/rules',
+      url: '/admin/routing/lcr-engine',
       icon: Route,
       feature: 'routing',
       children: [

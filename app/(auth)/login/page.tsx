@@ -26,7 +26,7 @@ import { countriesList, getFlagEmoji, isValidPhoneNumber } from '@/lib/country-c
 
 export default function LoginPage() {
   const router = useRouter()
-  const { login, setSession, isLoading } = useAuthStore()
+  const { login, setSession, logout, isLoading } = useAuthStore()
   const { content, hasHydrated } = useCMSStore()
 
   const [identifier, setIdentifier] = useState('')
@@ -47,7 +47,16 @@ export default function LoginPage() {
   const [forgotEmail, setForgotEmail] = useState('')
   const [sendingReset, setSendingReset] = useState(false)
 
-  const isEmail = useMemo(() => identifier.includes('@'), [identifier])
+  const [loginTab, setLoginTab] = useState<'email' | 'mobile'>('email')
+  
+  const handleTabChange = (tab: 'email' | 'mobile') => {
+    setLoginTab(tab)
+    setIdentifier('')
+    setPassword('')
+    setError('')
+  }
+
+  const isEmail = loginTab === 'email'
   const normalizedPhone = useMemo(() => identifier.replace(/[^\d]/g, ''), [identifier])
   const isValidPhone = useMemo(() => {
     if (isEmail) return false
@@ -77,8 +86,12 @@ export default function LoginPage() {
     const result = await login(identifier, password)
     if (result.ok) {
       const u = useAuthStore.getState().user
-      if (isClientAdminUser(u)) router.push('/admin')
-      else router.push('/account')
+      if (isClientAdminUser(u)) {
+        logout()
+        setError('These credentials are not registered as user. Use the dedicated portal.')
+      } else {
+        router.push('/account')
+      }
     } else {
       setError(result.error ?? 'Invalid email or password.')
     }
@@ -149,8 +162,8 @@ export default function LoginPage() {
                 <div className="mx-auto mt-2">
                   <Image src="/auth/icon-secure.png" alt="" width={70} height={70} className="mx-auto h-auto w-[70px]" />
                 </div>
-                <CardTitle className="text-xl font-bold text-neutral-900 md:text-2xl">Login with Mobile /Email</CardTitle>
-                <p className="text-sm text-neutral-500">Enter your mobile number to continue</p>
+                <CardTitle className="text-xl font-bold text-neutral-900 md:text-2xl">{isEmail ? 'Login with Email' : 'Login with Mobile'}</CardTitle>
+                <p className="text-sm text-neutral-500">{isEmail ? 'Enter your email and password to continue' : 'Enter your mobile number to continue'}</p>
               </>
             ) : (
               <>
@@ -227,8 +240,35 @@ export default function LoginPage() {
               </div>
             ) : otpStep === 'entry' ? (
               <div className="space-y-4">
+                <div className="grid grid-cols-2 bg-neutral-50 border border-neutral-200/60 p-1 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => handleTabChange('email')}
+                    className={`py-2.5 text-sm font-semibold rounded-lg transition-all ${
+                      loginTab === 'email'
+                        ? 'bg-white text-neutral-900 shadow-sm border border-neutral-200/30'
+                        : 'text-neutral-500 hover:text-neutral-800'
+                    }`}
+                  >
+                    Email Login
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleTabChange('mobile')}
+                    className={`py-2.5 text-sm font-semibold rounded-lg transition-all ${
+                      loginTab === 'mobile'
+                        ? 'bg-white text-neutral-900 shadow-sm border border-neutral-200/30'
+                        : 'text-neutral-500 hover:text-neutral-800'
+                    }`}
+                  >
+                    Mobile Login
+                  </button>
+                </div>
+
                 <div className="space-y-2">
-                  <p className="text-sm font-semibold text-neutral-700">Login with Mobile/ Email</p>
+                  <p className="text-sm font-semibold text-neutral-700">
+                    {isEmail ? 'Email Address' : 'Mobile Number'}
+                  </p>
                   <div className="flex items-center gap-2">
                     {!isEmail && (
                       <Popover open={openCountry} onOpenChange={setOpenCountry}>
@@ -292,16 +332,7 @@ export default function LoginPage() {
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <p className="text-sm font-semibold text-neutral-700">Password</p>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setError('')
-                          setAuthView('forgot')
-                        }}
-                        className="text-xs font-semibold text-[var(--hero-cta-orange)] hover:underline"
-                      >
-                        Forgot password?
-                      </button>
+
                     </div>
                     <div className="relative">
                       <Input
@@ -319,6 +350,18 @@ export default function LoginPage() {
                         aria-label={showPassword ? 'Hide password' : 'Show password'}
                       >
                         {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                      </button>
+                    </div>
+                    <div className='text-right'>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setError('')
+                          setAuthView('forgot')
+                        }}
+                        className="text-xs font-semibold text-[var(--hero-cta-orange)] hover:underline"
+                      >
+                        Forgot password?
                       </button>
                     </div>
                   </div>
@@ -382,12 +425,12 @@ export default function LoginPage() {
                     Sign up here
                   </Link>
                 </p>
-                <p className="text-center text-sm text-neutral-500">
+                {/* <p className="text-center text-sm text-neutral-500">
                   Staff (super admin / admin)?{' '}
                   <Link href="/admin/login" className="font-semibold text-neutral-800 underline-offset-4 hover:underline">
                     Admin sign in
                   </Link>
-                </p>
+                </p> */}
               </div>
             ) : (
               <div className="mx-auto w-full max-w-sm space-y-5 pb-2">
@@ -457,6 +500,12 @@ export default function LoginPage() {
 
                       const me = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' })
                       const meData = (await me.json().catch(() => ({}))) as { user?: any }
+                      const u = meData?.user
+                      if (isClientAdminUser(u)) {
+                        logout()
+                        setError('These credentials are not registered as user. Use the dedicated portal.')
+                        return
+                      }
                       if (meData?.user?.id) {
                         setSession(meData.user)
                         const c = readLocaleCookiesFromDocument()
@@ -470,11 +519,11 @@ export default function LoginPage() {
                             language: c.language ?? 'en-IN',
                             currency: c.currency ?? 'INR',
                           }),
-                        }).catch(() => {})
+                        }).catch(() => { })
                       }
-                      const u = meData?.user
-                      if (isClientAdminUser(u)) router.push('/admin')
-                      else router.push('/account')
+                      if (u) {
+                        router.push('/account')
+                      }
                     } catch (e) {
                       setError(e instanceof Error ? e.message : 'OTP verification failed.')
                     }

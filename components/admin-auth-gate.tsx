@@ -67,7 +67,7 @@ export function AdminAuthGate({ children }: AdminAuthGateProps) {
 
   if (requiredFeature === 'super_admin') {
     authorized = isClientSuperAdmin(user)
-  } else if (requiredFeature && requiredFeature !== 'super_admin') {
+  } else if (requiredFeature) {
     authorized = clientHasAdminFeature(user, requiredFeature)
   }
 

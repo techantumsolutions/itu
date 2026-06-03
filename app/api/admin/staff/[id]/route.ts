@@ -27,8 +27,15 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ error: 'invalid_id' }, { status: 400 })
   }
 
-  const body = (await request.json().catch(() => null)) as { permissions?: Record<string, unknown> } | null
-  if (!body?.permissions) return NextResponse.json({ error: 'permissions required' }, { status: 400 })
+  const body = (await request.json().catch(() => null)) as {
+    permissions?: Record<string, unknown>
+    is_active?: boolean
+  } | null
+
+  if (!body) return NextResponse.json({ error: 'Body required' }, { status: 400 })
+  if (body.permissions === undefined && body.is_active === undefined) {
+    return NextResponse.json({ error: 'permissions or is_active required' }, { status: 400 })
+  }
 
   const load = await supabaseRest(`profiles?id=eq.${encodeURIComponent(id)}&select=id,app_role&limit=1`, {
     cache: 'no-store',
@@ -38,14 +45,21 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   const row = rows?.[0]
   if (!row) return NextResponse.json({ error: 'not_found' }, { status: 404 })
   if (row.app_role === 'super_admin') {
-    return NextResponse.json({ error: 'cannot_change_super_admin_permissions' }, { status: 400 })
+    return NextResponse.json({ error: 'cannot_modify_super_admin' }, { status: 400 })
   }
 
-  const permissions = mergePermissions(body.permissions)
+  const updatePayload: Record<string, any> = { updated_at: new Date().toISOString() }
+  if (body.permissions !== undefined) {
+    updatePayload.admin_permissions = mergePermissions(body.permissions)
+  }
+  if (body.is_active !== undefined) {
+    updatePayload.is_active = body.is_active
+  }
+
   const res = await supabaseRest(`profiles?id=eq.${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=representation' },
-    body: JSON.stringify({ admin_permissions: permissions, updated_at: new Date().toISOString() }),
+    body: JSON.stringify(updatePayload),
   })
   if (!res.ok) return NextResponse.json({ error: await res.text() }, { status: 500 })
   const updated = (await res.json()) as any[]

@@ -13,9 +13,19 @@ export async function GET() {
     if (cached) return NextResponse.json(cached)
 
     const rows = await fetchPublicCountries()
+    const validCountries = rows.filter((c) => {
+      if (!c.code) return false
+      const cleanCode = c.code.trim().toUpperCase()
+      // Only allow 2 or 3-letter codes, no digits, and exclude 'UNK'
+      if (cleanCode.length < 2 || cleanCode.length > 3) return false
+      if (/\d/.test(cleanCode)) return false
+      if (cleanCode === 'UNK') return false
+      return true
+    })
+
     const payload = {
       source: 'database',
-      countries: rows.map((c) => ({
+      countries: validCountries.map((c) => ({
         code: c.code,
         iso3: c.iso3,
         name: c.name,

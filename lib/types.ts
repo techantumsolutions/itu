@@ -8,6 +8,7 @@ export interface User {
   role: 'user' | 'reseller' | 'admin' | 'super_admin'
   phone?: string
   countryCode?: string
+  country?: string
   rewardPoints: number
   createdAt: string
   /**
@@ -17,6 +18,7 @@ export interface User {
   adminPermissions?: Record<string, boolean> | null
   /** Same as `role` for admin kinds; optional mirror for APIs. */
   appRole?: string
+  is_registered_with_email?: boolean
 }
 
 // Wallet & Transaction Types
