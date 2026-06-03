@@ -32,6 +32,9 @@ async function run() {
       console.log(`  Adapter Key: ${p.adapter_key}`)
       console.log(`  Active: ${p.is_active}`)
       console.log(`  Base URL: ${p.base_url}`)
+      console.log(`  Status: ${p.status}`)
+      console.log(`  Last Sync At: ${p.last_sync_at}`)
+      console.log(`  Last Success Sync At: ${p.last_success_sync_at}`)
       console.log(`  Supported Countries:`, p.supported_countries)
       console.log(`  Credentials Encrypted Payload:`, p.credentials_encrypted)
       try {

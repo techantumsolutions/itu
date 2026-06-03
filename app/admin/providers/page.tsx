@@ -223,9 +223,15 @@ export default function AdminProvidersPage() {
     }
     setIsRefreshing(true)
     const h = adminHeaders(user)
-    const results: { code: string; ok: boolean; msg: string }[] = []
+    
+    const activeProviders = providers.filter((x) => x.is_active)
+    if (activeProviders.length === 0) {
+      toast.error('No active providers to sync')
+      setIsRefreshing(false)
+      return
+    }
 
-    for (const p of providers.filter((x) => x.is_active)) {
+    const promises = activeProviders.map(async (p) => {
       try {
         const res = await fetch('/api/admin/lcr/sync', {
           method: 'POST',
@@ -236,25 +242,30 @@ export default function AdminProvidersPage() {
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data.error ?? 'Sync failed')
         const r = data.result
-        results.push({
+        return {
           code: p.code,
           ok: true,
           msg: r
             ? `raw ${r.fetchedRaw ?? 0}, mapped ${r.mappedPlans ?? 0}${r.syncedCountries?.length ? ` (${r.syncedCountries.join(', ')})` : ''}`
             : 'ok',
-        })
+        }
       } catch (e) {
-        results.push({
+        return {
           code: p.code,
           ok: false,
           msg: e instanceof Error ? e.message : 'error',
-        })
+        }
       }
-    }
+    })
+
+    const results = await Promise.all(promises)
     setIsRefreshing(false)
     const failed = results.filter((r) => !r.ok)
-    if (failed.length) toast.error(`Some syncs failed: ${failed.map((f) => f.code).join(', ')}`)
-    else toast.success('Catalog sync finished')
+    if (failed.length) {
+      toast.error(`Some syncs failed: ${failed.map((f) => f.code).join(', ')}`)
+    } else {
+      toast.success('Catalog sync finished')
+    }
     await loadAll()
   }
 
