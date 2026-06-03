@@ -368,14 +368,23 @@ export async function aggListRawPlans(params: { limit?: number; offset?: number;
   return jsonRowsOrEmpty(res)
 }
 
-export async function aggListSystemOperators(params: { country?: string; q?: string; limit?: number; offset?: number }) {
+export async function aggListSystemOperators(params: { country?: string; q?: string; limit?: number; offset?: number; status?: string; includeAllStatus?: boolean }) {
   const filters = [
     'select=*',
-    'status=eq.ACTIVE',
+  ]
+  if (params.includeAllStatus) {
+    if (params.status) {
+      filters.push(`status=eq.${enc(params.status)}`)
+    }
+  } else {
+    filters.push(params.status ? `status=eq.${enc(params.status)}` : 'status=eq.ACTIVE')
+  }
+
+  filters.push(
     `limit=${params.limit ?? 50}`,
     `offset=${params.offset ?? 0}`,
     'order=system_operator_name.asc',
-  ]
+  )
   if (params.country) filters.push(`country_id=eq.${enc(params.country)}`)
   if (params.q) filters.push(`system_operator_name=ilike.*${enc(params.q)}*`)
   const res = await supabaseRest(`system_operators?${filters.join('&')}`, { cache: 'no-store' })

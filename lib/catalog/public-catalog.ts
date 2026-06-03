@@ -90,19 +90,36 @@ async function loadSystemOperatorNames(ids: string[]): Promise<Map<string, strin
 }
 
 async function listCountriesFromInternalPlans(): Promise<PublicCountry[]> {
-  const res = await supabaseRest(
-    'internal_plans?active=eq.true&select=country_iso3&order=country_iso3.asc&limit=5000',
-    { cache: 'no-store' },
-  )
-  if (!res.ok) return []
-  const rows = (await res.json()) as { country_iso3: string }[]
-  console.log("rows of list of countries")
   const counts = new Map<string, number>()
-  for (const row of rows) {
-    const c = (row.country_iso3 ?? '').toUpperCase()
-    if (!c) continue
-    counts.set(c, (counts.get(c) ?? 0) + 1)
+  let offset = 0
+  let hasMore = true
+
+  while (hasMore) {
+    const res = await supabaseRest(
+      `internal_plans?active=eq.true&select=country_iso3&order=country_iso3.asc&limit=1000&offset=${offset}`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) {
+      hasMore = false
+      break
+    }
+    const rows = (await res.json()) as { country_iso3: string }[]
+    if (!rows || !rows.length) {
+      hasMore = false
+      break
+    }
+    for (const row of rows) {
+      const c = (row.country_iso3 ?? '').toUpperCase()
+      if (!c) continue
+      counts.set(c, (counts.get(c) ?? 0) + 1)
+    }
+    if (rows.length < 1000) {
+      hasMore = false
+    } else {
+      offset += 1000
+    }
   }
+
   return [...counts.entries()]
     .sort((a, b) => countryDisplayName(a[0]).localeCompare(countryDisplayName(b[0])))
     .map(([iso3, planCount]) => ({
@@ -116,15 +133,30 @@ async function listCountriesFromInternalPlans(): Promise<PublicCountry[]> {
 }
 
 async function listCountriesFromSystemOperators(): Promise<PublicCountry[]> {
-  const rows = (await aggListSystemOperators({ limit: 2000, offset: 0 })) as Array<{
-    country_id: string
-  }>
   const counts = new Map<string, number>()
-  for (const row of rows) {
-    const c = (row.country_id ?? '').toUpperCase()
-    if (!c) continue
-    counts.set(c, (counts.get(c) ?? 0) + 1)
+  let offset = 0
+  let hasMore = true
+
+  while (hasMore) {
+    const rows = (await aggListSystemOperators({ limit: 1000, offset })) as Array<{
+      country_id: string
+    }>
+    if (!rows || !rows.length) {
+      hasMore = false
+      break
+    }
+    for (const row of rows) {
+      const c = (row.country_id ?? '').toUpperCase()
+      if (!c) continue
+      counts.set(c, (counts.get(c) ?? 0) + 1)
+    }
+    if (rows.length < 1000) {
+      hasMore = false
+    } else {
+      offset += 1000
+    }
   }
+
   console.log("rows of list of countries from system operator")
   return [...counts.entries()]
     .sort((a, b) => countryDisplayName(a[0]).localeCompare(countryDisplayName(b[0])))
