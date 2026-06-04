@@ -78,7 +78,7 @@ export default function AccountTicketDetailPage() {
   if (!data) {
     return (
       <div className="space-y-4">
-        <Button variant="ghost" size="sm" asChild className="gap-2">
+        <Button variant="ghost" size="sm" asChild className="gap-2 text-muted-foreground hover:text-foreground -ml-2.5">
           <Link href="/account/tickets">
             <ArrowLeft className="size-4" />
             Back to tickets
@@ -94,7 +94,7 @@ export default function AccountTicketDetailPage() {
   return (
     <div className="space-y-8">
       <div className="flex flex-col gap-4 border-b border-border/60 pb-6">
-        <Button variant="ghost" size="sm" asChild className="w-fit gap-2 px-0 text-muted-foreground hover:text-foreground">
+        <Button variant="ghost" size="sm" asChild className="w-fit gap-2 text-muted-foreground hover:text-foreground -ml-2.5">
           <Link href="/account/tickets">
             <ArrowLeft className="size-4" />
             My Support Tickets
@@ -102,7 +102,11 @@ export default function AccountTicketDetailPage() {
         </Button>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 space-y-2">
-            <p className="font-mono text-xs text-muted-foreground">{data.id}</p>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-[10px] font-medium px-2.5 py-0.5 bg-neutral-100 border border-neutral-200/50 rounded-lg text-neutral-600">
+                Ticket ID: {data.id}
+              </span>
+            </div>
             <h1 className="text-2xl font-bold tracking-tight">{data.subject}</h1>
             <p className="text-sm text-muted-foreground">
               Created {format(new Date(data.createdAt), 'MMM d, yyyy HH:mm')} · Updated{' '}
@@ -119,20 +123,22 @@ export default function AccountTicketDetailPage() {
       </section>
 
       {canReply ? (
-        <section className="rounded-2xl border border-border/70 bg-card/80 p-4 shadow-elevated-sm">
-          <h2 className="mb-3 text-sm font-semibold">Reply to support</h2>
-          <form onSubmit={onSendReply} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+        <section className="rounded-2xl border border-border/70 bg-card/80 p-5 shadow-elevated-sm">
+          <h2 className="mb-3 text-sm font-semibold text-foreground">Reply to support</h2>
+          <form onSubmit={onSendReply} className="flex flex-col gap-4">
             <Textarea
               value={reply}
               onChange={(e) => setReply(e.target.value)}
               placeholder="Type your message…"
               rows={3}
-              className="min-h-[88px] flex-1 resize-y"
+              className="min-h-[100px] w-full resize-y rounded-xl border-border/70"
             />
-            <Button type="submit" disabled={sending || !reply.trim()} className="gap-2 sm:shrink-0">
-              {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-              Send
-            </Button>
+            <div className="flex justify-end">
+              <Button type="submit" disabled={sending || !reply.trim()} className="gap-2 rounded-xl px-5">
+                {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+                Send Message
+              </Button>
+            </div>
           </form>
         </section>
       ) : (

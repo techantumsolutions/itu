@@ -369,11 +369,15 @@ export default function LoginPage() {
 
                 <Button
                   className="h-12 w-full rounded-xl bg-[var(--hero-cta-orange)] text-base font-semibold text-white hover:brightness-105"
-                  disabled={isLoading || sendingOtp || !identifier.trim() || (!isEmail && !isValidPhone) || (isEmail && !password)}
+                  disabled={isLoading || sendingOtp || !identifier.trim() || (isEmail && !password)}
                   onClick={async () => {
                     setError('')
                     if (isEmail) {
                       await handleEmailLogin()
+                      return
+                    }
+                    if (!isValidPhone) {
+                      setError('Invalid format')
                       return
                     }
                     setSendingOtp(true)

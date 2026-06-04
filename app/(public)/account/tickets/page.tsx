@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { format } from 'date-fns'
-import { MessageSquarePlus, Loader2 } from 'lucide-react'
+import { MessageSquarePlus, Loader2, Tag, MessageSquare, Clock, ShieldAlert, ArrowRight, Eye } from 'lucide-react'
 import { useAuthStore } from '@/lib/stores'
 import { Button } from '@/components/ui/button'
 import {
@@ -94,7 +94,7 @@ export default function AccountTicketsPage() {
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button className="gap-2 self-start sm:self-auto">
+            <Button className="gap-2 self-start sm:self-auto rounded-xl bg-neutral-900 text-white hover:bg-neutral-800 h-10 px-4 shadow-sm">
               <MessageSquarePlus className="size-4" />
               Create New Ticket
             </Button>
@@ -150,7 +150,7 @@ export default function AccountTicketsPage() {
         </Dialog>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-border/70 bg-card shadow-elevated-sm">
+      <div className="overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-elevated-sm">
         {loading ? (
           <div className="flex items-center justify-center py-16 text-muted-foreground">
             <Loader2 className="size-6 animate-spin" />
@@ -160,30 +160,48 @@ export default function AccountTicketsPage() {
             No tickets yet. Create one to get help from support.
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[120px]">Ticket ID</TableHead>
-                <TableHead>Subject</TableHead>
-                <TableHead className="w-[140px]">Status</TableHead>
-                <TableHead className="w-[160px]">Last updated</TableHead>
-                <TableHead className="w-[100px] text-right">Action</TableHead>
+          <Table className="table-auto w-full">
+            <TableHeader className="bg-neutral-50/75 border-b border-neutral-200/40">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[120px] max-w-none whitespace-nowrap px-4 py-3.5 font-semibold text-neutral-900">
+                  Ticket ID
+                </TableHead>
+                <TableHead className="w-[130px] max-w-none whitespace-nowrap px-4 py-3.5 font-semibold text-neutral-900">
+                  Status
+                </TableHead>
+                {/* <TableHead className="w-[180px] max-w-none whitespace-nowrap px-4 py-3.5 font-semibold text-neutral-900">
+                  Last Updated
+                </TableHead> */}
+                <TableHead className="w-[80px] max-w-none whitespace-nowrap px-4 py-3.5 text-right font-semibold text-neutral-900">
+                  Action
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {tickets.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{t.id.slice(0, 8)}…</TableCell>
-                  <TableCell className="font-medium">{t.subject}</TableCell>
-                  <TableCell>
+                <TableRow key={t.id} className="group hover:bg-neutral-50/50 transition-colors">
+                  <TableCell className="max-w-none whitespace-nowrap px-4 py-4">
+                    <span className="bg-neutral-100 border border-neutral-200/50 rounded-lg px-2.5 py-1 font-mono text-[11px] font-medium text-neutral-600">
+                      {t.id.slice(0, 8)}
+                    </span>
+                  </TableCell>
+                  <TableCell className="max-w-none whitespace-nowrap px-4 py-4">
                     <TicketStatusBadge status={t.status} />
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
+                  {/* <TableCell className="max-w-none whitespace-nowrap px-4 py-4 text-sm text-neutral-500 font-normal">
                     {format(new Date(t.updatedAt), 'MMM d, yyyy HH:mm')}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/account/tickets/${t.id}`}>View</Link>
+                  </TableCell> */}
+                  <TableCell className="max-w-none whitespace-nowrap px-4 py-4 text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="rounded-xl h-8 w-8 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 transition-all"
+                      asChild
+                    >
+                      <Link href={`/account/tickets/${t.id}`}>
+                        <Eye className="size-4" />
+                        <span className="sr-only">View Ticket</span>
+                      </Link>
                     </Button>
                   </TableCell>
                 </TableRow>

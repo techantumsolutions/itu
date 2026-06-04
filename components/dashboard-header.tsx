@@ -27,8 +27,13 @@ export function DashboardHeader({ title }: DashboardHeaderProps) {
   const { setCommandOpen } = useUIStore()
 
   const handleSignOut = () => {
+    const isAdmin = user?.role === 'admin'
     logout()
-    router.push('/admin/login')
+    if (isAdmin) {
+      router.push('/admin-user/login')
+    } else {
+      router.push('/admin/login')
+    }
   }
 
   return (

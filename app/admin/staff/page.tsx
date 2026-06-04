@@ -20,6 +20,25 @@ import {
   defaultLimitedAdminPermissions,
   type AdminFeatureKey,
 } from '@/lib/auth/admin-features'
+import { ChevronDown, Check } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { Switch } from '@/components/ui/switch'
 
 function adminHeaders(user: User) {
   return {
@@ -49,6 +68,7 @@ export default function AdminStaffPage() {
   const [name, setName] = useState('')
   const [perm, setPerm] = useState<Record<AdminFeatureKey, boolean>>(defaultLimitedAdminPermissions())
   const [saving, setSaving] = useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
 
   const load = useCallback(async () => {
     if (!user || !isClientSuperAdmin(user)) return
@@ -96,6 +116,7 @@ export default function AdminStaffPage() {
       setEmail('')
       setName('')
       setPerm(defaultLimitedAdminPermissions())
+      setDialogOpen(false)
       await load()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Create failed')
@@ -108,47 +129,104 @@ export default function AdminStaffPage() {
     return <div className="p-6 text-sm text-muted-foreground">Checking access…</div>
   }
 
-  return (
-    <div className="mx-auto max-w-4xl space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold">Admin users</h1>
-        <p className="text-muted-foreground text-sm">
-          Super admins manage limited admins. Run <code className="text-xs">profiles_admin_roles.sql</code> in
-          Supabase so the owner account is <code className="text-xs">super_admin</code>.
-        </p>
-      </div>
+  const activePermsCount = Object.values(perm).filter(Boolean).length
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Create limited admin</CardTitle>
-          <CardDescription>
-            Creates a Supabase Auth user and a profile with app_role admin and sends an invitation email to set the password.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Label>Email</Label>
-              <Input value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
+  return (
+    <div className="w-full space-y-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Admin users</h1>
+          <p className="text-muted-foreground text-sm">
+            Super admins manage limited admins. Run <code className="text-xs">profiles_admin_roles.sql</code> in
+            Supabase so the owner account is <code className="text-xs">super_admin</code>.
+          </p>
+        </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="shrink-0 rounded-xl bg-neutral-900 text-white hover:bg-neutral-800">
+              Create Admin
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md rounded-2xl">
+            <DialogHeader>
+              <DialogTitle>Create limited admin</DialogTitle>
+              <DialogDescription>
+                Creates a Supabase Auth user and a profile with app_role admin and sends an invitation email to set the password.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="grid gap-2">
+                <Label htmlFor="create-email">Email</Label>
+                <Input
+                  id="create-email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  autoComplete="off"
+                  placeholder="admin-user@company.com"
+                  className="rounded-xl h-11"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="create-name">Display name</Label>
+                <Input
+                  id="create-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="John Doe"
+                  className="rounded-xl h-11"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Permissions</Label>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="w-full justify-between rounded-xl h-11 border-neutral-200 bg-white font-normal hover:bg-neutral-50 text-left">
+                      <span className="text-neutral-700 truncate">
+                        {activePermsCount === 0
+                          ? "Select permissions..."
+                          : `${activePermsCount} permissions selected`}
+                      </span>
+                      <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="w-[300px] max-h-[300px] overflow-y-auto p-1.5 rounded-xl shadow-elevated" align="start">
+                    {ADMIN_FEATURE_KEYS.map((k) => (
+                      <DropdownMenuItem
+                        key={k}
+                        onSelect={(e: Event) => {
+                          e.preventDefault()
+                          togglePerm(k, !perm[k])
+                        }}
+                        className="rounded-lg cursor-pointer flex items-center gap-2.5"
+                      >
+                        <div className={cn(
+                          "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
+                          perm[k] 
+                            ? "border-neutral-900 bg-neutral-900 text-white" 
+                            : "border-neutral-300 bg-white"
+                        )}>
+                          {perm[k] && <Check className="size-3 text-white stroke-[3px]" />}
+                        </div>
+                        <span className="text-sm text-neutral-700">{ADMIN_FEATURE_LABELS[k]}</span>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
-            <div className="grid gap-2">
-              <Label>Display name</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} />
-            </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {ADMIN_FEATURE_KEYS.map((k) => (
-              <label key={k} className="flex items-center gap-2 text-sm">
-                <Checkbox checked={perm[k]} onCheckedChange={(c) => togglePerm(k, c === true)} />
-                <span>{ADMIN_FEATURE_LABELS[k]}</span>
-              </label>
-            ))}
-          </div>
-          <Button disabled={saving} onClick={() => void createStaff()}>
-            {saving ? 'Creating…' : 'Create admin'}
-          </Button>
-        </CardContent>
-      </Card>
+            <DialogFooter className="mt-4 gap-2 sm:gap-0">
+              <DialogClose asChild>
+                <Button variant="outline" className="rounded-xl h-11">
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button disabled={saving} onClick={() => void createStaff()} className="rounded-xl h-11 bg-neutral-900 text-white hover:bg-neutral-800">
+                {saving ? 'Creating…' : 'Create admin'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
 
       <Card>
         <CardHeader>
@@ -195,9 +273,7 @@ export default function AdminStaffPage() {
         </CardContent>
       </Card>
 
-      <Button variant="outline" asChild>
-        <Link href="/admin">Back to dashboard</Link>
-      </Button>
+
     </div>
   )
 }
@@ -272,11 +348,10 @@ function StaffPermissionsRow({
             Active
           </span>
         ) : (
-          <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium ring-1 ring-inset ${
-            row.is_active
-              ? 'bg-green-50 text-green-700 ring-green-600/20'
-              : 'bg-red-50 text-red-700 ring-red-600/20'
-          }`}>
+          <span className={`inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium ring-1 ring-inset ${row.is_active
+            ? 'bg-green-50 text-green-700 ring-green-600/20'
+            : 'bg-red-50 text-red-700 ring-red-600/20'
+            }`}>
             {row.is_active ? 'Active' : 'Inactive'}
           </span>
         )}
@@ -320,14 +395,10 @@ function StaffPermissionsRow({
         {row.app_role === 'super_admin' ? (
           <span className="text-xs text-muted-foreground">-</span>
         ) : (
-          <Button
-            size="sm"
-            variant="ghost"
-            className={`text-xs font-semibold ${row.is_active ? 'text-red-600 hover:text-red-700 hover:bg-red-50' : 'text-green-600 hover:text-green-700 hover:bg-green-50'}`}
-            onClick={() => void onToggleStatus(row.id, !row.is_active)}
-          >
-            {row.is_active ? 'Deactivate' : 'Activate'}
-          </Button>
+          <Switch
+            checked={row.is_active}
+            onCheckedChange={(checked) => void onToggleStatus(row.id, checked)}
+          />
         )}
       </TableCell>
     </TableRow>

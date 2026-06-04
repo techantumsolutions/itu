@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { format } from 'date-fns'
-import { Loader2, Search } from 'lucide-react'
+import { Loader2, Search, Eye } from 'lucide-react'
 import { useAuthStore } from '@/lib/stores'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -118,39 +118,61 @@ export default function AdminSupportTicketsPage() {
         ) : tickets.length === 0 ? (
           <div className="px-6 py-14 text-center text-sm text-muted-foreground">No tickets match your filters.</div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[110px]">Ticket ID</TableHead>
-                <TableHead>User</TableHead>
-                <TableHead>Subject</TableHead>
-                <TableHead className="w-[130px]">Status</TableHead>
-                <TableHead className="w-[140px]">Created</TableHead>
-                <TableHead className="w-[140px]">Updated</TableHead>
-                <TableHead className="w-[120px] text-right">Actions</TableHead>
+          <Table className="table-fixed w-full min-w-[900px]">
+            <TableHeader className="bg-neutral-50/75 border-b border-neutral-200/40">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[150px] max-w-none whitespace-nowrap px-4 py-3.5 font-semibold text-neutral-900">
+                  Ticket ID
+                </TableHead>
+                <TableHead className="w-[280px] max-w-none px-4 py-3.5 font-semibold text-neutral-900">
+                  User
+                </TableHead>
+                <TableHead className="w-[140px] max-w-none whitespace-nowrap px-4 py-3.5 font-semibold text-neutral-900">
+                  Status
+                </TableHead>
+                <TableHead className="w-[150px] max-w-none whitespace-nowrap px-4 py-3.5 font-semibold text-neutral-900">
+                  Created
+                </TableHead>
+                <TableHead className="w-[150px] max-w-none whitespace-nowrap px-4 py-3.5 font-semibold text-neutral-900">
+                  Updated
+                </TableHead>
+                <TableHead className="w-[80px] max-w-none whitespace-nowrap px-4 py-3.5 text-right font-semibold text-neutral-900">
+                  Action
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {tickets.map((t) => (
-                <TableRow key={t.id}>
-                  <TableCell className="font-mono text-xs text-muted-foreground">{t.id.slice(0, 8)}…</TableCell>
-                  <TableCell>
-                    <div className="text-sm font-medium">{t.userName || '—'}</div>
-                    <div className="text-xs text-muted-foreground">{t.userEmail || '—'}</div>
+                <TableRow key={t.id} className="group hover:bg-neutral-50/50 transition-colors">
+                  <TableCell className="max-w-none whitespace-nowrap px-4 py-4">
+                    <span className="bg-neutral-100 border border-neutral-200/50 rounded-lg px-2.5 py-1 font-mono text-[11px] font-medium text-neutral-600">
+                      {t.id.slice(0, 8)}
+                    </span>
                   </TableCell>
-                  <TableCell className="max-w-[240px] truncate font-medium">{t.subject}</TableCell>
-                  <TableCell>
+                  <TableCell className="max-w-[280px] px-4 py-4">
+                    <div className="text-sm font-medium text-neutral-900 truncate">{t.userName || '—'}</div>
+                    <div className="text-xs text-neutral-500 truncate">{t.userEmail || '—'}</div>
+                  </TableCell>
+                  <TableCell className="max-w-none whitespace-nowrap px-4 py-4">
                     <TicketStatusBadge status={t.status} />
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
+                  <TableCell className="max-w-none whitespace-nowrap px-4 py-4 text-sm text-neutral-500 font-normal">
                     {format(new Date(t.createdAt), 'MMM d, yyyy')}
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
+                  <TableCell className="max-w-none whitespace-nowrap px-4 py-4 text-sm text-neutral-500 font-normal">
                     {format(new Date(t.updatedAt), 'MMM d, yyyy HH:mm')}
                   </TableCell>
-                  <TableCell className="text-right">
-                    <Button variant="outline" size="sm" asChild>
-                      <Link href={`/admin/support-tickets/${t.id}`}>View / Respond</Link>
+                  <TableCell className="max-w-none whitespace-nowrap px-4 py-4 text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="rounded-xl h-8 w-8 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 transition-all"
+                      asChild
+                    >
+                      <Link href={`/admin/support-tickets/${t.id}`}>
+                        <Eye className="size-4" />
+                        <span className="sr-only">View Ticket</span>
+                      </Link>
                     </Button>
                   </TableCell>
                 </TableRow>

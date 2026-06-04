@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/lib/stores'
-import { isClientAdminUser } from '@/lib/tickets/auth-headers'
+import { isClientAdminUser, isClientSuperAdmin } from '@/lib/tickets/auth-headers'
 
 const DEV_DEFAULT_EMAIL = 'admin@itu.com'
 const isDev = process.env.NODE_ENV === 'development'
@@ -43,8 +43,13 @@ export default function AdminLoginPage() {
     const result = await login(email.trim(), password)
     if (result.ok) {
       const u = useAuthStore.getState().user
-      if (isClientAdminUser(u)) {
+      if (u && isClientSuperAdmin(u)) {
         router.push('/admin')
+        return
+      }
+      if (u && u.role === 'admin') {
+        setError('This account is not authorized here. Please use your dedicated login page.')
+        useAuthStore.getState().logout()
         return
       }
       setError('This account is not authorized for the admin console. Use the customer login instead.')
