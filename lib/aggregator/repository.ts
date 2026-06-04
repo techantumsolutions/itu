@@ -343,16 +343,34 @@ export async function aggAudit(input: {
 }
 
 export async function aggListRawOperators(params: { limit?: number; offset?: number; country?: string; providerId?: string }) {
-  const q = [
-    'select=*',
-    `limit=${params.limit ?? 50}`,
-    `offset=${params.offset ?? 0}`,
-    'order=fetched_at.desc',
-  ]
-  if (params.country) q.push(`iso_code=eq.${enc(params.country)}`)
-  if (params.providerId) q.push(`service_provider_id=eq.${enc(params.providerId)}`)
-  const res = await supabaseRest(`provider_operator_raw?${q.join('&')}`, { cache: 'no-store' })
-  return jsonRowsOrEmpty(res)
+  const targetLimit = params.limit ?? 50
+  const startOffset = params.offset ?? 0
+
+  let allRows: any[] = []
+  let currentOffset = startOffset
+  let remaining = targetLimit
+
+  while (remaining > 0) {
+    const fetchLimit = Math.min(remaining, 1000)
+    const q = [
+      'select=*',
+      `limit=${fetchLimit}`,
+      `offset=${currentOffset}`,
+      'order=fetched_at.desc',
+    ]
+    if (params.country) q.push(`iso_code=eq.${enc(params.country)}`)
+    if (params.providerId) q.push(`service_provider_id=eq.${enc(params.providerId)}`)
+    const res = await supabaseRest(`provider_operator_raw?${q.join('&')}`, { cache: 'no-store' })
+    const rows = await jsonRowsOrEmpty(res)
+
+    if (!rows.length) break
+    allRows.push(...rows)
+    if (rows.length < fetchLimit) break
+
+    currentOffset += rows.length
+    remaining -= rows.length
+  }
+  return allRows
 }
 
 export async function aggListRawPlans(params: { limit?: number; offset?: number; providerId?: string; operatorRawId?: string }) {
@@ -369,26 +387,44 @@ export async function aggListRawPlans(params: { limit?: number; offset?: number;
 }
 
 export async function aggListSystemOperators(params: { country?: string; q?: string; limit?: number; offset?: number; status?: string; includeAllStatus?: boolean }) {
-  const filters = [
-    'select=*',
-  ]
-  if (params.includeAllStatus) {
-    if (params.status) {
-      filters.push(`status=eq.${enc(params.status)}`)
-    }
-  } else {
-    filters.push(params.status ? `status=eq.${enc(params.status)}` : 'status=eq.ACTIVE')
-  }
+  const targetLimit = params.limit ?? 50
+  const startOffset = params.offset ?? 0
 
-  filters.push(
-    `limit=${params.limit ?? 50}`,
-    `offset=${params.offset ?? 0}`,
-    'order=system_operator_name.asc',
-  )
-  if (params.country) filters.push(`country_id=eq.${enc(params.country)}`)
-  if (params.q) filters.push(`system_operator_name=ilike.*${enc(params.q)}*`)
-  const res = await supabaseRest(`system_operators?${filters.join('&')}`, { cache: 'no-store' })
-  return jsonRowsOrEmpty(res)
+  let allRows: any[] = []
+  let currentOffset = startOffset
+  let remaining = targetLimit
+
+  while (remaining > 0) {
+    const fetchLimit = Math.min(remaining, 1000)
+    const filters = [
+      'select=*',
+    ]
+    if (params.includeAllStatus) {
+      if (params.status) {
+        filters.push(`status=eq.${enc(params.status)}`)
+      }
+    } else {
+      filters.push(params.status ? `status=eq.${enc(params.status)}` : 'status=eq.ACTIVE')
+    }
+
+    filters.push(
+      `limit=${fetchLimit}`,
+      `offset=${currentOffset}`,
+      'order=system_operator_name.asc',
+    )
+    if (params.country) filters.push(`country_id=eq.${enc(params.country)}`)
+    if (params.q) filters.push(`system_operator_name=ilike.*${enc(params.q)}*`)
+    const res = await supabaseRest(`system_operators?${filters.join('&')}`, { cache: 'no-store' })
+    const rows = await jsonRowsOrEmpty(res)
+
+    if (!rows.length) break
+    allRows.push(...rows)
+    if (rows.length < fetchLimit) break
+
+    currentOffset += rows.length
+    remaining -= rows.length
+  }
+  return allRows
 }
 
 export async function aggListSystemPlans(params: { systemOperatorId?: string; q?: string; limit?: number; offset?: number }) {
@@ -620,4 +656,163 @@ export async function aggInsertClassificationReviewQueue(input: {
       status: 'PENDING',
     }),
   }).catch(() => {})
+}
+
+export async function aggMergeSystemOperators(targetOperatorId: string, sourceOperatorIds: string[], actorEmail: string = 'system') {
+  // 1. Verify target operator exists
+  const targetRes = await supabaseRest(
+    `system_operators?id=eq.${encodeURIComponent(targetOperatorId)}&select=*&limit=1`,
+    { cache: 'no-store' }
+  )
+  if (!targetRes.ok) throw new Error(`Failed to check target operator: ${await targetRes.text()}`)
+  const targetRows = await targetRes.json() as any[]
+  if (targetRows.length === 0) {
+    throw new Error('Target operator not found')
+  }
+  const targetOperator = targetRows[0]
+
+  const logs: string[] = []
+
+  // 2. Process each source operator
+  for (const sourceId of sourceOperatorIds) {
+    if (sourceId === targetOperatorId) continue
+
+    // Get source operator info for logging/audit
+    const sourceRes = await supabaseRest(
+      `system_operators?id=eq.${encodeURIComponent(sourceId)}&select=*&limit=1`,
+      { cache: 'no-store' }
+    )
+    if (!sourceRes.ok) continue
+    const sourceRows = await sourceRes.json() as any[]
+    if (sourceRows.length === 0) continue
+    const sourceOperator = sourceRows[0]
+
+    // Fetch all system plans for the source operator
+    const plansRes = await supabaseRest(
+      `system_plans?system_operator_id=eq.${encodeURIComponent(sourceId)}&select=*`,
+      { cache: 'no-store' }
+    )
+    if (plansRes.ok) {
+      const plans = await plansRes.json() as any[]
+      for (const sp of plans) {
+        // Check if target operator already has a plan with the same signature
+        const existingPlanRes = await supabaseRest(
+          `system_plans?system_operator_id=eq.${encodeURIComponent(
+            targetOperatorId
+          )}&normalized_signature=eq.${encodeURIComponent(sp.normalized_signature)}&select=*&limit=1`,
+          { cache: 'no-store' }
+        )
+        if (existingPlanRes.ok) {
+          const existingPlanRows = await existingPlanRes.json() as any[]
+          if (existingPlanRows.length > 0) {
+            const targetSp = existingPlanRows[0]
+            // Update plan mappings
+            await supabaseRest(
+              `plan_mappings?system_plan_id=eq.${encodeURIComponent(sp.id)}`,
+              {
+                method: 'PATCH',
+                body: JSON.stringify({ system_plan_id: targetSp.id }),
+              }
+            )
+            // Update duplicate plan suggestions
+            await supabaseRest(
+              `duplicate_plan_suggestions?suggested_system_plan_id=eq.${encodeURIComponent(sp.id)}`,
+              {
+                method: 'PATCH',
+                body: JSON.stringify({ suggested_system_plan_id: targetSp.id }),
+              }
+            )
+            // Delete duplicate source plan
+            await supabaseRest(`system_plans?id=eq.${encodeURIComponent(sp.id)}`, {
+              method: 'DELETE',
+            })
+            continue
+          }
+        }
+
+        // If no signature conflict, update the system operator ID of the plan
+        await supabaseRest(`system_plans?id=eq.${encodeURIComponent(sp.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ system_operator_id: targetOperatorId }),
+        })
+      }
+    }
+
+    // Remap raw operators mappings
+    await supabaseRest(`operator_mappings?system_operator_id=eq.${encodeURIComponent(sourceId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ system_operator_id: targetOperatorId }),
+    })
+
+    // Remap system operator lineage safely
+    const lineageRes = await supabaseRest(
+      `system_operator_lineage?system_operator_id=eq.${encodeURIComponent(sourceId)}&select=*`,
+      { cache: 'no-store' }
+    )
+    if (lineageRes.ok) {
+      const lineages = await lineageRes.json() as any[]
+      for (const lin of lineages) {
+        // Check if target operator already has this lineage
+        const targetLinRes = await supabaseRest(
+          `system_operator_lineage?system_operator_id=eq.${encodeURIComponent(
+            targetOperatorId
+          )}&aggregate_operator_id=eq.${encodeURIComponent(lin.aggregate_operator_id)}&select=id&limit=1`,
+          { cache: 'no-store' }
+        )
+        if (targetLinRes.ok) {
+          const targetLinRows = await targetLinRes.json() as any[]
+          if (targetLinRows.length > 0) {
+            // Delete source lineage as it is a duplicate
+            await supabaseRest(`system_operator_lineage?id=eq.${encodeURIComponent(lin.id)}`, {
+              method: 'DELETE',
+            })
+            continue
+          }
+        }
+        // Update lineage to point to target operator
+        await supabaseRest(`system_operator_lineage?id=eq.${encodeURIComponent(lin.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ system_operator_id: targetOperatorId }),
+        })
+      }
+    }
+
+    // Remap operator_ref in internal_plans
+    try {
+      await supabaseRest(
+        `internal_plans?operator_ref=eq.system:${encodeURIComponent(sourceId)}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify({
+            operator_ref: `system:${targetOperatorId}`,
+          }),
+        }
+      )
+    } catch (err) {
+      console.warn(`Failed to update internal plans for source operator ${sourceId}:`, err)
+    }
+
+    // Delete the source operator
+    await supabaseRest(`system_operators?id=eq.${encodeURIComponent(sourceId)}`, {
+      method: 'DELETE',
+    })
+
+    logs.push(`Merged system operator '${sourceOperator.system_operator_name}' (${sourceId}) into '${targetOperator.system_operator_name}' (${targetOperatorId})`)
+  }
+
+  // Audit Log
+  await aggAudit({
+    actor: actorEmail,
+    action: 'operators.merge',
+    entityType: 'system_operator',
+    entityId: targetOperatorId,
+    after: targetOperator,
+    details: {
+      targetOperatorId,
+      sourceOperatorIds,
+      logs,
+    },
+  }).catch(() => {})
+
+  return { success: true, logs }
 }

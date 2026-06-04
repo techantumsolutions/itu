@@ -261,16 +261,16 @@ export default function OperatorsPage() {
     return mapped.sort((a, b) => {
       const codeA = String(a.countryCode ?? '').trim().toUpperCase()
       const codeB = String(b.countryCode ?? '').trim().toUpperCase()
-      
+
       const countryNameA = countryNameMap.get(codeA) || codeA
       const countryNameB = countryNameMap.get(codeB) || codeB
-      
+
       const comp = countryNameA.localeCompare(countryNameB, undefined, { sensitivity: 'base' })
       if (comp !== 0) return comp
-      
+
       const nameA = String(a.mainName ?? '').trim().toUpperCase()
       const nameB = String(b.mainName ?? '').trim().toUpperCase()
-      
+
       return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' })
     })
   }, [systemOperators, rawOperators, dataType, typeFilter, statusFilter, countryNameMap])
@@ -337,14 +337,14 @@ export default function OperatorsPage() {
       </div>
 
       <Card className="border-border/60 shadow-sm">
-        <CardHeader className="pb-3">
+        {/* <CardHeader className="pb-3">
           <CardTitle>Operators List</CardTitle>
           <CardDescription>
             <Link href="/admin/integrations" className="font-medium text-primary hover:underline">
               Back to integrations
             </Link>
           </CardDescription>
-        </CardHeader>
+        </CardHeader> */}
         <CardContent className="space-y-4">
 
           {/* Filters Bar */}

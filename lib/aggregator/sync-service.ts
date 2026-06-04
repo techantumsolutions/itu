@@ -37,6 +37,7 @@ import {
   summarizeDiagnostics,
 } from '@/lib/aggregator/sync-diagnostics'
 import { normalizeCountryIso3 } from '@/lib/lcr/countries'
+import { getOrCreateCanonicalCountry } from '@/lib/aggregator/country-normalizer'
 import { buildSystemOperatorInput } from '@/lib/aggregator/operator-normalizer'
 import { buildSystemPlanInput, scorePlanCandidate, isValidSystemPlan } from '@/lib/aggregator/plan-normalizer'
 
@@ -171,9 +172,21 @@ export async function syncAggregatorProvider(
     for (const plan of normalized) {
       const rawCountry = (plan.raw as { CountryIso?: string; CountryIso3?: string }) ?? {}
       const providerCountry = String(rawCountry.CountryIso ?? rawCountry.CountryIso3 ?? plan.countryIso3 ?? '')
-      const resolvedIso3 = normalizeCountryIso3(providerCountry || plan.countryIso3)
+      
+      const rawOperatorObj = (plan.raw as any)?.operator ?? {}
+      const rawCountryObj = rawOperatorObj?.country ?? {}
+      const canonicalCountry = await getOrCreateCanonicalCountry({
+        countryName: rawCountryObj?.name || (plan.raw as any)?.countryName || (plan.raw as any)?.CountryName,
+        iso2: providerCountry.length === 2 ? providerCountry : rawCountryObj?.iso_code || undefined,
+        iso3: providerCountry.length === 3 ? providerCountry : rawCountryObj?.iso_code3 || undefined,
+      })
+
+      if (canonicalCountry) {
+        plan.countryIso3 = canonicalCountry.id
+      }
+
       if (diag.countryMappings.length < 20) {
-        logCountryMapping(diag, providerCountry, resolvedIso3)
+        logCountryMapping(diag, providerCountry, plan.countryIso3)
       }
     }
 
