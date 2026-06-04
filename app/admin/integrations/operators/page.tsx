@@ -74,6 +74,7 @@ export default function OperatorsPage() {
   const [countryFilter, setCountryFilter] = useState('ALL')
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('ALL')
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ACTIVE')
 
   // Multi-select & Merge states
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -169,10 +170,11 @@ export default function OperatorsPage() {
     }
   }
 
-  // Toggle System Operator Status
   const toggleSystemOperatorStatus = async (id: string, currentStatus: string) => {
     setTogglingId(id)
-    const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
+    const opStatus = String(currentStatus ?? '').trim().toUpperCase()
+    const isActive = ['ACTIVE', 'ONLINE', 'TRUE'].includes(opStatus)
+    const newStatus = isActive ? 'INACTIVE' : 'ACTIVE'
     try {
       const res = await fetch(`/api/admin/aggregator/operators/${id}`, {
         method: 'PATCH',
@@ -199,6 +201,7 @@ export default function OperatorsPage() {
     setProviderFilter('ALL')
     setCountryFilter('ALL')
     setTypeFilter('ALL')
+    setStatusFilter('ACTIVE')
     setSelectedIds([])
   }, [dataType])
 
@@ -213,6 +216,16 @@ export default function OperatorsPage() {
           return typeStr === 'TELECOM' || typeStr === 'MOBILE_OPERATOR'
         }
         return typeStr === typeFilter.toUpperCase()
+      })
+    }
+
+    if (dataType === 'system' && statusFilter !== 'ALL') {
+      list = list.filter((op) => {
+        const opStatus = String(op.status ?? '').trim().toUpperCase()
+        const filterStatus = String(statusFilter ?? '').trim().toUpperCase()
+        const isActiveOp = ['ACTIVE', 'ONLINE', 'TRUE'].includes(opStatus)
+        const isActiveFilter = filterStatus === 'ACTIVE'
+        return isActiveOp === isActiveFilter
       })
     }
 
@@ -257,7 +270,7 @@ export default function OperatorsPage() {
       
       return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' })
     })
-  }, [systemOperators, rawOperators, dataType, typeFilter, countryNameMap])
+  }, [systemOperators, rawOperators, dataType, typeFilter, statusFilter, countryNameMap])
 
   const selectedOperators = useMemo(() => {
     return systemOperators.filter((op) => selectedIds.includes(op.id))
@@ -379,22 +392,40 @@ export default function OperatorsPage() {
               </Select>
             </div>
 
-            {/* Provider Filter */}
-            <div className="flex flex-col gap-1">
-              <Select value={providerFilter} onValueChange={setProviderFilter}>
-                <SelectTrigger className="w-[180px] bg-background border-border/80">
-                  <SelectValue placeholder="Provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All Providers</SelectItem>
-                  {providers.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Provider Filter - Only show for Provider Operator */}
+            {dataType === 'provider' && (
+              <div className="flex flex-col gap-1">
+                <Select value={providerFilter} onValueChange={setProviderFilter}>
+                  <SelectTrigger className="w-[180px] bg-background border-border/80">
+                    <SelectValue placeholder="Provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Providers</SelectItem>
+                    {providers.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Status Filter - Only show for System Operator */}
+            {dataType === 'system' && (
+              <div className="flex flex-col gap-1">
+                <Select value={statusFilter} onValueChange={(val: any) => setStatusFilter(val)}>
+                  <SelectTrigger className="w-[180px] bg-background border-border/80">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Statuses</SelectItem>
+                    <SelectItem value="ACTIVE">Active</SelectItem>
+                    <SelectItem value="INACTIVE">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Country Filter */}
             <div className="flex flex-col gap-1">
