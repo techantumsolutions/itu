@@ -55,7 +55,10 @@ import {
   aggUpsertRawPlan,
   aggUpsertSystemOperator,
   aggUpsertSystemPlan,
+  aggUpsertFilteredOperator,
+  aggCleanupSystemOperatorsWithoutPlans,
 } from '@/lib/aggregator/repository'
+import { classifyOperatorByPlans } from '@/lib/aggregator/telecom-classifier'
 
 function safeString(v: unknown): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
@@ -179,60 +182,102 @@ export async function syncAggregatorProvider(
 
     diag.stages.operator_classification.recordsReceived = normalized.length
 
+    // Group normalized plans by providerOperatorId
+    const plansByOperatorId = new Map<string, { op: ReturnType<typeof rawOperatorFromPlan>; plans: NormalizedPlan[] }>()
+    for (const plan of normalized) {
+      const op = rawOperatorFromPlan(plan)
+      if (!op.providerOperatorId) continue
+      if (!plansByOperatorId.has(op.providerOperatorId)) {
+        plansByOperatorId.set(op.providerOperatorId, { op, plans: [] })
+      }
+      plansByOperatorId.get(op.providerOperatorId)!.plans.push(plan)
+    }
+
+    // Pre-classify operators and cache results
+    const operatorClassification = new Map<string, ReturnType<typeof classifyOperatorByPlans>>()
+    for (const [operatorId, data] of plansByOperatorId.entries()) {
+      const classification = classifyOperatorByPlans(data.op.providerOperatorName, data.plans)
+      operatorClassification.set(operatorId, classification)
+    }
+
+    const auditedOperatorIds = new Set<string>()
+
     for (const plan of normalized) {
       const op = rawOperatorFromPlan(plan)
       if (!op.providerOperatorId || !op.providerOperatorName) continue
 
-      const staticClassification = classifyProviderOperatorRecord({
-        providerOperatorName: op.providerOperatorName,
-        providerOperatorId: op.providerOperatorId,
-        productName: plan.name ?? null,
-        serviceType: plan.service ?? null,
-        category: internalPlanCategory(plan),
-        operatorType: op.operatorType,
-        countryIso3: op.countryCode,
-        plan,
-        rawResponseJson: op.rawResponseJson,
-      })
-
-      const dynamicClassification = dynamicMode
-        ? await classifyTelecomRecordDynamic({
-            providerOperatorName: op.providerOperatorName,
-            planName: plan.name ?? null,
-            serviceType: plan.service ?? null,
-            category: internalPlanCategory(plan),
-            tags: plan.tags ?? [],
-            benefits: plan.benefits,
-            metadata: op.rawResponseJson,
-          }).catch(() => null)
-        : null
-
-      const classification = dynamicClassification
-        ? {
-            kind: dynamicClassification.isTelecom ? 'MOBILE_OPERATOR' : 'UNKNOWN',
-            isTelecomOperator: dynamicClassification.isTelecom,
-            skipReason: dynamicClassification.isTelecom ? null : staticClassification.skipReason ?? 'NOT_TELECOM_OPERATOR',
-          }
-        : staticClassification
-
-      let telecomOperatorName: string | null = null
-      if (classification.kind === 'MOBILE_OPERATOR' && classification.isTelecomOperator) {
-        telecomOperatorName = op.providerOperatorName
-      } else {
-        const resolved = resolveTelecomOperatorName({
-          plan,
-          providerOperatorName: op.providerOperatorName,
-          providerOperatorId: op.providerOperatorId,
-          countryIso3: op.countryCode,
-        })
-        if (resolved && isGenuineTelecomOperatorName(resolved, op.countryCode)) {
-          telecomOperatorName = resolved
-        }
+      const opClass = operatorClassification.get(op.providerOperatorId) || {
+        isValid: false,
+        reason: 'NO_VALID_PLANS',
+        score: 0,
       }
 
-      const rawOperatorType = telecomOperatorName
-        ? 'TELECOM'
-        : operatorTypeForKind(classification.kind)
+      let systemOperatorInput = null
+      let telecomOperatorName: string | null = null
+      let rawOperatorType = 'UNKNOWN'
+      let staticClassification: any = null
+      let dynamicClassification: any = null
+
+      if (opClass.isValid) {
+        staticClassification = classifyProviderOperatorRecord({
+          providerOperatorName: op.providerOperatorName,
+          providerOperatorId: op.providerOperatorId,
+          productName: plan.name ?? null,
+          serviceType: plan.service ?? null,
+          category: internalPlanCategory(plan),
+          operatorType: op.operatorType,
+          countryIso3: op.countryCode,
+          plan,
+          rawResponseJson: op.rawResponseJson,
+        })
+
+        dynamicClassification = dynamicMode
+          ? await classifyTelecomRecordDynamic({
+              providerOperatorName: op.providerOperatorName,
+              planName: plan.name ?? null,
+              serviceType: plan.service ?? null,
+              category: internalPlanCategory(plan),
+              tags: plan.tags ?? [],
+              benefits: plan.benefits,
+              metadata: op.rawResponseJson,
+            }).catch(() => null)
+          : null
+
+        const classification = dynamicClassification
+          ? {
+              kind: dynamicClassification.isTelecom ? 'MOBILE_OPERATOR' : 'UNKNOWN',
+              isTelecomOperator: dynamicClassification.isTelecom,
+              skipReason: dynamicClassification.isTelecom ? null : staticClassification.skipReason ?? 'NOT_TELECOM_OPERATOR',
+            }
+          : staticClassification
+
+        if (classification.kind === 'MOBILE_OPERATOR' && classification.isTelecomOperator) {
+          telecomOperatorName = op.providerOperatorName
+        } else {
+          const resolved = resolveTelecomOperatorName({
+            plan,
+            providerOperatorName: op.providerOperatorName,
+            providerOperatorId: op.providerOperatorId,
+            countryIso3: op.countryCode,
+          })
+          if (resolved && isGenuineTelecomOperatorName(resolved, op.countryCode)) {
+            telecomOperatorName = resolved
+          }
+        }
+
+        telecomOperatorName = telecomOperatorName || op.providerOperatorName
+        rawOperatorType = 'TELECOM'
+      } else {
+        if (opClass.reason === 'GIFT_CARD_PROVIDER') {
+          rawOperatorType = 'GIFT_CARD'
+        } else if (opClass.reason === 'GAMING_PROVIDER') {
+          rawOperatorType = 'GAMING'
+        } else if (opClass.reason === 'SUBSCRIPTION_SERVICE') {
+          rawOperatorType = 'SUBSCRIPTION'
+        } else {
+          rawOperatorType = 'UNKNOWN'
+        }
+      }
 
       const rawOperator = await aggUpsertRawOperator({
         serviceProviderId: providerId,
@@ -252,14 +297,21 @@ export async function syncAggregatorProvider(
       diag.uniqueRawOperatorIds.add(op.providerOperatorId)
       diag.stages.raw_operator_store.recordsStored = diag.uniqueRawOperatorIds.size
 
-      const systemOperatorInput = telecomOperatorName
-        ? buildSystemOperatorInput(plan, telecomOperatorName)
-        : null
+      if (!opClass.isValid) {
+        if (!auditedOperatorIds.has(op.providerOperatorId)) {
+          auditedOperatorIds.add(op.providerOperatorId)
+          await aggUpsertFilteredOperator({
+            providerId,
+            rawOperatorId: rawOperator.id,
+            rawOperatorName: op.providerOperatorName,
+            filterReason: opClass.reason || 'LOW_TELECOM_CONFIDENCE',
+            classificationScore: opClass.score,
+          })
+        }
 
-      if (!systemOperatorInput) {
         skippedOperators += 1
         diag.stages.operator_classification.recordsRejected += 1
-        const warning = formatSkippedOperatorLog(op.providerOperatorName, op.countryCode, classification)
+        const warning = `Filtered non-telecom operator "${op.providerOperatorName}" (${op.countryCode}) - Reason: ${opClass.reason}`
         syncWarnings.push(warning)
         if (process.env.SYNC_VERBOSE === 'true') {
           console.warn(warning)
@@ -269,7 +321,7 @@ export async function syncAggregatorProvider(
           providerOperatorName: op.providerOperatorName,
           countryIso3: op.countryCode,
           decision: 'REJECTED',
-          reason: classification.skipReason ?? 'NOT_TELECOM_OPERATOR',
+          reason: opClass.reason || 'LOW_TELECOM_CONFIDENCE',
         })
       } else {
         const confidence = operatorNameConfidenceScore(telecomOperatorName!, op.countryCode)
@@ -285,6 +337,7 @@ export async function syncAggregatorProvider(
               ? 'RESOLVED_FROM_PROVIDER_METADATA'
               : undefined,
         })
+        systemOperatorInput = buildSystemOperatorInput(plan, telecomOperatorName!)
       }
 
       let systemOperator: Awaited<ReturnType<typeof aggUpsertSystemOperator>> | null = null
@@ -471,6 +524,13 @@ export async function syncAggregatorProvider(
 
     diag.stages.plan_mapping.recordsMapped = mappedPlans
     printPipelineReport(diag)
+
+    // Cleanup operators without plans
+    try {
+      await aggCleanupSystemOperatorsWithoutPlans()
+    } catch (cleanupErr) {
+      console.error('Failed to cleanup operators without plans:', cleanupErr)
+    }
 
     const durationMs = Date.now() - started
     const result: AggregatorSyncResult = {

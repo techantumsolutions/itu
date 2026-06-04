@@ -1,4 +1,5 @@
-import { fetchValuetopupCatalog, type ValuetopupCatalogProduct } from '@/lib/valuetopup'
+import { fetchValuetopupCatalog } from '@/lib/valuetopup'
+import { normalizeCountryIso3 } from '@/lib/lcr/countries'
 import type {
   FetchRawPlansOptions,
   NormalizedBenefit,
@@ -8,8 +9,6 @@ import type {
   RawPlanRecord,
 } from '@/lib/providers/types'
 
-const DEFAULT_COUNTRY_ISO3 = 'MYS'
-
 function text(v: unknown): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
 }
@@ -17,86 +16,6 @@ function text(v: unknown): string {
 function num(v: unknown): number | undefined {
   const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN
   return Number.isFinite(n) ? n : undefined
-}
-
-function parseDenominations(denomination: string | null | undefined): number[] {
-  if (!denomination?.trim()) return []
-  return denomination
-    .split(/[,;|]/)
-    .map((s) => Number(s.trim()))
-    .filter((n) => Number.isFinite(n) && n > 0)
-}
-
-function inferCountryIso3(product: ValuetopupCatalogProduct, filter?: string[]): string {
-  const currency = text(product.denomination_currency || product.pricing?.currency).toUpperCase()
-  const byCurrency: Record<string, string> = {
-    MYR: 'MYS',
-    BDT: 'BGD',
-    IDR: 'IDN',
-    PHP: 'PHL',
-    THB: 'THA',
-    VND: 'VNM',
-    SGD: 'SGP',
-    INR: 'IND',
-    USD: 'USA',
-  }
-  const inferred = byCurrency[currency] || DEFAULT_COUNTRY_ISO3
-  if (filter?.length && !filter.includes(inferred)) return ''
-  return inferred
-}
-
-function productToPlans(config: ProviderConfig, product: ValuetopupCatalogProduct, countryIso3: string): NormalizedPlan[] {
-  if (product.is_active === false) return []
-  const code = text(product.code)
-  const name = text(product.name) || code
-  if (!code || !countryIso3) return []
-
-  const currency = text(product.denomination_currency || product.pricing?.currency) || 'MYR'
-  const unitPrice = num(product.denomination_unit_price) ?? 1
-  const denominations = parseDenominations(product.denomination)
-  const amounts = denominations.length ? denominations : [0]
-
-  return amounts.map((faceValue) => {
-    const providerPlanId = faceValue > 0 ? `${code}:${faceValue}` : code
-    const retailAmount = faceValue > 0 ? faceValue * unitPrice : undefined
-    const wholesaleRaw = product.pricing?.unit_price
-    const wholesaleMultiplier = wholesaleRaw != null ? Number(wholesaleRaw) : NaN
-    const wholesaleAmount =
-      faceValue > 0 && Number.isFinite(wholesaleMultiplier)
-        ? wholesaleMultiplier < 0
-          ? faceValue + wholesaleMultiplier
-          : faceValue * wholesaleMultiplier
-        : undefined
-
-    const benefit: NormalizedBenefit = {
-      type: 'AIRTIME',
-      amountBase: faceValue > 0 ? faceValue : undefined,
-      totalIncludingTax: retailAmount,
-      unit: currency,
-    }
-
-    return {
-      providerId: config.id,
-      providerCode: config.code,
-      providerPlanId,
-      countryIso3,
-      operatorRef: `vt:${code}`,
-      operatorName: name,
-      service: 'Mobile',
-      subservice: product.processing_time === 'instant' ? 'Instant' : undefined,
-      planType: faceValue > 0 ? 'FIXED' : 'DYNAMIC',
-      tags: ['VALUETOPUP', code],
-      name: faceValue > 0 ? `${name} ${faceValue} ${currency}` : name,
-      description: text(product.note) || undefined,
-      retailAmount,
-      retailCurrency: currency,
-      wholesaleAmount,
-      wholesaleCurrency: currency,
-      benefits: [benefit],
-      requiredFields: [['account']],
-      raw: { product, faceValue, countryIso3 },
-    } satisfies NormalizedPlan
-  })
 }
 
 export const valuetopupConnector: ProviderConnector = {
@@ -113,39 +32,69 @@ export const valuetopupConnector: ProviderConnector = {
       { includeInactive: false },
     )
 
-    const products = catalog.products ?? {}
+    const skus = Array.isArray(catalog?.payLoad) ? catalog.payLoad : []
     const countryFilter = (options?.countries ?? config.supportedCountries ?? [])
       .map((c) => c.trim().toUpperCase())
       .filter(Boolean)
 
     const records: RawPlanRecord[] = []
-    for (const product of Object.values(products)) {
-      const countryIso3 = inferCountryIso3(product, countryFilter.length ? countryFilter : undefined)
-      if (!countryIso3) continue
-      const plans = productToPlans(config, product, countryIso3)
-      for (const plan of plans) {
-        records.push({ providerPlanId: plan.providerPlanId, raw: plan.raw })
-      }
+    for (const sku of skus) {
+      const countryCode2 = text(sku.countryCode).toUpperCase()
+      const countryIso3 = normalizeCountryIso3(countryCode2)
+      if (countryFilter.length && !countryFilter.includes(countryIso3)) continue
+
+      records.push({ providerPlanId: text(sku.skuId), raw: sku })
     }
     return records
   },
 
   async normalizePlans({ config, raw }): Promise<NormalizedPlan[]> {
-    const out: NormalizedPlan[] = []
-    for (const r of raw) {
-      const payload = r.raw as { product?: ValuetopupCatalogProduct; faceValue?: number; countryIso3?: string }
-      const product = payload?.product
-      const countryIso3 = text(payload?.countryIso3) || DEFAULT_COUNTRY_ISO3
-      if (!product) continue
-      out.push(...productToPlans(config, product, countryIso3))
-    }
-    const seen = new Set<string>()
-    return out.filter((p) => {
-      const key = p.providerPlanId
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
+    return raw
+      .map((r) => {
+        const sku: any = r.raw ?? {}
+        const skuId = text(sku.skuId)
+        if (!skuId) return null
+
+        const countryCode2 = text(sku.countryCode).toUpperCase()
+        const countryIso3 = normalizeCountryIso3(countryCode2)
+        const operatorId = text(sku.operatorId)
+        const operatorName = text(sku.operatorName)
+        if (!countryIso3 || !operatorId) return null
+
+        // Prices:
+        const retailAmount = num(sku.min?.faceValue) || 0
+        const discountPercent = num(sku.discount) || 0
+        const wholesaleAmount = Math.round(retailAmount * (1 - discountPercent / 100) * 100) / 100
+        const currency = text(sku.min?.faceValueCurrency) || 'USD'
+
+        const benefit: NormalizedBenefit = {
+          type: sku.category === 'Pin' ? 'AIRTIME' : sku.category === 'eSIM' || sku.category === 'Rtr' ? 'COMBO' : 'OTHER',
+          amountBase: retailAmount || undefined,
+          unit: currency,
+        }
+
+        return {
+          providerId: config.id,
+          providerCode: config.code,
+          providerPlanId: skuId,
+          countryIso3,
+          operatorRef: `vt:${operatorId}`,
+          operatorName: operatorName || undefined,
+          service: sku.category === 'Pin' ? 'Mobile' : sku.category === 'eSIM' ? 'eSIM' : 'Mobile',
+          planType: sku.category === 'Pin' ? 'PIN' : 'AIRTIME',
+          tags: ['VALUETOPUP', text(sku.category).toUpperCase()],
+          name: text(sku.skuName) || text(sku.productName),
+          description: text(sku.additionalInformation) || undefined,
+          retailAmount,
+          retailCurrency: currency,
+          wholesaleAmount,
+          wholesaleCurrency: currency,
+          benefits: [benefit],
+          requiredFields: sku.category === 'Pin' ? [] : [['account']],
+          raw: sku,
+        } satisfies NormalizedPlan
+      })
+      .filter(Boolean) as NormalizedPlan[]
   },
 
   async healthCheck(config) {

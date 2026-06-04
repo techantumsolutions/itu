@@ -110,21 +110,14 @@ async function valuetopupFetch<T>(
 ): Promise<T> {
   const query = (input.query ?? '').replace(/^\?/, '')
   const bodyJson = input.body ? JSON.stringify(input.body) : ''
-  const { timestamp, nonce, signature } = signValuetopupRequest({
-    method: input.method,
-    query,
-    body: bodyJson,
-    hmacSecret: creds.hmacSecret,
-  })
 
   const url = query ? `${creds.baseUrl}${input.path}?${query}` : `${creds.baseUrl}${input.path}`
+  const auth = Buffer.from(`${creds.apiKey}:${creds.hmacSecret}`).toString('base64')
+  
   const response = await fetch(url, {
     method: input.method,
     headers: {
-      'X-Api-Key': creds.apiKey,
-      'X-Timestamp': timestamp,
-      'X-Nonce': nonce,
-      'X-Signature': signature,
+      Authorization: `Basic ${auth}`,
       Accept: 'application/json',
       'Content-Type': 'application/json',
     },
@@ -147,40 +140,54 @@ async function valuetopupFetch<T>(
 export async function fetchValuetopupCatalog(
   creds?: ValuetopupCredentialInput,
   query?: { productCode?: string; includeInactive?: boolean },
-): Promise<ValuetopupCatalogResponse> {
+): Promise<any> {
   const resolved = resolveValuetopupCredentials(creds)
   const params = new URLSearchParams()
-  if (query?.productCode) params.set('product_code', query.productCode)
-  if (query?.includeInactive) params.set('include_inactive', 'true')
+  // Note: API v2 uses /catalog/skus
   const q = params.toString()
-  return valuetopupFetch<ValuetopupCatalogResponse>(resolved, {
+  return valuetopupFetch<any>(resolved, {
     method: 'GET',
-    path: '/catalog',
+    path: '/catalog/skus',
     query: q,
   })
 }
 
 export async function createValuetopupTransaction(
-  input: ValuetopupTopupInput,
+  input: { refid: string; product: string | number; account?: string; amount?: number; remarks?: string; extras?: Record<string, string> },
   creds?: ValuetopupCredentialInput,
 ): Promise<Record<string, unknown>> {
   const resolved = resolveValuetopupCredentials(creds)
-  const body: Record<string, unknown> = {
-    refid: input.refid,
-    product: input.product,
-    account: input.account,
-    amount: input.amount,
-    remarks: input.remarks ?? '',
-    extras: input.extras ?? {},
-  }
-  return valuetopupFetch<{ data?: Record<string, unknown> }>(resolved, {
+  const skuId = Number(input.product)
+  const isPin = !input.account
+  const path = isPin ? '/transaction/pin' : '/transaction/topup'
+
+  const body: Record<string, unknown> = isPin
+    ? {
+        SkuId: skuId,
+        CorrelationId: input.refid,
+      }
+    : {
+        SkuId: skuId,
+        Amount: input.amount,
+        Mobile: input.account,
+        CorrelationId: input.refid,
+      }
+
+  const res = await valuetopupFetch<any>(resolved, {
     method: 'POST',
-    path: '/topup',
+    path,
     body,
-  }).then((r) => (r?.data ?? r) as Record<string, unknown>)
+  })
+
+  return {
+    status: res.responseCode === '000' ? 'successful' : 'failed',
+    refid: res.payLoad?.transactionId ?? res.payLoad?.refid ?? input.refid,
+    remarks: res.responseMessage ?? '',
+    ...res,
+  }
 }
 
 export async function fetchValuetopupBalance(creds?: ValuetopupCredentialInput): Promise<unknown> {
   const resolved = resolveValuetopupCredentials(creds)
-  return valuetopupFetch(resolved, { method: 'GET', path: '/balance' })
+  return valuetopupFetch(resolved, { method: 'GET', path: '/wallet/balance' })
 }

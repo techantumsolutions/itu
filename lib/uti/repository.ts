@@ -119,3 +119,15 @@ export async function dbEnqueuePlanReview(input: {
   if (!res.ok) throw new Error(await res.text())
 }
 
+export async function dbPatchProvider(providerId: string, patch: Record<string, unknown>) {
+  const res = await supabaseRest(`lcr_providers?id=eq.${enc(providerId)}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(patch),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  const rows = (await res.json()) as any[]
+  return rows?.[0] ?? null
+}
+
+

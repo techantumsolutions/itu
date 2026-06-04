@@ -27,14 +27,14 @@ async function run() {
   console.log('--- START COUNTRY-LIMITED SYNC TEST ---')
   try {
     const providers = await aggListProviders()
-    const dtoneProvider = providers.find((p) => p.adapter_key === 'dtone' || p.code === 'DTONE')
-    if (!dtoneProvider) {
-      console.error('DTOne provider not found in database.')
+    const valuetopupProvider = providers.find((p) => p.adapter_key === 'valuetopup' || p.code === 'VALUETOPUP')
+    if (!valuetopupProvider) {
+      console.error('Value Topup provider not found in database.')
       return
     }
 
-    console.log(`Starting sync for DTOne provider (ID: ${dtoneProvider.id}) scoped to IND and NGA...`)
-    const result = await syncProviderCatalog(dtoneProvider.id, { countries: ['IND', 'NGA'] })
+    console.log(`Starting sync for Value Topup provider (ID: ${valuetopupProvider.id})...`)
+    const result = await syncProviderCatalog(valuetopupProvider.id)
     console.log('Sync completed successfully!')
     console.log(JSON.stringify(result, null, 2))
   } catch (error) {

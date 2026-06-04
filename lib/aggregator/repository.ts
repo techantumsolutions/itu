@@ -13,7 +13,7 @@ function enc(v: string): string {
 
 /** Columns guaranteed by supabase/uti_lcr_schema.sql */
 const LCR_PROVIDER_BASE_SELECT =
-  'id,code,name,adapter_key,is_active,priority,base_url,refresh_interval_minutes,supported_countries,credentials_encrypted,status'
+  'id,code,name,adapter_key,is_active,priority,base_url,refresh_interval_minutes,supported_countries,credentials_encrypted,status,last_sync_at,last_success_sync_at'
 
 async function jsonRows<T = any>(res: Response): Promise<T[]> {
   if (!res.ok) throw new Error(await res.text())
@@ -433,4 +433,91 @@ export async function aggResolveInternalPlanIdForSystemPlan(systemPlanId: string
   const res = await supabaseRest(`system_plans?id=eq.${enc(systemPlanId)}&select=internal_plan_id&limit=1`, { cache: 'no-store' })
   const rows = await jsonRowsOrEmpty<{ internal_plan_id: string | null }>(res)
   return rows[0]?.internal_plan_id ?? null
+}
+
+export async function aggUpsertFilteredOperator(input: {
+  providerId: string
+  rawOperatorId: string
+  rawOperatorName: string
+  filterReason: string
+  classificationScore: number
+}) {
+  const res = await supabaseRest('agg_filtered_operators?on_conflict=provider_id,raw_operator_id', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+    body: JSON.stringify({
+      provider_id: input.providerId,
+      raw_operator_id: input.rawOperatorId,
+      raw_operator_name: input.rawOperatorName,
+      filter_reason: input.filterReason,
+      classification_score: input.classificationScore,
+      updated_at: new Date().toISOString(),
+    }),
+  })
+  const rows = await jsonRows(res)
+  return rows[0] ?? null
+}
+
+export async function aggCleanupSystemOperatorsWithoutPlans(): Promise<number> {
+  // 1. Fetch all active system plans to see which operators have active plans
+  const activePlanOperatorIds = new Set<string>()
+  let offset = 0
+  let hasMore = true
+  while (hasMore) {
+    const res = await supabaseRest(`system_plans?status=eq.ACTIVE&select=system_operator_id&limit=1000&offset=${offset}`, { cache: 'no-store' })
+    if (!res.ok) {
+      hasMore = false
+      break
+    }
+    const rows = (await res.json()) as { system_operator_id: string }[]
+    if (!rows || !rows.length) {
+      hasMore = false
+      break
+    }
+    for (const row of rows) {
+      if (row.system_operator_id) {
+        activePlanOperatorIds.add(row.system_operator_id)
+      }
+    }
+    if (rows.length < 1000) {
+      hasMore = false
+    } else {
+      offset += 1000
+    }
+  }
+
+  // 2. Fetch all system operators and check if they need deactivation
+  offset = 0
+  hasMore = true
+  let deactivatedCount = 0
+
+  while (hasMore) {
+    const res = await supabaseRest(`system_operators?select=id,status,system_operator_name&limit=1000&offset=${offset}`, { cache: 'no-store' })
+    if (!res.ok) {
+      hasMore = false
+      break
+    }
+    const rows = (await res.json()) as { id: string; status: string; system_operator_name: string }[]
+    if (!rows || !rows.length) {
+      hasMore = false
+      break
+    }
+    for (const row of rows) {
+      // If the operator is active but has no active plans, deactivate it
+      if (row.status === 'ACTIVE' && !activePlanOperatorIds.has(row.id)) {
+        await supabaseRest(`system_operators?id=eq.${encodeURIComponent(row.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status: 'INACTIVE' }),
+        }).catch(() => {})
+        deactivatedCount++
+      }
+    }
+    if (rows.length < 1000) {
+      hasMore = false
+    } else {
+      offset += 1000
+    }
+  }
+
+  return deactivatedCount
 }

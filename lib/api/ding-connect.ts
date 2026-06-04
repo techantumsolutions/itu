@@ -16,10 +16,23 @@ import type {
 } from '@/lib/types'
 
 // API Configuration
-const DING_API_BASE_URL = process.env.DING_API_BASE_URL || 'https://api.dingconnect.com'
-const DING_API_KEY = process.env.DING_API_KEY || ''
-const DING_CLIENT_ID = process.env.DING_CLIENT_ID || ''
-const DING_CLIENT_SECRET = process.env.DING_CLIENT_SECRET || ''
+function getDingApiBaseUrl(): string {
+  const url = (process.env.DING_API_BASE_URL || '').trim()
+  if (!url) return 'https://api.dingconnect.com'
+  return url.replace(/\/api\/V1\/?$/i, '').trim()
+}
+
+function getDingApiKey(): string {
+  return (process.env.DING_API_KEY || '').trim()
+}
+
+function getDingClientId(): string {
+  return (process.env.DING_CLIENT_ID || '').trim()
+}
+
+function getDingClientSecret(): string {
+  return (process.env.DING_CLIENT_SECRET || '').trim()
+}
 
 // Response types
 interface DingApiResponse<T> {
@@ -88,6 +101,9 @@ async function getAccessToken(): Promise<string> {
     return cachedToken.token
   }
 
+  const clientId = getDingClientId()
+  const clientSecret = getDingClientSecret()
+
   // Request new token
   const response = await fetch('https://idp.ding.com/connect/token', {
     method: 'POST',
@@ -96,8 +112,8 @@ async function getAccessToken(): Promise<string> {
     },
     body: new URLSearchParams({
       grant_type: 'client_credentials',
-      client_id: DING_CLIENT_ID,
-      client_secret: DING_CLIENT_SECRET,
+      client_id: clientId,
+      client_secret: clientSecret,
     }),
   })
 
@@ -126,15 +142,20 @@ async function apiRequest<T>(
     'X-Correlation-Id': crypto.randomUUID(),
   }
 
+  const apiKey = getDingApiKey()
+  const clientId = getDingClientId()
+  const clientSecret = getDingClientSecret()
+  const baseUrl = getDingApiBaseUrl()
+
   // Use API key or Bearer token
-  if (DING_API_KEY) {
-    headers['api_key'] = DING_API_KEY
-  } else if (DING_CLIENT_ID && DING_CLIENT_SECRET) {
+  if (apiKey) {
+    headers['api_key'] = apiKey
+  } else if (clientId && clientSecret) {
     const token = await getAccessToken()
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  const response = await fetch(`${DING_API_BASE_URL}${endpoint}`, {
+  const response = await fetch(`${baseUrl}${endpoint}`, {
     ...options,
     headers: { ...headers, ...options.headers },
   })
@@ -298,7 +319,7 @@ export async function getProviderStatus(
  * Check if API is configured
  */
 export function isApiConfigured(): boolean {
-  return !!(DING_API_KEY || (DING_CLIENT_ID && DING_CLIENT_SECRET))
+  return !!(getDingApiKey() || (getDingClientId() && getDingClientSecret()))
 }
 
 /**

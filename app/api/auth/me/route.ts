@@ -4,13 +4,20 @@ import { supabaseRest } from '@/lib/db/supabase-rest'
 import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
 import { buildUserFromProfile } from '@/lib/auth/build-auth-user'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: Request) {
   const cookie = req.headers.get('cookie') ?? ''
   const m = cookie.match(/(?:^|;\s*)sb-access-token=([^;]+)/)
   const token = m?.[1] ? decodeURIComponent(m[1]) : ''
+
+  console.log('[auth/me] Received cookie header:', !!cookie)
+  console.log('[auth/me] Extracted sb-access-token:', !!token)
+
   if (!token) {
     const om = cookie.match(/(?:^|;\s*)itu-user-id=([^;]+)/)
     const otpUserId = om?.[1] ? decodeURIComponent(om[1]) : ''
+    console.log('[auth/me] Fallback to itu-user-id:', !!otpUserId)
     if (!otpUserId) return NextResponse.json({ ok: true, user: null })
     try {
       const res = await supabaseRest(
@@ -44,11 +51,17 @@ export async function GET(req: Request) {
   }
 
   const user = await supabaseGetUser(token)
+  console.log('[auth/me] supabaseGetUser result:', !!user?.id)
   if (!user?.id) return NextResponse.json({ ok: true, user: null })
 
   const profile = await fetchProfileForUser(user.id)
+  console.log('[auth/me] fetchProfileForUser result:', !!profile, 'app_role:', profile?.app_role)
+  
+  const finalUser = buildUserFromProfile(user, profile)
+  console.log('[auth/me] finalUser role:', finalUser.role)
+
   return NextResponse.json({
     ok: true,
-    user: buildUserFromProfile(user, profile),
+    user: finalUser,
   })
 }

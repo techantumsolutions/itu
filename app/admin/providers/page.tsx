@@ -60,9 +60,9 @@ type LcrProviderRow = {
 type CoverageRow = { countryIso3: string; operatorRef: string; providerCodes: string[] }
 
 const ACTIONS_HEAD =
-  'sticky right-0 z-20 w-[148px] min-w-[148px] max-w-[148px] shrink-0 border-l border-border/60 bg-muted/95 backdrop-blur-sm shadow-[-6px_0_10px_-8px_rgba(0,0,0,0.15)] whitespace-nowrap normal-case tracking-normal'
+  'right-0 z-20 w-[148px] min-w-[148px] max-w-[148px] shrink-0 border-l border-border/60 bg-muted/95 backdrop-blur-sm shadow-[-6px_0_10px_-8px_rgba(0,0,0,0.15)] whitespace-nowrap normal-case tracking-normal'
 const ACTIONS_CELL =
-  'sticky right-0 z-10 w-[148px] min-w-[148px] max-w-[148px] shrink-0 border-l border-border/60 bg-background group-hover:bg-muted/60 shadow-[-6px_0_10px_-8px_rgba(0,0,0,0.15)]'
+  'right-0 z-10 w-[148px] min-w-[148px] max-w-[148px] shrink-0 border-l border-border/60 bg-background group-hover:bg-muted/60 shadow-[-6px_0_10px_-8px_rgba(0,0,0,0.15)]'
 
 function adminHeaders(user: User) {
   return {
@@ -223,9 +223,15 @@ export default function AdminProvidersPage() {
     }
     setIsRefreshing(true)
     const h = adminHeaders(user)
-    const results: { code: string; ok: boolean; msg: string }[] = []
+    
+    const activeProviders = providers.filter((x) => x.is_active)
+    if (activeProviders.length === 0) {
+      toast.error('No active providers to sync')
+      setIsRefreshing(false)
+      return
+    }
 
-    for (const p of providers.filter((x) => x.is_active)) {
+    const promises = activeProviders.map(async (p) => {
       try {
         const res = await fetch('/api/admin/lcr/sync', {
           method: 'POST',
@@ -236,25 +242,30 @@ export default function AdminProvidersPage() {
         const data = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(data.error ?? 'Sync failed')
         const r = data.result
-        results.push({
+        return {
           code: p.code,
           ok: true,
           msg: r
             ? `raw ${r.fetchedRaw ?? 0}, mapped ${r.mappedPlans ?? 0}${r.syncedCountries?.length ? ` (${r.syncedCountries.join(', ')})` : ''}`
             : 'ok',
-        })
+        }
       } catch (e) {
-        results.push({
+        return {
           code: p.code,
           ok: false,
           msg: e instanceof Error ? e.message : 'error',
-        })
+        }
       }
-    }
+    })
+
+    const results = await Promise.all(promises)
     setIsRefreshing(false)
     const failed = results.filter((r) => !r.ok)
-    if (failed.length) toast.error(`Some syncs failed: ${failed.map((f) => f.code).join(', ')}`)
-    else toast.success('Catalog sync finished')
+    if (failed.length) {
+      toast.error(`Some syncs failed: ${failed.map((f) => f.code).join(', ')}`)
+    } else {
+      toast.success('Catalog sync finished')
+    }
     await loadAll()
   }
 
@@ -336,15 +347,14 @@ export default function AdminProvidersPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">API Providers</h1>
           <p className="text-muted-foreground">
-            Live registry from Supabase (LCR). Admins can add providers on a dedicated page; DT One / Ding can be
-            registered from environment on load when credentials are set.
+          Configure and manage top-up providers connected to the platform.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap lg:flex-nowrap gap-2">
           <Button variant="outline" onClick={() => loadAll()} disabled={loading} className="gap-2">
             <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Reload
@@ -373,7 +383,7 @@ export default function AdminProvidersPage() {
         </p>
       )}
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription className="flex items-center gap-2">
@@ -418,8 +428,8 @@ export default function AdminProvidersPage() {
           <CardDescription>Rows in lcr_providers — source for routing and ingestion.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="relative min-w-0 overflow-x-auto rounded-md border">
-            <Table>
+          <div className="overflow-x-auto rounded-md border">
+            <Table className="min-w-[700px]">
               <TableHeader>
                 <TableRow>
                   <TableHead>Provider</TableHead>
@@ -483,7 +493,7 @@ export default function AdminProvidersPage() {
                       </TableCell>
                       <TableCell className={ACTIONS_CELL}>
                         <div className="flex flex-col gap-1">
-                          <Button
+                       {/*  <Button
                             variant="outline"
                             size="sm"
                             className="h-8 w-full"
@@ -491,7 +501,7 @@ export default function AdminProvidersPage() {
                             onClick={() => void handleSyncProvider(provider.id)}
                           >
                             {syncingId === provider.id ? 'Syncing…' : 'Sync'}
-                          </Button>
+                          </Button>*/}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -567,7 +577,7 @@ export default function AdminProvidersPage() {
       </Card> */}
 
       <Dialog open={!!editingProvider} onOpenChange={(o) => !o && setEditingProvider(null)}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-150">
           <DialogHeader>
             <DialogTitle>Configure {editingProvider?.name}</DialogTitle>
             <DialogDescription>Updates the provider registry (credentials are not shown; re-enter to replace).</DialogDescription>

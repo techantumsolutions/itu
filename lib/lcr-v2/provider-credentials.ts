@@ -13,21 +13,50 @@ export function parseCredentialsEncrypted(blob: string | null | undefined): Prov
   if (!blob || typeof blob !== 'string') return undefined
   const t = blob.trim()
   if (!t) return undefined
+  
+  let authObj: any = null
   const decrypted = decryptProviderCredentials(t)
-  if (decrypted) return decrypted
-  try {
-    const j = JSON.parse(t) as Record<string, unknown>
-    const apiKey = typeof j.apiKey === 'string' ? j.apiKey : undefined
-    const apiSecret =
-      typeof j.apiSecret === 'string' ? j.apiSecret : typeof j.api_secret === 'string' ? j.api_secret : undefined
-    const clientId = typeof j.clientId === 'string' ? j.clientId : undefined
-    const clientSecret = typeof j.clientSecret === 'string' ? j.clientSecret : undefined
-    if (apiKey && apiSecret) return { kind: 'basic', apiKey, apiSecret, clientId, clientSecret }
-    if (clientId && clientSecret) return { kind: 'custom', clientId, clientSecret }
-    return undefined
-  } catch {
-    return undefined
+  if (decrypted) {
+    authObj = decrypted
+  } else {
+    try {
+      authObj = JSON.parse(t)
+    } catch {
+      return undefined
+    }
   }
+
+  if (authObj && typeof authObj === 'object') {
+    const apiKey = typeof authObj.apiKey === 'string' ? authObj.apiKey : undefined
+    const apiSecret =
+      typeof authObj.apiSecret === 'string' ? authObj.apiSecret : typeof authObj.api_secret === 'string' ? authObj.api_secret : undefined
+    const clientId = typeof authObj.clientId === 'string' ? authObj.clientId : typeof authObj.client_id === 'string' ? authObj.client_id : undefined
+    const clientSecret = typeof authObj.clientSecret === 'string' ? authObj.clientSecret : typeof authObj.client_secret === 'string' ? authObj.client_secret : undefined
+    const token = typeof authObj.token === 'string' ? authObj.token : undefined
+    
+    if (apiKey && apiSecret) {
+      return { kind: 'basic', apiKey, apiSecret, clientId, clientSecret, token }
+    }
+    if (apiKey) {
+      return { kind: 'apiKey', apiKey, clientId, clientSecret, token }
+    }
+    if (clientId && clientSecret) {
+      return { kind: 'custom', clientId, clientSecret, token }
+    }
+    if (token) {
+      return { kind: 'bearer', token }
+    }
+    
+    return {
+      kind: authObj.kind || 'apiKey',
+      apiKey,
+      apiSecret,
+      clientId,
+      clientSecret,
+      token,
+    }
+  }
+  return undefined
 }
 
 export function rowToProviderConfig(p: Record<string, unknown>): ProviderConfig {

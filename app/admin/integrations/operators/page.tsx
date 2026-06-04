@@ -3,12 +3,22 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { RefreshCcw, Search, Loader2 } from 'lucide-react'
+import { RefreshCcw, Search, Loader2, GitMerge } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -63,8 +73,28 @@ export default function OperatorsPage() {
   const [providerFilter, setProviderFilter] = useState('ALL')
   const [countryFilter, setCountryFilter] = useState('ALL')
   const [search, setSearch] = useState('')
+  const [typeFilter, setTypeFilter] = useState('ALL')
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ACTIVE')
+
+  // Multi-select & Merge states
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [mergeDialogOpen, setMergeDialogOpen] = useState(false)
+  const [targetOperatorId, setTargetOperatorId] = useState<string>('')
+  const [merging, setMerging] = useState(false)
 
   const endpoint = '/api/admin/aggregator/operators'
+
+  // Create a map from country code (both 2-letter and 3-letter) to country name
+  const countryNameMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const c of countriesList) {
+      if (c.name) {
+        if (c.iso3) map.set(c.iso3.trim().toUpperCase(), c.name.trim())
+        if (c.code) map.set(c.code.trim().toUpperCase(), c.name.trim())
+      }
+    }
+    return map
+  }, [countriesList])
 
   // Fetch static countries on mount for dropdown
   useEffect(() => {
@@ -75,7 +105,7 @@ export default function OperatorsPage() {
           setCountriesList(data.countries)
         }
       })
-      .catch(() => {})
+      .catch(() => { })
   }, [])
 
   const load = async (
@@ -140,10 +170,11 @@ export default function OperatorsPage() {
     }
   }
 
-  // Toggle System Operator Status
   const toggleSystemOperatorStatus = async (id: string, currentStatus: string) => {
     setTogglingId(id)
-    const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE'
+    const opStatus = String(currentStatus ?? '').trim().toUpperCase()
+    const isActive = ['ACTIVE', 'ONLINE', 'TRUE'].includes(opStatus)
+    const newStatus = isActive ? 'INACTIVE' : 'ACTIVE'
     try {
       const res = await fetch(`/api/admin/aggregator/operators/${id}`, {
         method: 'PATCH',
@@ -169,12 +200,38 @@ export default function OperatorsPage() {
   useEffect(() => {
     setProviderFilter('ALL')
     setCountryFilter('ALL')
+    setTypeFilter('ALL')
+    setStatusFilter('ACTIVE')
+    setSelectedIds([])
   }, [dataType])
 
   // Map backend operators to normalized rows for local rendering (backend does the filtering)
   const renderedRows = useMemo(() => {
+    let list = dataType === 'system' ? systemOperators : rawOperators
+
+    if (typeFilter !== 'ALL') {
+      list = list.filter((op) => {
+        const typeStr = String(op.operator_type || '').trim().toUpperCase()
+        if (typeFilter === 'TELECOM') {
+          return typeStr === 'TELECOM' || typeStr === 'MOBILE_OPERATOR'
+        }
+        return typeStr === typeFilter.toUpperCase()
+      })
+    }
+
+    if (dataType === 'system' && statusFilter !== 'ALL') {
+      list = list.filter((op) => {
+        const opStatus = String(op.status ?? '').trim().toUpperCase()
+        const filterStatus = String(statusFilter ?? '').trim().toUpperCase()
+        const isActiveOp = ['ACTIVE', 'ONLINE', 'TRUE'].includes(opStatus)
+        const isActiveFilter = filterStatus === 'ACTIVE'
+        return isActiveOp === isActiveFilter
+      })
+    }
+
+    let mapped: any[] = []
     if (dataType === 'system') {
-      return systemOperators.map((op) => ({
+      mapped = list.map((op) => ({
         id: op.id,
         mainName: op.system_operator_name,
         secondaryText: op.slug,
@@ -185,7 +242,7 @@ export default function OperatorsPage() {
         isSystem: true,
       }))
     } else {
-      return rawOperators.map((op) => ({
+      mapped = list.map((op) => ({
         id: op.id,
         mainName: op.provider_operator_name,
         secondaryText: `${op.provider_operator_id} (${op.provider_name ?? 'Raw'})`,
@@ -196,7 +253,64 @@ export default function OperatorsPage() {
         isSystem: false,
       }))
     }
-  }, [systemOperators, rawOperators, dataType])
+
+    // Sort by Country Name (A-Z) and then Operator Name (A-Z)
+    return mapped.sort((a, b) => {
+      const codeA = String(a.countryCode ?? '').trim().toUpperCase()
+      const codeB = String(b.countryCode ?? '').trim().toUpperCase()
+      
+      const countryNameA = countryNameMap.get(codeA) || codeA
+      const countryNameB = countryNameMap.get(codeB) || codeB
+      
+      const comp = countryNameA.localeCompare(countryNameB, undefined, { sensitivity: 'base' })
+      if (comp !== 0) return comp
+      
+      const nameA = String(a.mainName ?? '').trim().toUpperCase()
+      const nameB = String(b.mainName ?? '').trim().toUpperCase()
+      
+      return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' })
+    })
+  }, [systemOperators, rawOperators, dataType, typeFilter, statusFilter, countryNameMap])
+
+  const selectedOperators = useMemo(() => {
+    return systemOperators.filter((op) => selectedIds.includes(op.id))
+  }, [systemOperators, selectedIds])
+
+  const handleMerge = async () => {
+    if (!targetOperatorId) {
+      toast.error('Please select a target operator')
+      return
+    }
+    const sourceOperatorIds = selectedIds.filter((id) => id !== targetOperatorId)
+    if (sourceOperatorIds.length === 0) {
+      toast.error('At least one source operator must be merged')
+      return
+    }
+
+    setMerging(true)
+    try {
+      const res = await fetch('/api/admin/aggregator/operators/merge', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetOperatorId,
+          sourceOperatorIds,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? 'Merge failed')
+
+      toast.success('Operators merged successfully')
+      setMergeDialogOpen(false)
+      setSelectedIds([])
+      setTargetOperatorId('')
+      await load(true)
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to merge operators')
+    } finally {
+      setMerging(false)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -229,10 +343,10 @@ export default function OperatorsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          
+
           {/* Filters Bar */}
           <div className="flex flex-wrap items-center gap-3">
-            
+
             {/* Search Input */}
             <div className="relative min-w-[240px] flex-1 sm:max-w-xs">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -257,22 +371,61 @@ export default function OperatorsPage() {
               </Select>
             </div>
 
-            {/* Provider Filter */}
+            {/* Operator Type Filter */}
             <div className="flex flex-col gap-1">
-              <Select value={providerFilter} onValueChange={setProviderFilter}>
+              <Select value={typeFilter} onValueChange={setTypeFilter}>
                 <SelectTrigger className="w-[180px] bg-background border-border/80">
-                  <SelectValue placeholder="Provider" />
+                  <SelectValue placeholder="Operator Type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="ALL">All Providers</SelectItem>
-                  {providers.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="ALL">All Types</SelectItem>
+                  <SelectItem value="TELECOM">Telecom</SelectItem>
+                  <SelectItem value="DTH">DTH</SelectItem>
+                  <SelectItem value="GIFT_CARD">Gift Card</SelectItem>
+                  <SelectItem value="DIGITAL_VOUCHER">Digital Voucher</SelectItem>
+                  <SelectItem value="UTILITY">Utility</SelectItem>
+                  <SelectItem value="DATA_BUNDLE">Data Bundle</SelectItem>
+                  <SelectItem value="COMBO_BUNDLE">Combo Bundle</SelectItem>
+                  <SelectItem value="MOBILE_PLAN">Mobile Plan</SelectItem>
+                  <SelectItem value="AIRTIME">Airtime</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Provider Filter - Only show for Provider Operator */}
+            {dataType === 'provider' && (
+              <div className="flex flex-col gap-1">
+                <Select value={providerFilter} onValueChange={setProviderFilter}>
+                  <SelectTrigger className="w-[180px] bg-background border-border/80">
+                    <SelectValue placeholder="Provider" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Providers</SelectItem>
+                    {providers.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Status Filter - Only show for System Operator */}
+            {dataType === 'system' && (
+              <div className="flex flex-col gap-1">
+                <Select value={statusFilter} onValueChange={(val: any) => setStatusFilter(val)}>
+                  <SelectTrigger className="w-[180px] bg-background border-border/80">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Statuses</SelectItem>
+                    <SelectItem value="ACTIVE">Active</SelectItem>
+                    <SelectItem value="INACTIVE">Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Country Filter */}
             <div className="flex flex-col gap-1">
@@ -291,8 +444,21 @@ export default function OperatorsPage() {
               </Select>
             </div>
 
-            {/* Counts info */}
-            {!loading ? (
+            {/* Counts info / Merge Operators action */}
+            {selectedIds.length >= 2 && dataType === 'system' ? (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  setTargetOperatorId(selectedIds[0] || '')
+                  setMergeDialogOpen(true)
+                }}
+                className="bg-primary text-primary-foreground hover:bg-primary/95 shadow-sm font-semibold ml-auto animate-fade-in"
+              >
+                <GitMerge className="mr-2 size-4" />
+                Merge Operators ({selectedIds.length})
+              </Button>
+            ) : !loading ? (
               <span className="text-xs text-muted-foreground ml-auto bg-muted/50 px-2 py-1 rounded-md font-medium">
                 Found {renderedRows.length} operators
               </span>
@@ -304,6 +470,23 @@ export default function OperatorsPage() {
             <Table>
               <TableHeader className="bg-muted/50">
                 <TableRow>
+                  {dataType === 'system' ? (
+                    <TableHead className="w-[50px]">
+                      <Checkbox
+                        checked={
+                          renderedRows.length > 0 &&
+                          renderedRows.every((row) => selectedIds.includes(row.id))
+                        }
+                        onCheckedChange={(checked) => {
+                          if (checked) {
+                            setSelectedIds(renderedRows.map((r) => r.id))
+                          } else {
+                            setSelectedIds([])
+                          }
+                        }}
+                      />
+                    </TableHead>
+                  ) : null}
                   <TableHead className="font-semibold text-muted-foreground">Operator</TableHead>
                   <TableHead className="font-semibold text-muted-foreground">Country</TableHead>
                   <TableHead className="font-semibold text-muted-foreground">Type</TableHead>
@@ -311,13 +494,13 @@ export default function OperatorsPage() {
                   <TableHead className="font-semibold text-muted-foreground">
                     {dataType === 'system' ? 'Updated' : 'Fetched'}
                   </TableHead>
-                  <TableHead className="font-semibold text-muted-foreground text-right w-[200px]">Actions</TableHead>
+                  <TableHead className="font-semibold text-muted-foreground text-right w-[240px] min-w-[240px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-12 text-center text-muted-foreground">
+                    <TableCell colSpan={dataType === 'system' ? 7 : 6} className="py-12 text-center text-muted-foreground">
                       <div className="flex items-center justify-center gap-2">
                         <Loader2 className="h-5 w-5 animate-spin text-primary" />
                         <span>Loading operators data...</span>
@@ -326,7 +509,7 @@ export default function OperatorsPage() {
                   </TableRow>
                 ) : renderedRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-12 text-center text-muted-foreground font-medium">
+                    <TableCell colSpan={dataType === 'system' ? 7 : 6} className="py-12 text-center text-muted-foreground font-medium">
                       No records found.
                     </TableCell>
                   </TableRow>
@@ -334,6 +517,21 @@ export default function OperatorsPage() {
                   renderedRows.map((row) => {
                     return (
                       <TableRow key={row.id} className="hover:bg-muted/30 transition-colors">
+                        {dataType === 'system' ? (
+                          <TableCell className="w-[50px]">
+                            <Checkbox
+                              checked={selectedIds.includes(row.id)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setSelectedIds((prev) => [...prev, row.id])
+                                } else {
+                                  setSelectedIds((prev) => prev.filter((id) => id !== row.id))
+                                }
+                              }}
+                            />
+                          </TableCell>
+                        ) : null}
+
                         {/* Operator Column */}
                         <TableCell>
                           <div className="min-w-0 leading-tight">
@@ -345,12 +543,17 @@ export default function OperatorsPage() {
                             ) : null}
                           </div>
                         </TableCell>
-                        
+
                         {/* Country Column */}
                         <TableCell>
-                          <Badge variant="outline" className="bg-background text-xs font-semibold px-2 py-0.5 border-border/80 font-mono">
-                            {String(row.countryCode ?? '—').toUpperCase()}
-                          </Badge>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-semibold text-sm text-foreground">
+                              {countryNameMap.get(String(row.countryCode ?? '').trim().toUpperCase()) || '—'}
+                            </span>
+                            <span className="text-[10px] text-muted-foreground font-mono font-medium">
+                              {String(row.countryCode ?? '—').toUpperCase()}
+                            </span>
+                          </div>
                         </TableCell>
 
                         {/* Type Column */}
@@ -369,8 +572,8 @@ export default function OperatorsPage() {
                         </TableCell>
 
                         {/* Actions Column */}
-                        <TableCell className="text-right">
-                          <div className="flex justify-end items-center gap-2">
+                        <TableCell className="text-right w-[240px] min-w-[240px]">
+                          <div className="flex justify-end items-center gap-2 flex-row whitespace-nowrap">
                             {/* Plans view button */}
                             <Button size="sm" variant="outline" className="h-8 text-xs font-medium" asChild>
                               <Link
@@ -385,15 +588,14 @@ export default function OperatorsPage() {
                             </Button>
 
                             {/* Active/Inactive Toggle Button (Only for System Operators) */}
-                            {row.isSystem ? (
+                            {/* {row.isSystem ? (
                               <Button
                                 size="sm"
                                 variant={row.status === 'ACTIVE' ? 'destructive-outline' : 'emerald-outline'}
-                                className={`h-8 text-xs font-semibold w-24 flex items-center justify-center ${
-                                  row.status === 'ACTIVE'
+                                className={`h-8 text-xs font-semibold w-24 flex items-center justify-center ${row.status === 'ACTIVE'
                                     ? 'border-red-500/30 text-red-500 hover:bg-red-500/10'
                                     : 'border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10'
-                                }`}
+                                  }`}
                                 onClick={() => void toggleSystemOperatorStatus(row.id, row.status)}
                                 disabled={togglingId === row.id}
                               >
@@ -407,7 +609,7 @@ export default function OperatorsPage() {
                               <Button size="sm" variant="ghost" className="h-8 text-xs font-medium text-primary" asChild>
                                 <Link href="/admin/integrations/operator-mapping">Map</Link>
                               </Button>
-                            )}
+                            )} */}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -420,6 +622,69 @@ export default function OperatorsPage() {
 
         </CardContent>
       </Card>
+
+      {/* Merge Dialog */}
+      <Dialog open={mergeDialogOpen} onOpenChange={setMergeDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <GitMerge className="h-5 w-5 text-primary" />
+              Merge Operators
+            </DialogTitle>
+            <DialogDescription>
+              Combine multiple system operators into a single target operator. This will update all operator and plan mappings.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">Selected Operators to Merge</Label>
+              <div className="max-h-[150px] overflow-y-auto border rounded-md p-2 space-y-1 bg-muted/20">
+                {selectedOperators.map((op) => (
+                  <div key={op.id} className="flex justify-between items-center text-xs px-2 py-1 bg-background border rounded-sm">
+                    <span className="font-semibold truncate max-w-[220px]">{op.system_operator_name}</span>
+                    <Badge variant="outline" className="font-mono scale-90">
+                      {countryNameMap.get(String(op.country_id ?? '').trim().toUpperCase()) || op.country_id}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="target-operator" className="text-sm font-semibold">Primary Target Operator</Label>
+              <Select value={targetOperatorId} onValueChange={setTargetOperatorId}>
+                <SelectTrigger id="target-operator" className="w-full bg-background border-border/80">
+                  <SelectValue placeholder="Select primary target operator" />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectedOperators.map((op) => (
+                    <SelectItem key={op.id} value={op.id}>
+                      {op.system_operator_name} ({countryNameMap.get(String(op.country_id ?? '').trim().toUpperCase()) || op.country_id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">
+                All selected operators will be merged into this target operator, and the others will be deleted.
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMergeDialogOpen(false)} disabled={merging}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleMerge()} disabled={merging || !targetOperatorId}>
+              {merging ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Merging...
+                </>
+              ) : (
+                'Merge'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

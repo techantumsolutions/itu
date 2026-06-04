@@ -76,37 +76,52 @@ export const dingConnector: ProviderConnector = {
     let countries = options?.countries || config.supportedCountries || []
     console.log('[Ding Sync] Initial resolved countries list:', countries)
 
-    if (countries.length === 0) {
-      console.log('[Ding Sync] supported_countries is empty in database. Requesting live active country list from Ding API `/api/V1/GetCountries`...')
-      try {
-        const dingCountries = await getCountries()
-        countries = dingCountries.map((c) => c.CountryIso)
-        console.log('[Ding Sync] Dynamically auto-discovered active countries from Ding API:', countries)
-      } catch (err) {
-        console.error('[Ding Sync] Failed to auto-resolve active countries list from Ding:', err)
-      }
-    }
-
     const rawPlans: RawPlanRecord[] = []
 
-    for (const country of countries) {
+    if (countries.length === 0 || countries.length > 5) {
+      console.log('[Ding Sync] Syncing globally in a single API call for all countries...')
       try {
-        const countryIso2 = toPublicCountryCode(country)
-        console.log(`[Ding Sync] Querying operator products for country channel: ${country} (${countryIso2}) via getProducts()...`)
-        const products = await getProducts(countryIso2)
+        const products = await getProducts()
         const items = Array.isArray(products) ? products : []
-        console.log(`[Ding Sync] Received ${items.length} raw products from Ding API for country: ${country}`)
+        console.log(`[Ding Sync] Received ${items.length} total raw products from Ding API globally.`)
+        
+        const countryFilter = countries.length > 0 ? new Set(countries.map(c => toPublicCountryCode(c).toUpperCase())) : null
 
         for (const p of items) {
+          const region = text(p?.RegionCode).toUpperCase()
+          if (!region) continue
+          if (countryFilter && !countryFilter.has(region)) continue
+
           rawPlans.push({
             providerPlanId: text(p?.SkuCode),
-            // Inject both standard ISO2 and ISO3 representations for bulletproof normalization
-            raw: { ...p, CountryIso: countryIso2, CountryIso3: normalizeCountryIso3(country) },
+            raw: { ...p, CountryIso: region, CountryIso3: normalizeCountryIso3(region) },
           })
         }
       } catch (err) {
-        console.error(`[Ding Sync] Failed to fetch Ding products for country channel ${country} (${toPublicCountryCode(country)}):`, err)
+        console.error('[Ding Sync] Failed to fetch global products:', err)
       }
+    } else {
+      console.log(`[Ding Sync] Syncing in parallel for ${countries.length} specific countries...`)
+      await Promise.all(
+        countries.map(async (country) => {
+          try {
+            const countryIso2 = toPublicCountryCode(country)
+            console.log(`[Ding Sync] Querying operator products for country: ${country} (${countryIso2})...`)
+            const products = await getProducts(countryIso2)
+            const items = Array.isArray(products) ? products : []
+            console.log(`[Ding Sync] Received ${items.length} raw products for country: ${country}`)
+
+            for (const p of items) {
+              rawPlans.push({
+                providerPlanId: text(p?.SkuCode),
+                raw: { ...p, CountryIso: countryIso2, CountryIso3: normalizeCountryIso3(country) },
+              })
+            }
+          } catch (err) {
+            console.error(`[Ding Sync] Failed to fetch products for country ${country}:`, err)
+          }
+        })
+      )
     }
 
     console.log(`[Ding Sync] Finished fetchRawPlans. Total raw plan records accumulated: ${rawPlans.length}`)
@@ -122,18 +137,37 @@ export const dingConnector: ProviderConnector = {
         .map((r) => text((r.raw as any)?.CountryIso3 || normalizeCountryIso3((r.raw as any)?.CountryIso)))
         .filter(Boolean),
     )
-    for (const countryIso3 of countriesInBatch) {
-      const countryIso2 = toPublicCountryCode(countryIso3)
+
+    if (countriesInBatch.size > 5) {
+      console.log('[Ding Sync] Loading provider/operator names globally in a single API call...')
       try {
-        const providers = await getProviders(countryIso2)
+        const providers = await getProviders()
+        console.log(`[Ding Sync] Received ${providers.length} total providers globally.`)
         for (const provider of providers as DingProvider[]) {
           const code = text(provider.ProviderCode)
           const label = text(provider.ShortName) || text(provider.Name)
           if (code && label) providerNameByCode.set(code, label)
         }
       } catch (err) {
-        console.warn(`[Ding Sync] Could not load provider names for ${countryIso3}:`, err)
+        console.warn('[Ding Sync] Could not load global provider names:', err)
       }
+    } else {
+      console.log(`[Ding Sync] Loading provider/operator names in parallel for ${countriesInBatch.size} countries...`)
+      await Promise.all(
+        Array.from(countriesInBatch).map(async (countryIso3) => {
+          const countryIso2 = toPublicCountryCode(countryIso3)
+          try {
+            const providers = await getProviders(countryIso2)
+            for (const provider of providers as DingProvider[]) {
+              const code = text(provider.ProviderCode)
+              const label = text(provider.ShortName) || text(provider.Name)
+              if (code && label) providerNameByCode.set(code, label)
+            }
+          } catch (err) {
+            console.warn(`[Ding Sync] Could not load provider names for ${countryIso3}:`, err)
+          }
+        })
+      )
     }
 
     const normalizedList = raw

@@ -25,20 +25,25 @@ export function AdminAuthGate({ children }: AdminAuthGateProps) {
 
     async function refreshSession() {
       try {
+        console.log('[AdminAuthGate] Fetching /api/auth/me...')
         const res = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' })
         const data = (await res.json().catch(() => ({}))) as { ok?: boolean; user?: User | null }
+        console.log('[AdminAuthGate] /api/auth/me response:', data)
         if (cancelled) return
 
         const user = data?.ok ? data.user ?? null : null
         setSession(user)
 
         if (!isClientAdminUser(user)) {
+          console.warn('[AdminAuthGate] User is not an admin, redirecting to /admin/login. User:', user)
           router.replace('/admin/login')
           return
         }
 
+        console.log('[AdminAuthGate] User verified as admin:', user)
         setReady(true)
-      } catch {
+      } catch (err) {
+        console.error('[AdminAuthGate] Error fetching session:', err)
         if (!cancelled) router.replace('/admin/login')
       }
     }

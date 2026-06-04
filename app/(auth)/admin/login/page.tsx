@@ -40,7 +40,7 @@ export default function AdminLoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    const result = await login(email.trim(), password)
+    const result = await login(email.trim(), password, undefined, undefined, 'admin')
     if (result.ok) {
       const u = useAuthStore.getState().user
       if (u && isClientSuperAdmin(u)) {
@@ -58,7 +58,7 @@ export default function AdminLoginPage() {
     }
     setError(
       result.error ??
-        'Invalid email or password. If this is a new project, run: npm run bootstrap:admin (requires Supabase keys in .env).',
+      'Invalid email or password. If this is a new project, run: npm run bootstrap:admin (requires Supabase keys in .env).',
     )
   }
 
@@ -83,7 +83,7 @@ export default function AdminLoginPage() {
               </div>
             ) : null}
 
-            <form className="space-y-4" onSubmit={(e) => void handleSubmit(e)}>
+            <form className="space-y-4" onSubmit={handleSubmit}>
               <div className="space-y-2">
                 <Label htmlFor="admin-email">Work email</Label>
                 <Input

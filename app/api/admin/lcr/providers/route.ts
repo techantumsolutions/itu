@@ -41,17 +41,13 @@ export async function GET(request: Request) {
   }
 
   try {
-    const [provRes, healthRes, rawRes, globalRes] = await Promise.all([
+    const [provRes, healthRes, globalRes] = await Promise.all([
       supabaseRest(
-        'lcr_providers?select=id,code,name,adapter_key,is_active,priority,base_url,refresh_interval_minutes,status,supported_countries,created_at,updated_at&order=priority.asc',
+        'lcr_providers?select=id,code,name,adapter_key,is_active,priority,base_url,refresh_interval_minutes,status,supported_countries,last_sync_at,last_success_sync_at,created_at,updated_at&order=priority.asc',
         { cache: 'no-store' },
       ),
       supabaseRest(
         'provider_health_metrics?select=provider_id,success_rate,avg_latency_ms,captured_at&order=captured_at.desc&limit=400',
-        { cache: 'no-store' },
-      ).catch(() => null as Response | null),
-      supabaseRest(
-        'provider_plans_raw?select=provider_id,fetched_at&order=fetched_at.desc&limit=8000',
         { cache: 'no-store' },
       ).catch(() => null as Response | null),
       supabaseRest('provider_plans_raw?select=fetched_at&order=fetched_at.desc&limit=1', { cache: 'no-store' }).catch(
@@ -82,18 +78,36 @@ export async function GET(request: Request) {
       }
     }
 
+    // Query the latest fetched_at for each provider in parallel
+    const latestIngests = await Promise.all(
+      providers.map(async (p) => {
+        try {
+          const res = await supabaseRest(
+            `provider_plans_raw?provider_id=eq.${p.id}&select=fetched_at&order=fetched_at.desc&limit=1`,
+            { cache: 'no-store' }
+          )
+          if (res.ok) {
+            const rows = await res.json() as any[]
+            return { providerId: String(p.id), fetchedAt: rows?.[0]?.fetched_at || null }
+          }
+        } catch (err) {
+          console.error(`Failed to fetch latest ingest date for provider ${p.code}:`, err)
+        }
+        return { providerId: String(p.id), fetchedAt: null }
+      })
+    )
+
     const ingestMap = new Map<string, string>()
-    if (rawRes?.ok) {
-      const rawRows = (await rawRes.json()) as RawFetchRow[]
-      for (const r of rawRows) {
-        if (!ingestMap.has(r.provider_id)) ingestMap.set(r.provider_id, r.fetched_at)
+    for (const item of latestIngests) {
+      if (item.fetchedAt) {
+        ingestMap.set(item.providerId, item.fetchedAt)
       }
     }
 
     const merged = providers.map((p) => {
       const id = String(p.id)
       const h = healthMap.get(id)
-      const lastIngest = ingestMap.get(id) ?? null
+      const lastIngest = p.last_success_sync_at || p.last_sync_at || ingestMap.get(id) || null
       return {
         ...p,
         success_rate: h?.success_rate ?? null,
