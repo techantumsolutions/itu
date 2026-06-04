@@ -9,7 +9,7 @@ interface AuthState {
   user: User | null
   isAuthenticated: boolean
   isLoading: boolean
-  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>
+  login: (email: string, password: string, fingerprint?: string, cf_turnstile_response?: string, source?: string) => Promise<{ ok: boolean; error?: string; requires_2fa?: boolean; method?: string; temp_token?: string; totp_enabled?: boolean }>
   loginWithOTP: (phone: string, countryCode: string) => Promise<boolean>
   logout: () => void
   register: (email: string, password: string, name: string) => Promise<boolean>
@@ -23,7 +23,7 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isLoading: false,
       setSession: (user) => set({ user, isAuthenticated: Boolean(user) }),
-      login: async (email: string, password: string) => {
+      login: async (email: string, password: string, fingerprint?: string, cf_turnstile_response?: string, source?: string) => {
         set({ isLoading: true })
         try {
           const normalizedEmail = email.trim().toLowerCase()
@@ -31,9 +31,21 @@ export const useAuthStore = create<AuthState>()(
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: normalizedEmail, password }),
+            body: JSON.stringify({ email: normalizedEmail, password, fingerprint, cf_turnstile_response, source }),
           })
-          const data = (await res.json().catch(() => ({}))) as { ok?: boolean; user?: any; error?: string }
+          const data = (await res.json().catch(() => ({}))) as any
+          
+          if (data.requires_2fa) {
+            set({ isLoading: false })
+            return {
+              ok: true,
+              requires_2fa: true,
+              method: data.method,
+              temp_token: data.temp_token,
+              totp_enabled: data.totp_enabled,
+            }
+          }
+
           if (!res.ok || !data.ok || !data.user?.id) {
             set({ isLoading: false })
             const err =

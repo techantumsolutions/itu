@@ -23,11 +23,13 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { countriesList, getFlagEmoji, isValidPhoneNumber } from '@/lib/country-codes'
+import { useFingerprint } from '@/hooks/use-fingerprint'
 
 export default function LoginPage() {
   const router = useRouter()
   const { login, setSession, logout, isLoading } = useAuthStore()
   const { content, hasHydrated } = useCMSStore()
+  const fingerprint = useFingerprint()
 
   const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
@@ -48,12 +50,16 @@ export default function LoginPage() {
   const [sendingReset, setSendingReset] = useState(false)
 
   const [loginTab, setLoginTab] = useState<'email' | 'mobile'>('email')
+  const [requires2FA, setRequires2FA] = useState(false)
+  const [tempToken, setTempToken] = useState<string | null>(null)
   
   const handleTabChange = (tab: 'email' | 'mobile') => {
     setLoginTab(tab)
     setIdentifier('')
     setPassword('')
     setError('')
+    setRequires2FA(false)
+    setTempToken(null)
   }
 
   const isEmail = loginTab === 'email'
@@ -83,7 +89,16 @@ export default function LoginPage() {
 
   const handleEmailLogin = async () => {
     setError('')
-    const result = await login(identifier, password)
+    const result = await login(identifier, password, fingerprint || undefined)
+    
+    if (result.ok && result.requires_2fa) {
+      setRequires2FA(true)
+      setTempToken(result.temp_token || null)
+      setOtpStep('otp')
+      setOtpTimer(25)
+      return
+    }
+
     if (result.ok) {
       const u = useAuthStore.getState().user
       if (isClientAdminUser(u)) {
@@ -170,10 +185,10 @@ export default function LoginPage() {
                 <div className="mx-auto mt-2">
                   <Image src="/auth/otp-icon.png" alt="" width={66} height={66} className="mx-auto h-auto w-[66px]" />
                 </div>
-                <CardTitle className="text-base font-bold text-neutral-900 md:text-lg">Verify your mobile number</CardTitle>
+                <CardTitle className="text-base font-bold text-neutral-900 md:text-lg">Verify your {requires2FA ? 'email' : 'mobile number'}</CardTitle>
                 <div className="space-y-0.5 text-xs text-neutral-500 md:text-sm">
                   <p>We just sent 6-digit code to</p>
-                  <p className="font-semibold text-neutral-700">+{selectedDialCode} {maskedPhone}</p>
+                  <p className="font-semibold text-neutral-700">{requires2FA ? identifier : `+${selectedDialCode} ${maskedPhone}`}</p>
                 </div>
               </>
             )}
@@ -369,7 +384,7 @@ export default function LoginPage() {
 
                 <Button
                   className="h-12 w-full rounded-xl bg-[var(--hero-cta-orange)] text-base font-semibold text-white hover:brightness-105"
-                  disabled={isLoading || sendingOtp || !identifier.trim() || (isEmail && !password)}
+                  disabled={isLoading || sendingOtp || !identifier.trim() || (!isEmail && !isValidPhone) || (isEmail && !password) || (isEmail && !fingerprint)}
                   onClick={async () => {
                     setError('')
                     if (isEmail) {
@@ -457,6 +472,18 @@ export default function LoginPage() {
                     <>
                       Resend code in <span className="font-semibold text-[var(--hero-cta-orange)]">00:{String(otpTimer).padStart(2, '0')}</span>
                     </>
+                  ) : requires2FA ? (
+                    <button
+                      type="button"
+                      className="font-semibold text-[var(--hero-cta-orange)] hover:underline"
+                      onClick={() => {
+                        setOtpStep('entry')
+                        setOtpValue('')
+                        setError('Please log in again to receive a new code.')
+                      }}
+                    >
+                      Login again to resend code
+                    </button>
                   ) : (
                     <button
                       type="button"
@@ -493,6 +520,26 @@ export default function LoginPage() {
                   disabled={isLoading || otpValue.length !== 6}
                   onClick={async () => {
                     setError('')
+                    
+                    if (requires2FA) {
+                      // Email 2FA Verify
+                      try {
+                        const res = await fetch('/api/auth/2fa/verify', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ temp_token: tempToken, code: otpValue }),
+                        })
+                        const data = await res.json()
+                        if (!res.ok || !data.ok) throw new Error(data.error || '2FA verification failed')
+                        setSession(data.user)
+                        router.push('/account')
+                      } catch (e) {
+                        setError(e instanceof Error ? e.message : 'Invalid 2FA code')
+                      }
+                      return
+                    }
+
+                    // Mobile OTP Verify
                     try {
                       const res = await fetch('/api/auth/otp/verify', {
                         method: 'POST',
@@ -551,9 +598,10 @@ export default function LoginPage() {
                     setOtpValue('')
                     setError('')
                     setDevOtp('')
+                    setRequires2FA(false)
                   }}
                 >
-                  Change number / email
+                  Change {requires2FA ? 'email' : 'number'}
                 </Button>
 
                 {devOtp && (

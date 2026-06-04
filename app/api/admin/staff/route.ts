@@ -74,6 +74,10 @@ export async function POST(request: Request) {
 
   try {
     const created = await supabaseAdminCreateUser({ email, password, name })
+    if (!created?.id) {
+      return NextResponse.json({ error: 'Failed to create auth user' }, { status: 400 })
+    }
+
     const permissions = mergePermissions(body?.permissions ?? {})
     const pr = await supabaseRest('profiles?on_conflict=id', {
       method: 'POST',
