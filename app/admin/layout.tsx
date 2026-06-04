@@ -5,6 +5,8 @@ import { AppSidebar } from '@/components/app-sidebar'
 import { DashboardHeader } from '@/components/dashboard-header'
 import { AdminAuthGate } from '@/components/admin-auth-gate'
 
+import { PagePasswordGate } from '@/components/page-password-gate'
+
 export default function DashboardLayout({
   children,
 }: {
@@ -17,7 +19,11 @@ export default function DashboardLayout({
         <SidebarInset className="min-h-svh min-w-0 overflow-x-hidden bg-mesh bg-background">
           <DashboardHeader title="Sales Dashboard" />
           <div className="flex w-full min-w-0 flex-1 px-3 py-4 sm:px-5 sm:py-5 lg:px-8 lg:py-7 xl:px-10 2xl:px-14">
-            <div className="w-full min-w-0">{children}</div>
+            <div className="w-full min-w-0">
+              <PagePasswordGate>
+                {children}
+              </PagePasswordGate>
+            </div>
           </div>
         </SidebarInset>
       </SidebarProvider>

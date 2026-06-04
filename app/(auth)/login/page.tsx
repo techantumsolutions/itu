@@ -391,6 +391,10 @@ export default function LoginPage() {
                       await handleEmailLogin()
                       return
                     }
+                    if (!isValidPhone) {
+                      setError('Invalid format')
+                      return
+                    }
                     setSendingOtp(true)
                     try {
                       const res = await fetch('/api/auth/otp/send', {

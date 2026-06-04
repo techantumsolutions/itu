@@ -173,8 +173,13 @@ export function AppSidebar() {
   const logout = useAuthStore((s) => s.logout)
 
   const handleSignOut = () => {
+    const isAdmin = user?.role === 'admin'
     logout()
-    router.push('/admin/login')
+    if (isAdmin) {
+      router.push('/admin-user/login')
+    } else {
+      router.push('/admin/login')
+    }
   }
 
   const isSuperAdmin = isClientSuperAdmin(user)

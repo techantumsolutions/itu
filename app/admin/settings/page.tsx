@@ -2,7 +2,7 @@
 
 import { useState, useEffect, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { User, Bell, Shield, Palette, Globe, Save, Settings, ArrowRight, LayoutDashboard, Clock } from "lucide-react"
+import { User, Bell, Shield, Palette, Globe, Save, Settings, ArrowRight, LayoutDashboard, Clock, Eye, EyeOff, Lock } from "lucide-react"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,6 +19,26 @@ import {
 } from "@/components/ui/select"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useAuthStore } from "@/lib/stores"
+import { isClientSuperAdmin } from "@/lib/tickets/auth-headers"
+import { toast } from "sonner"
+import { cn } from "@/lib/utils"
+
+const MANAGEABLE_PATHS = [
+  { path: '/admin/providers', label: 'Providers (/admin/providers)' },
+  { path: '/admin/integrations', label: 'Integrations (/admin/integrations)' },
+  { path: '/admin/routing', label: 'Routing (/admin/routing)' },
+  { path: '/admin/products', label: 'Products (/admin/products)' },
+  { path: '/admin/cms', label: 'Website CMS (/admin/cms)' },
+  { path: '/admin/customers', label: 'Customers (/admin/customers)' },
+  { path: '/admin/support-tickets', label: 'Support Tickets (/admin/support-tickets)' },
+  { path: '/admin/ads', label: 'Ads Manager (/admin/ads)' },
+  { path: '/admin/reconciliation', label: 'Reconciliation (/admin/reconciliation)' },
+  { path: '/admin/reports', label: 'Reports & Analytics (/admin/reports)' },
+  { path: '/admin/analytics', label: 'Analytics (/admin/analytics)' },
+  { path: '/admin/statistics', label: 'Statistics (/admin/statistics)' },
+  { path: '/admin/settings', label: 'Settings (/admin/settings)' },
+  { path: '/admin/staff', label: 'Staff Management (/admin/staff)' },
+]
 
 function SettingsContent() {
   const { user } = useAuthStore()
@@ -26,6 +46,49 @@ function SettingsContent() {
   const router = useRouter()
   const [isSaving, setIsSaving] = useState(false)
   const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "profile")
+
+  const isSuperAdmin = isClientSuperAdmin(user)
+  const [passwords, setPasswords] = useState<Record<string, string>>({})
+  const [showPassMap, setShowPassMap] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    if (!isSuperAdmin) return
+    async function loadPasswords() {
+      try {
+        const res = await fetch('/api/admin/settings/page-passwords')
+        if (res.ok) {
+          const data = await res.json()
+          if (data.passwords) {
+            setPasswords(data.passwords)
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    void loadPasswords()
+  }, [isSuperAdmin])
+
+  const handleSavePasswords = async () => {
+    setIsSaving(true)
+    try {
+      const res = await fetch('/api/admin/settings/page-passwords', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ passwords }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.ok) {
+        toast.success('Page passwords updated successfully')
+      } else {
+        toast.error(data.error ?? 'Failed to save passwords')
+      }
+    } catch {
+      toast.error('Failed to save passwords')
+    } finally {
+      setIsSaving(false)
+    }
+  }
 
   useEffect(() => {
     const tab = searchParams.get("tab")
@@ -70,7 +133,7 @@ function SettingsContent() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className={cn("grid w-full", isSuperAdmin ? "grid-cols-6" : "grid-cols-5")}>
           <TabsTrigger value="profile" className="gap-2">
             <User className="h-4 w-4" />
             <span className="hidden sm:inline">Profile</span>
@@ -91,6 +154,12 @@ function SettingsContent() {
             <Settings className="h-4 w-4" />
             <span className="hidden sm:inline">System</span>
           </TabsTrigger>
+          {isSuperAdmin && (
+            <TabsTrigger value="passwords" className="gap-2">
+              <Lock className="h-4 w-4" />
+              <span className="hidden sm:inline">Passwords</span>
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* Profile Tab */}
@@ -393,6 +462,58 @@ function SettingsContent() {
             </Card>
           </div>
         </TabsContent>
+
+        {isSuperAdmin && (
+          <TabsContent value="passwords">
+            <Card>
+              <CardHeader>
+                <CardTitle>Page Passwords</CardTitle>
+                <CardDescription>
+                  Set passwords for specific sections of the admin console. Users with the "admin" role will be prompted to enter these passwords to gain access. Leave blank to disable protection.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <div className="space-y-4">
+                  {MANAGEABLE_PATHS.map((item) => {
+                    const isVisible = showPassMap[item.path] || false
+                    return (
+                      <div key={item.path} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-neutral-100 pb-4 last:border-0 last:pb-0">
+                        <div className="space-y-0.5">
+                          <Label className="font-semibold text-neutral-800">{item.label}</Label>
+                          <p className="text-xs text-muted-foreground">Path: {item.path}</p>
+                        </div>
+                        <div className="relative w-full sm:w-64">
+                          <Input
+                            type={isVisible ? 'text' : 'password'}
+                            value={passwords[item.path] || ''}
+                            onChange={(e) => setPasswords(prev => ({ ...prev, [item.path]: e.target.value }))}
+                            placeholder="No password set"
+                            className="h-10 rounded-xl pr-10 border-neutral-200"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassMap(prev => ({ ...prev, [item.path]: !isVisible }))}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+                            aria-label={isVisible ? 'Hide password' : 'Show password'}
+                          >
+                            {isVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <Separator />
+                <div className="flex justify-end">
+                  <Button onClick={handleSavePasswords} disabled={isSaving} className="rounded-xl h-11 bg-neutral-900 text-white hover:bg-neutral-800">
+                    <Save className="h-4 w-4 mr-2" />
+                    {isSaving ? "Saving..." : "Save Passwords"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   )
