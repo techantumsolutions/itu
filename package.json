@@ -9,7 +9,9 @@
     "lint": "eslint .",
     "test": "jest",
     "lcr:worker": "tsx --tsconfig tsconfig.json scripts/lcr-sync-worker.ts",
-    "bootstrap:admin": "tsx --tsconfig tsconfig.json scripts/bootstrap-super-admin.ts"
+    "bootstrap:admin": "tsx --tsconfig tsconfig.json scripts/bootstrap-super-admin.ts",
+    "db:migrate": "tsx --tsconfig tsconfig.json scripts/db-migrate.ts",
+    "db:deploy": "tsx --tsconfig tsconfig.json scripts/db-deploy.ts"
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "^5.2.0",
@@ -50,6 +52,7 @@
     "cmdk": "1.1.1",
     "date-fns": "4.1.0",
     "embla-carousel-react": "8.6.0",
+    "i18n-iso-countries": "^7.14.0",
     "input-otp": "1.4.2",
     "ioredis": "^5.10.1",
     "jspdf": "^4.2.1",
@@ -88,6 +91,7 @@
     "@types/ua-parser-js": "^0.7.39",
     "jest": "^29.7.0",
     "postcss": "^8.5",
+    "supabase": "^2.104.0",
     "tailwindcss": "^4.2.0",
     "ts-jest": "^29.2.5",
     "tsx": "^4.19.4",

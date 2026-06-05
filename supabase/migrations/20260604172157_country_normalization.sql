@@ -1,18 +1,24 @@
--- Run in Supabase SQL Editor (once). Service role from Next.js reads/writes via PostgREST.
+-- Migration: Country Normalization and Deduplication DDL
+-- Drops and recreates the empty legacy tables to use the new canonical countries primary key.
 
-create extension if not exists pgcrypto;
+drop table if exists plans;
+drop table if exists operators;
+drop table if exists countries;
 
-create table if not exists countries (
-  id text primary key, -- stores uppercase ISO3 code, e.g. 'MEX'
+create table countries (
+  id text primary key, -- stores uppercase canonical ISO3 code, e.g. 'MEX'
   name text not null,
-  iso2 text not null unique,
-  iso3 text not null unique,
+  iso2 text not null,
+  iso3 text not null,
   dial_prefix text not null default '',
   min_length int default 10,
-  max_length int default 15
+  max_length int default 15,
+  constraint countries_iso2_unique unique (iso2),
+  constraint countries_iso3_unique unique (iso3),
+  constraint countries_name_lower_unique unique (name)
 );
 
-create table if not exists operators (
+create table operators (
   id uuid primary key default gen_random_uuid(),
   country_id text not null references countries (id) on delete cascade,
   code text not null,
@@ -25,7 +31,7 @@ create table if not exists operators (
   unique (country_id, code)
 );
 
-create table if not exists plans (
+create table plans (
   id uuid primary key default gen_random_uuid(),
   sku_code text not null unique,
   country_id text not null references countries (id) on delete cascade,

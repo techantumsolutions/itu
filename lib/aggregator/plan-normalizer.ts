@@ -1,6 +1,8 @@
 import type { NormalizedBenefit, NormalizedPlan } from '@/lib/providers/types'
 import { extractPlanSignatureParts, normalizedPlanSignature, slugify } from '@/lib/aggregator/signature'
 import type { DuplicateCandidate, SystemPlanInput } from '@/lib/aggregator/types'
+import { classifyPlan } from '@/lib/aggregator/plan-classifier'
+
 
 function formatBenefitAmount(benefit: NormalizedBenefit | undefined): string | null {
   if (!benefit) return null
@@ -113,3 +115,15 @@ export function scorePlanCandidate(plan: NormalizedPlan, candidate: {
     },
   }
 }
+
+export function isValidSystemPlan(plan: NormalizedPlan): boolean {
+  // Check pricing
+  const amount = plan.retailAmount ?? plan.destinationAmount ?? 0
+  if (amount <= 0) return false
+
+  // Classify plan
+  const classificationResult = classifyPlan(plan)
+  const validClassifications = ['AIRTIME', 'DATA', 'VOICE', 'SMS', 'BUNDLE']
+  return validClassifications.includes(classificationResult.classification)
+}
+

@@ -13,6 +13,7 @@ create table if not exists profiles (
   is_active boolean default true,
   image text,
   currency text,
+  bio text,
   updated_at timestamptz not null default now()
 );
 

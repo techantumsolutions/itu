@@ -1,185 +1,206 @@
-import type { NormalizedPlan } from '@/lib/providers/types'
+import { supabaseRest } from '@/lib/db/supabase-rest'
+import { NormalizedPlan } from '@/lib/providers/types'
 
-export type FilteredOperatorAudit = {
-  providerId: string
-  rawOperatorId: string
-  rawOperatorName: string
-  filterReason: 'NO_VALID_PLANS' | 'NON_TELECOM_OPERATOR' | 'GIFT_CARD_PROVIDER' | 'SUBSCRIPTION_SERVICE' | 'GAMING_PROVIDER' | 'LOW_TELECOM_CONFIDENCE'
-  classificationScore: number
+export type OperatorClassificationResult = {
+  classification: 'TELECOM' | 'RETAIL' | 'GIFT_CARD' | 'UTILITY' | 'STREAMING' | 'GAMING' | 'FINANCIAL' | 'WALLET' | 'UNKNOWN'
+  confidence: number
+  reasonCode: string
 }
 
-const POSITIVE_WORDS = [
-  'data', 'calling', 'voice', 'sms', 'airtime', 'topup', 'recharge', 'telecom', 'bundle', 'combo', 'talktime', 'minutes', 'roaming'
-]
+export function classifyOperatorKeywords(input: {
+  operatorName: string
+  planNames: string[]
+  categories: string[]
+  subcategories: string[]
+}): OperatorClassificationResult {
+  const opName = input.operatorName.toLowerCase()
+  const allTexts = [
+    opName,
+    ...input.planNames.map(n => n.toLowerCase()),
+    ...input.categories.map(c => c.toLowerCase()),
+    ...input.subcategories.map(s => s.toLowerCase())
+  ]
 
-const NEGATIVE_GIFT_CARD_WORDS = [
-  'gift card', 'giftcard', 'gift voucher', 'voucher', 'coupon', 'retail', 'membership', 'loyalty', 'reward', 'amazon', 'myntra', 'nykaa',
-  'bigbasket', 'dominos', 'kfc', 'pepperfry', 'uber', 'ola', 'marriott', 'easemytrip', 'freshmenu', 'cultfit', 'spar', 'wajeez', 'store credit'
-]
+  let telecomScore = 0
+  let retailScore = 0
+  let giftCardScore = 0
+  let gamingScore = 0
+  let streamingScore = 0
+  let utilityScore = 0
+  let walletScore = 0
 
-const NEGATIVE_GAMING_WORDS = [
-  'gaming', 'game', 'token', 'credits', 'currency', 'archeage', 'badlanders', 'doomsday', 'pubg', 'free fire', 'freefire', 'minecraft', 'roblox'
-]
+  const telecomKeywords = ['telecom', 'mobile', 'wireless', 'cellular', 'calling', 'voice', 'sms', 'airtime', 'topup', 'recharge', 'data', 'bundle', 'carrier', 'network']
+  const retailKeywords = ['retail', 'shopping', 'store', 'amazon', 'ebay', 'walmart', 'target', 'nike', 'starbucks', 'kfc', 'domino']
+  const giftCardKeywords = ['gift card', 'giftcard', 'gift voucher', 'voucher', 'coupon', 'play store', 'app store', 'itunes', 'google play']
+  const gamingKeywords = ['gaming', 'game', 'token', 'credits', 'xbox', 'playstation', 'nintendo', 'steam', 'roblox', 'pubg', 'free fire', 'minecraft', 'razer']
+  const streamingKeywords = ['netflix', 'spotify', 'ott', 'streaming', 'crunchyroll', 'disney', 'hulu', 'prime video']
+  const utilityKeywords = ['electricity', 'water', 'gas', 'utility', 'utilities', 'broadband', 'landline']
+  const walletKeywords = ['wallet', 'cash transfer', 'remittance', 'money transfer', 'ewallet', 'e-wallet']
 
-const NEGATIVE_SUBSCRIPTION_WORDS = [
-  'subscription', 'entertainment', 'streaming', 'crunchyroll', 'discord', 'nitro', 'twitch', 'netflix', 'spotify', 'ott'
-]
+  for (const text of allTexts) {
+    if (telecomKeywords.some(kw => text.includes(kw))) telecomScore += 10
+    if (retailKeywords.some(kw => text.includes(kw))) retailScore += 10
+    if (giftCardKeywords.some(kw => text.includes(kw))) giftCardScore += 10
+    if (gamingKeywords.some(kw => text.includes(kw))) gamingScore += 10
+    if (streamingKeywords.some(kw => text.includes(kw))) streamingScore += 10
+    if (utilityKeywords.some(kw => text.includes(kw))) utilityScore += 10
+    if (walletKeywords.some(kw => text.includes(kw))) walletScore += 10
+  }
 
-const NEGATIVE_SERVICES_WORDS = [
-  'food delivery', 'travel', 'hotel', 'delivery'
-]
+  const scores = [
+    { category: 'TELECOM', score: telecomScore },
+    { category: 'RETAIL', score: retailScore },
+    { category: 'GIFT_CARD', score: giftCardScore },
+    { category: 'GAMING', score: gamingScore },
+    { category: 'STREAMING', score: streamingScore },
+    { category: 'UTILITY', score: utilityScore },
+    { category: 'WALLET', score: walletScore }
+  ]
 
-export function scorePlanForTelecom(plan: NormalizedPlan): { score: number; classification: 'telecom' | 'gift_card' | 'gaming' | 'subscription' | 'other' } {
-  let includeScore = 0
-  let excludeScore = 0
-
-  const name = (plan.name ?? '').toLowerCase()
-  const desc = (plan.description ?? '').toLowerCase()
-  const service = (plan.service ?? '').toLowerCase()
-  const subservice = (plan.subservice ?? '').toLowerCase()
-  const planType = (plan.planType ?? '').toLowerCase()
-  const category = (plan.category ?? '').toLowerCase()
-  
-  const benefitsText = plan.benefits
-    ? typeof plan.benefits === 'string'
-      ? plan.benefits.toLowerCase()
-      : JSON.stringify(plan.benefits).toLowerCase()
-    : ''
-  
-  const tagsText = (plan.tags ?? []).join(' ').toLowerCase()
-
-  const allTexts = [name, desc, service, subservice, planType, category, benefitsText, tagsText]
-
-  // Check positive signals
-  for (const word of POSITIVE_WORDS) {
-    for (const text of allTexts) {
-      if (text.includes(word)) {
-        includeScore += 10
-        break
-      }
+  const sorted = scores.sort((a, b) => b.score - a.score)
+  const top = sorted[0]
+  if (top.score > 0) {
+    const totalScore = scores.reduce((sum, item) => sum + item.score, 0)
+    const confidence = Math.min(0.99, Math.max(0.5, top.score / totalScore))
+    return {
+      classification: top.category as any,
+      confidence,
+      reasonCode: 'KEYWORD_CLASSIFICATION'
     }
   }
 
-  // Check negative signals and categorize
-  let isGiftCard = false
-  let isGaming = false
-  let isSubscription = false
-
-  for (const word of NEGATIVE_GIFT_CARD_WORDS) {
-    for (const text of allTexts) {
-      if (text.includes(word)) {
-        excludeScore += 10
-        isGiftCard = true
-        break
-      }
-    }
+  return {
+    classification: 'UNKNOWN',
+    confidence: 0.0,
+    reasonCode: 'REJECT_LOW_CONFIDENCE'
   }
-
-  for (const word of NEGATIVE_GAMING_WORDS) {
-    for (const text of allTexts) {
-      if (text.includes(word)) {
-        excludeScore += 10
-        isGaming = true
-        break
-      }
-    }
-  }
-
-  for (const word of NEGATIVE_SUBSCRIPTION_WORDS) {
-    for (const text of allTexts) {
-      if (text.includes(word)) {
-        excludeScore += 10
-        isSubscription = true
-        break
-      }
-    }
-  }
-
-  for (const word of NEGATIVE_SERVICES_WORDS) {
-    for (const text of allTexts) {
-      if (text.includes(word)) {
-        excludeScore += 10
-        break
-      }
-    }
-  }
-
-  const finalScore = includeScore - excludeScore
-
-  let classification: 'telecom' | 'gift_card' | 'gaming' | 'subscription' | 'other' = 'other'
-  if (isGiftCard) classification = 'gift_card'
-  else if (isGaming) classification = 'gaming'
-  else if (isSubscription) classification = 'subscription'
-  else if (finalScore > 0) classification = 'telecom'
-
-  return { score: finalScore, classification }
 }
 
+export async function classifyOperator(
+  providerCode: string,
+  providerOperatorId: string,
+  operatorName: string,
+  countryCode: string,
+  plans: NormalizedPlan[],
+  capabilities?: string[]
+): Promise<OperatorClassificationResult> {
+  const normName = operatorName.trim().toUpperCase()
+
+  // Step 1: Manual Review Overrides / Rules
+  try {
+    const rulesRes = await supabaseRest(`classification_rules?pattern=ilike.%${encodeURIComponent(normName)}%&is_active=eq.true&limit=1`, { cache: 'no-store' })
+    if (rulesRes.ok) {
+      const rules = await rulesRes.json()
+      if (rules && rules.length > 0) {
+        return {
+          classification: rules[0].classification as any,
+          confidence: 1.0,
+          reasonCode: 'MANUAL_RULE_OVERRIDE'
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to query classification_rules:', err)
+  }
+
+  // Step 2: Telecom Reference Catalog
+  try {
+    const catRes = await supabaseRest(`telecom_reference_catalog?operator_name=eq.${encodeURIComponent(normName)}&limit=1`, { cache: 'no-store' })
+    if (catRes.ok) {
+      const cat = await catRes.json()
+      if (cat && cat.length > 0) {
+        return {
+          classification: cat[0].classification as any,
+          confidence: 0.98,
+          reasonCode: 'TELECOM_REFERENCE_CATALOG'
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to query telecom_reference_catalog:', err)
+  }
+
+  // Step 3: Alias Table
+  try {
+    const aliasRes = await supabaseRest(`operator_aliases?alias_name=eq.${encodeURIComponent(normName)}&limit=1`, { cache: 'no-store' })
+    if (aliasRes.ok) {
+      const alias = await aliasRes.json()
+      if (alias && alias.length > 0) {
+        const canonicalName = alias[0].canonical_name.toUpperCase()
+        const catRes = await supabaseRest(`telecom_reference_catalog?operator_name=eq.${encodeURIComponent(canonicalName)}&limit=1`, { cache: 'no-store' })
+        if (catRes.ok) {
+          const cat = await catRes.json()
+          if (cat && cat.length > 0) {
+            return {
+              classification: cat[0].classification as any,
+              confidence: 0.95,
+              reasonCode: 'ALIAS_REFERENCE_CATALOG'
+            }
+          }
+        }
+        if (alias[0].system_operator_id) {
+          return {
+            classification: 'TELECOM',
+            confidence: 0.90,
+            reasonCode: 'ALIAS_SYSTEM_OPERATOR'
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Failed to query operator_aliases:', err)
+  }
+
+  // Step 4: Keyword Classifier
+  const keywordResult = classifyOperatorKeywords({
+    operatorName,
+    planNames: plans.map(p => p.name || ''),
+    categories: plans.map(p => p.category || ''),
+    subcategories: plans.map(p => p.subcategory || '')
+  })
+
+  // Apply capability context weights if provided
+  if (capabilities && capabilities.length > 0 && keywordResult.classification !== 'UNKNOWN') {
+    const isSupported = capabilities.map(c => c.toUpperCase()).includes(keywordResult.classification.toUpperCase())
+    if (!isSupported) {
+      keywordResult.confidence = Math.max(0.1, keywordResult.confidence - 0.3)
+    }
+  }
+
+  return keywordResult
+}
+
+// Preserve existing working logic (Legacy wrapper for compatibility)
 export function classifyOperatorByPlans(
   providerOperatorName: string,
   plans: NormalizedPlan[]
 ): {
   isValid: boolean
-  reason: FilteredOperatorAudit['filterReason'] | null
+  reason: 'NO_VALID_PLANS' | 'NON_TELECOM_OPERATOR' | 'GIFT_CARD_PROVIDER' | 'SUBSCRIPTION_SERVICE' | 'GAMING_PROVIDER' | 'LOW_TELECOM_CONFIDENCE' | null
   score: number
 } {
-  if (!plans || plans.length === 0) {
-    return {
-      isValid: false,
-      reason: 'NO_VALID_PLANS',
-      score: 0,
-    }
+  const result = classifyOperatorKeywords({
+    operatorName: providerOperatorName,
+    planNames: plans.map(p => p.name || ''),
+    categories: plans.map(p => p.category || ''),
+    subcategories: plans.map(p => p.subcategory || '')
+  })
+
+  if (result.classification === 'TELECOM') {
+    return { isValid: true, reason: null, score: result.confidence * 10 }
   }
 
-  let totalScore = 0
-  let telecomCount = 0
-  let giftCardCount = 0
-  let gamingCount = 0
-  let subscriptionCount = 0
-
-  for (const plan of plans) {
-    const { score, classification } = scorePlanForTelecom(plan)
-    totalScore += score
-    if (classification === 'telecom') telecomCount++
-    else if (classification === 'gift_card') giftCardCount++
-    else if (classification === 'gaming') gamingCount++
-    else if (classification === 'subscription') subscriptionCount++
-  }
-
-  const avgScore = totalScore / plans.length
-  const totalPlans = plans.length
-  
-  if (telecomCount === 0) {
-    if (giftCardCount > 0) {
-      return { isValid: false, reason: 'GIFT_CARD_PROVIDER', score: avgScore }
-    }
-    if (gamingCount > 0) {
-      return { isValid: false, reason: 'GAMING_PROVIDER', score: avgScore }
-    }
-    if (subscriptionCount > 0) {
-      return { isValid: false, reason: 'SUBSCRIPTION_SERVICE', score: avgScore }
-    }
-    return { isValid: false, reason: 'NON_TELECOM_OPERATOR', score: avgScore }
-  }
-
-  const nonTelecomCount = giftCardCount + gamingCount + subscriptionCount
-  if (nonTelecomCount > telecomCount) {
-    if (giftCardCount >= gamingCount && giftCardCount >= subscriptionCount) {
-      return { isValid: false, reason: 'GIFT_CARD_PROVIDER', score: avgScore }
-    }
-    if (gamingCount >= giftCardCount && gamingCount >= subscriptionCount) {
-      return { isValid: false, reason: 'GAMING_PROVIDER', score: avgScore }
-    }
-    return { isValid: false, reason: 'SUBSCRIPTION_SERVICE', score: avgScore }
-  }
-
-  if (avgScore < 5 && telecomCount / totalPlans < 0.3) {
-    return { isValid: false, reason: 'LOW_TELECOM_CONFIDENCE', score: avgScore }
+  const reasonMap: Record<string, any> = {
+    GIFT_CARD: 'GIFT_CARD_PROVIDER',
+    GAMING: 'GAMING_PROVIDER',
+    STREAMING: 'SUBSCRIPTION_SERVICE',
+    UTILITY: 'NON_TELECOM_OPERATOR',
+    UNKNOWN: 'LOW_TELECOM_CONFIDENCE'
   }
 
   return {
-    isValid: true,
-    reason: null,
-    score: avgScore,
+    isValid: false,
+    reason: reasonMap[result.classification] || 'NON_TELECOM_OPERATOR',
+    score: result.confidence * 10
   }
 }

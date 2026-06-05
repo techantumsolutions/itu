@@ -1,8 +1,10 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 
 export type CountryRow = {
-  country_iso: string
+  id: string
   name: string
+  iso2: string
+  iso3: string
   dial_prefix: string | null
   min_length: number | null
   max_length: number | null
@@ -10,7 +12,7 @@ export type CountryRow = {
 
 export type OperatorRow = {
   id?: string
-  country_iso: string
+  country_id: string
   code: string
   name: string
   short_name: string | null
@@ -22,7 +24,7 @@ export type OperatorRow = {
 
 export type PlanRow = {
   sku_code: string
-  country_iso: string
+  country_id: string
   operator_code: string
   price_inr: number | string | null
   price_eur: number | string | null
@@ -46,22 +48,22 @@ export type PlanRow = {
 }
 
 export async function dbFetchCountries(): Promise<CountryRow[]> {
-  const res = await supabaseRest('countries?select=country_iso,name,dial_prefix,min_length,max_length&order=name.asc')
+  const res = await supabaseRest('countries?select=id,name,iso2,iso3,dial_prefix,min_length,max_length&order=name.asc')
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
 
 export async function dbFetchOperators(countryIso: string): Promise<OperatorRow[]> {
   const iso = encodeURIComponent(countryIso.toUpperCase())
-  const res = await supabaseRest(`operators?country_iso=eq.${iso}&select=id,country_iso,code,name,short_name,logo_url,validation_regex,region_code,is_default&order=name.asc`)
+  const res = await supabaseRest(`operators?country_id=eq.${iso}&select=id,country_id,code,name,short_name,logo_url,validation_regex,region_code,is_default&order=name.asc`)
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
 
-export async function dbFetchOperatorsForCountries(isos: string[]): Promise<Pick<OperatorRow, 'country_iso'>[]> {
+export async function dbFetchOperatorsForCountries(isos: string[]): Promise<Pick<OperatorRow, 'country_id'>[]> {
   if (!isos.length) return []
   const list = isos.map((c) => encodeURIComponent(c.toUpperCase())).join(',')
-  const res = await supabaseRest(`operators?select=country_iso&country_iso=in.(${list})`)
+  const res = await supabaseRest(`operators?select=country_id&country_id=in.(${list})`)
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
@@ -71,7 +73,7 @@ export async function dbFetchPlans(countryIso: string, operatorCode?: string | n
   const op = operatorCode?.trim()
   const filter =
     op && op.length > 0 ? `&operator_code=eq.${encodeURIComponent(op)}` : ''
-  const res = await supabaseRest(`plans?country_iso=eq.${c}${filter}&select=*&order=price_inr.asc`)
+  const res = await supabaseRest(`plans?country_id=eq.${c}${filter}&select=*&order=price_inr.asc`)
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }

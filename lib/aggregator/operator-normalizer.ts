@@ -63,7 +63,8 @@ export function buildSystemOperatorInput(
 ): SystemOperatorInput | null {
   const country = plan.countryIso3 || 'UNK'
   const resolvedName = telecomOperatorName?.trim() || plan.operatorName?.trim() || ''
-  if (!resolvedName || !isGenuineTelecomOperatorName(resolvedName, country)) return null
+  if (!resolvedName) return null
+  if (!telecomOperatorName && !isGenuineTelecomOperatorName(resolvedName, country)) return null
 
   const baseName = canonicalOperatorName(resolvedName)
   const displayName = baseName ? `${titleCaseWords(baseName)} ${country}` : `Operator ${country}`

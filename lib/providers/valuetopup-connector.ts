@@ -91,6 +91,8 @@ export const valuetopupConnector: ProviderConnector = {
           wholesaleCurrency: currency,
           benefits: [benefit],
           requiredFields: sku.category === 'Pin' ? [] : [['account']],
+          category: text(sku.category) || undefined,
+          subcategory: text(sku.category) || undefined,
           raw: sku,
         } satisfies NormalizedPlan
       })
