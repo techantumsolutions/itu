@@ -201,8 +201,8 @@ export default function AdminStaffPage() {
                       >
                         <div className={cn(
                           "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
-                          perm[k] 
-                            ? "border-neutral-900 bg-neutral-900 text-white" 
+                          perm[k]
+                            ? "border-neutral-900 bg-neutral-900 text-white"
                             : "border-neutral-300 bg-white"
                         )}>
                           {perm[k] && <Check className="size-3 text-white stroke-[3px]" />}
@@ -214,7 +214,7 @@ export default function AdminStaffPage() {
                 </DropdownMenu>
               </div>
             </div>
-            <DialogFooter className="mt-4 gap-2 sm:gap-0">
+            <DialogFooter className="mt-4 gap-3">
               <DialogClose asChild>
                 <Button variant="outline" className="rounded-xl h-11">
                   Cancel
@@ -233,15 +233,15 @@ export default function AdminStaffPage() {
           <CardTitle>Existing admins</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="rounded-md border">
-            <Table>
+          <div className="rounded-md border overflow-x-auto">
+            <Table className="w-full min-w-[900px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Permissions</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead className="whitespace-nowrap">Email</TableHead>
+                  <TableHead className="whitespace-nowrap">Role</TableHead>
+                  <TableHead className="whitespace-nowrap">Status</TableHead>
+                  <TableHead className="whitespace-nowrap">Permissions</TableHead>
+                  <TableHead className="whitespace-nowrap">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -338,11 +338,11 @@ function StaffPermissionsRow({
 
   return (
     <TableRow>
-      <TableCell className="font-medium">{row.email}</TableCell>
-      <TableCell>
+      <TableCell className="font-medium whitespace-nowrap">{row.email}</TableCell>
+      <TableCell className="whitespace-nowrap">
         <span className="text-xs uppercase text-muted-foreground">{row.app_role}</span>
       </TableCell>
-      <TableCell>
+      <TableCell className="whitespace-nowrap">
         {row.app_role === 'super_admin' ? (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2 py-1 text-xs font-medium text-green-700 ring-1 ring-inset ring-green-600/20">
             Active
@@ -356,7 +356,7 @@ function StaffPermissionsRow({
           </span>
         )}
       </TableCell>
-      <TableCell>
+      <TableCell className="whitespace-nowrap">
         {row.app_role === 'super_admin' ? (
           <span className="text-sm text-muted-foreground">Full access</span>
         ) : (
@@ -391,14 +391,16 @@ function StaffPermissionsRow({
           </Popover>
         )}
       </TableCell>
-      <TableCell>
+      <TableCell className="whitespace-nowrap">
         {row.app_role === 'super_admin' ? (
           <span className="text-xs text-muted-foreground">-</span>
         ) : (
-          <Switch
-            checked={row.is_active}
-            onCheckedChange={(checked) => void onToggleStatus(row.id, checked)}
-          />
+          <div className="flex">
+            <Switch
+              checked={row.is_active}
+              onCheckedChange={(checked) => void onToggleStatus(row.id, checked)}
+            />
+          </div>
         )}
       </TableCell>
     </TableRow>

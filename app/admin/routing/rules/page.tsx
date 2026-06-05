@@ -608,7 +608,8 @@ export default function RoutingRulesPage() {
             </Select>
           </div>
 
-          <Table className="min-w-[800px]">
+          <div className="rounded-md border overflow-x-auto">
+            <Table className="w-full min-w-[800px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[15%]">Rule</TableHead>
@@ -680,6 +681,7 @@ export default function RoutingRulesPage() {
               )}
             </TableBody>
           </Table>
+          </div>
 
           {totalPages > 1 && (
             <div className="flex items-center justify-between">

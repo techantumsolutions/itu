@@ -134,23 +134,24 @@ export function TransactionsTable() {
         </div>
       </CardHeader>
       <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow className="border-border/60 hover:bg-transparent">
-              <TableHead>
-                <SortableHeader field="product">Product</SortableHeader>
-              </TableHead>
-              <TableHead>
-                <SortableHeader field="purchaseNo">Purchase No</SortableHeader>
-              </TableHead>
-              <TableHead>
-                <SortableHeader field="date">Date</SortableHeader>
-              </TableHead>
-              <TableHead className="text-right">
-                <SortableHeader field="amount">Amount</SortableHeader>
-              </TableHead>
-            </TableRow>
-          </TableHeader>
+        <div className="overflow-x-auto">
+          <Table className="w-full min-w-[700px]">
+            <TableHeader>
+              <TableRow className="border-border/60 hover:bg-transparent">
+                <TableHead className="whitespace-nowrap">
+                  <SortableHeader field="product">Product</SortableHeader>
+                </TableHead>
+                <TableHead className="whitespace-nowrap">
+                  <SortableHeader field="purchaseNo">Purchase No</SortableHeader>
+                </TableHead>
+                <TableHead className="whitespace-nowrap">
+                  <SortableHeader field="date">Date</SortableHeader>
+                </TableHead>
+                <TableHead className="text-right whitespace-nowrap">
+                  <SortableHeader field="amount">Amount</SortableHeader>
+                </TableHead>
+              </TableRow>
+            </TableHeader>
           <TableBody>
             {sortedTransactions.length === 0 ? (
               <TableRow>
@@ -165,9 +166,9 @@ export function TransactionsTable() {
               
               return (
                 <TableRow key={transaction.id}>
-                  <TableCell className="font-medium">
+                  <TableCell className="font-medium whitespace-nowrap">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-border/60 bg-muted/50">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-muted/50">
                         <span className="text-xs font-medium text-muted-foreground">
                           {productName.charAt(0)}
                         </span>
@@ -175,20 +176,21 @@ export function TransactionsTable() {
                       <span>{productName}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="text-muted-foreground whitespace-nowrap">
                     {purchaseNo}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="text-muted-foreground whitespace-nowrap">
                     {formatDate(transaction.createdAt)}
                   </TableCell>
-                  <TableCell className={`text-right font-medium ${getStatusColor(transaction.status)}`}>
+                  <TableCell className={`text-right font-medium whitespace-nowrap ${getStatusColor(transaction.status)}`}>
                     {formatCurrency(transaction.amount)}
                   </TableCell>
                 </TableRow>
               )
             })}
-          </TableBody>
-        </Table>
+            </TableBody>
+          </Table>
+        </div>
       </CardContent>
     </Card>
   )

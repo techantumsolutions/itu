@@ -37,13 +37,13 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog'
 import { useCMSStore, FAQItem, PopularCountry } from '@/lib/cms-store'
-import { 
-  Image as ImageIcon, 
-  Smartphone, 
-  HelpCircle, 
-  Globe, 
-  Settings, 
-  Save, 
+import {
+  Image as ImageIcon,
+  Smartphone,
+  HelpCircle,
+  Globe,
+  Settings,
+  Save,
   RotateCcw,
   Plus,
   Pencil,
@@ -60,14 +60,14 @@ import {
 import Link from 'next/link'
 
 export default function CMSPage() {
-  const { 
-    content, 
+  const {
+    content,
     isDirty,
     hasHydrated,
     setContent,
     updateHero,
     updateAuthPages,
-    updateTopupCard, 
+    updateTopupCard,
     updateAppPromo,
     updateFAQ,
     updateCountriesSection,
@@ -236,48 +236,50 @@ export default function CMSPage() {
       )}
 
       <Tabs defaultValue="hero" className="space-y-6">
-        <TabsList className="flex w-full flex-wrap gap-1 lg:inline-flex lg:max-w-full">
+        <div className="w-full overflow-x-auto pb-2 -mb-2">
+          <TabsList className="inline-flex w-max justify-start gap-1">
           <TabsTrigger value="hero" className="gap-2">
             <ImageIcon className="h-4 w-4" />
-            <span className="hidden sm:inline">Hero</span>
+            <span>Hero</span>
           </TabsTrigger>
           <TabsTrigger value="operators" className="gap-2">
             <GalleryHorizontal className="h-4 w-4" />
-            <span className="hidden sm:inline">Operators</span>
+            <span>Operators</span>
           </TabsTrigger>
           <TabsTrigger value="section3" className="gap-2">
             <Sparkles className="h-4 w-4" />
-            <span className="hidden sm:inline">Section 3</span>
+            <span>Section 3</span>
           </TabsTrigger>
           <TabsTrigger value="how" className="gap-2">
             <ListChecks className="h-4 w-4" />
-            <span className="hidden sm:inline">How it works</span>
+            <span>How it works</span>
           </TabsTrigger>
           <TabsTrigger value="topup" className="gap-2">
             <Smartphone className="h-4 w-4" />
-            <span className="hidden sm:inline">Top-up Card</span>
+            <span>Top-up Card</span>
           </TabsTrigger>
           <TabsTrigger value="faq" className="gap-2">
             <HelpCircle className="h-4 w-4" />
-            <span className="hidden sm:inline">FAQ</span>
+            <span>FAQ</span>
           </TabsTrigger>
           <TabsTrigger value="countries" className="gap-2">
             <Globe className="h-4 w-4" />
-            <span className="hidden sm:inline">Countries</span>
+            <span>Countries</span>
           </TabsTrigger>
           <TabsTrigger value="countriesGrid" className="gap-2">
             <Map className="h-4 w-4" />
-            <span className="hidden sm:inline">Countries Grid</span>
+            <span>Countries Grid</span>
           </TabsTrigger>
           <TabsTrigger value="app" className="gap-2">
             <Smartphone className="h-4 w-4" />
-            <span className="hidden sm:inline">App Promo</span>
+            <span>App Promo</span>
           </TabsTrigger>
           <TabsTrigger value="footer" className="gap-2">
             <Settings className="h-4 w-4" />
-            <span className="hidden sm:inline">Footer</span>
+            <span>Footer</span>
           </TabsTrigger>
         </TabsList>
+        </div>
 
         {/* Hero Section */}
         <TabsContent value="hero" className="space-y-4">
@@ -1133,90 +1135,90 @@ export default function CMSPage() {
                   {content.faq.items
                     .sort((a, b) => a.order - b.order)
                     .map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell>
-                        <GripVertical className="h-4 w-4 text-muted-foreground cursor-move" />
-                      </TableCell>
-                      <TableCell>
-                        <p className="font-medium">{item.question}</p>
-                        <p className="text-sm text-muted-foreground line-clamp-1">{item.answer}</p>
-                      </TableCell>
-                      <TableCell>
-                        <Switch
-                          checked={item.isActive}
-                          onCheckedChange={(checked) => updateFAQItem(item.id, { isActive: checked })}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button variant="ghost" size="icon" onClick={() => setEditingFAQ(item)}>
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                              <DialogHeader>
-                                <DialogTitle>Edit FAQ</DialogTitle>
-                              </DialogHeader>
-                              {editingFAQ && (
-                                <div className="space-y-4">
-                                  <div className="space-y-2">
-                                    <Label>Question</Label>
-                                    <Input
-                                      value={editingFAQ.question}
-                                      onChange={(e) => setEditingFAQ({ ...editingFAQ, question: e.target.value })}
-                                    />
-                                  </div>
-                                  <div className="space-y-2">
-                                    <Label>Answer</Label>
-                                    <Textarea
-                                      value={editingFAQ.answer}
-                                      onChange={(e) => setEditingFAQ({ ...editingFAQ, answer: e.target.value })}
-                                      rows={4}
-                                    />
-                                  </div>
-                                </div>
-                              )}
-                              <DialogFooter>
-                                <Button
-                                  onClick={() => {
-                                    if (editingFAQ) {
-                                      updateFAQItem(editingFAQ.id, editingFAQ)
-                                      setEditingFAQ(null)
-                                    }
-                                  }}
-                                >
-                                  Save Changes
+                      <TableRow key={item.id}>
+                        <TableCell>
+                          <GripVertical className="h-4 w-4 text-muted-foreground cursor-move" />
+                        </TableCell>
+                        <TableCell>
+                          <p className="font-medium">{item.question}</p>
+                          <p className="text-sm text-muted-foreground line-clamp-1">{item.answer}</p>
+                        </TableCell>
+                        <TableCell>
+                          <Switch
+                            checked={item.isActive}
+                            onCheckedChange={(checked) => updateFAQItem(item.id, { isActive: checked })}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button variant="ghost" size="icon" onClick={() => setEditingFAQ(item)}>
+                                  <Pencil className="h-4 w-4" />
                                 </Button>
-                              </DialogFooter>
-                            </DialogContent>
-                          </Dialog>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="ghost" size="icon" className="text-destructive">
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Delete FAQ?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This will permanently delete this FAQ item.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => deleteFAQItem(item.id)}>
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                              </DialogTrigger>
+                              <DialogContent>
+                                <DialogHeader>
+                                  <DialogTitle>Edit FAQ</DialogTitle>
+                                </DialogHeader>
+                                {editingFAQ && (
+                                  <div className="space-y-4">
+                                    <div className="space-y-2">
+                                      <Label>Question</Label>
+                                      <Input
+                                        value={editingFAQ.question}
+                                        onChange={(e) => setEditingFAQ({ ...editingFAQ, question: e.target.value })}
+                                      />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <Label>Answer</Label>
+                                      <Textarea
+                                        value={editingFAQ.answer}
+                                        onChange={(e) => setEditingFAQ({ ...editingFAQ, answer: e.target.value })}
+                                        rows={4}
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                                <DialogFooter>
+                                  <Button
+                                    onClick={() => {
+                                      if (editingFAQ) {
+                                        updateFAQItem(editingFAQ.id, editingFAQ)
+                                        setEditingFAQ(null)
+                                      }
+                                    }}
+                                  >
+                                    Save Changes
+                                  </Button>
+                                </DialogFooter>
+                              </DialogContent>
+                            </Dialog>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="ghost" size="icon" className="text-destructive">
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Delete FAQ?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This will permanently delete this FAQ item.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => deleteFAQItem(item.id)}>
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
                 </TableBody>
               </Table>
             </CardContent>
@@ -1341,45 +1343,45 @@ export default function CMSPage() {
                   {content.popularCountries
                     .sort((a, b) => a.order - b.order)
                     .map((country) => (
-                    <TableRow key={country.code}>
-                      <TableCell>
-                        <GripVertical className="h-4 w-4 text-muted-foreground cursor-move" />
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xl">{country.flag}</span>
-                          <span>{country.name}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>{country.code}</TableCell>
-                      <TableCell>{country.dialCode}</TableCell>
-                      <TableCell>
-                        <Switch
-                          checked={country.isActive}
-                          onCheckedChange={(checked) => {
-                            const updated = content.popularCountries.map(c =>
-                              c.code === country.code ? { ...c, isActive: checked } : c
-                            )
-                            updatePopularCountries(updated)
-                          }}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive"
-                          onClick={() => {
-                            updatePopularCountries(
-                              content.popularCountries.filter(c => c.code !== country.code)
-                            )
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                      <TableRow key={country.code}>
+                        <TableCell>
+                          <GripVertical className="h-4 w-4 text-muted-foreground cursor-move" />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">{country.flag}</span>
+                            <span>{country.name}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>{country.code}</TableCell>
+                        <TableCell>{country.dialCode}</TableCell>
+                        <TableCell>
+                          <Switch
+                            checked={country.isActive}
+                            onCheckedChange={(checked) => {
+                              const updated = content.popularCountries.map(c =>
+                                c.code === country.code ? { ...c, isActive: checked } : c
+                              )
+                              updatePopularCountries(updated)
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive"
+                            onClick={() => {
+                              updatePopularCountries(
+                                content.popularCountries.filter(c => c.code !== country.code)
+                              )
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
                 </TableBody>
               </Table>
             </CardContent>
@@ -1630,28 +1632,28 @@ export default function CMSPage() {
               {(content.appPromo.sectionImage ||
                 content.appPromo.appStoreBadgeImage ||
                 content.appPromo.googlePlayBadgeImage) && (
-                <div className="grid gap-3 sm:grid-cols-3">
-                  {content.appPromo.sectionImage ? (
-                    <div className="relative h-36 overflow-hidden rounded-lg border">
-                      <img
-                        src={content.appPromo.sectionImage}
-                        alt="Phone graphic preview"
-                        className="h-full w-full object-contain bg-muted/30"
-                      />
-                    </div>
-                  ) : null}
-                  {content.appPromo.appStoreBadgeImage ? (
-                    <div className="relative flex h-36 items-center justify-center overflow-hidden rounded-lg border bg-muted/30 p-2">
-                      <img src={content.appPromo.appStoreBadgeImage} alt="App Store badge preview" className="max-h-full object-contain" />
-                    </div>
-                  ) : null}
-                  {content.appPromo.googlePlayBadgeImage ? (
-                    <div className="relative flex h-36 items-center justify-center overflow-hidden rounded-lg border bg-muted/30 p-2">
-                      <img src={content.appPromo.googlePlayBadgeImage} alt="Google Play badge preview" className="max-h-full object-contain" />
-                    </div>
-                  ) : null}
-                </div>
-              )}
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {content.appPromo.sectionImage ? (
+                      <div className="relative h-36 overflow-hidden rounded-lg border">
+                        <img
+                          src={content.appPromo.sectionImage}
+                          alt="Phone graphic preview"
+                          className="h-full w-full object-contain bg-muted/30"
+                        />
+                      </div>
+                    ) : null}
+                    {content.appPromo.appStoreBadgeImage ? (
+                      <div className="relative flex h-36 items-center justify-center overflow-hidden rounded-lg border bg-muted/30 p-2">
+                        <img src={content.appPromo.appStoreBadgeImage} alt="App Store badge preview" className="max-h-full object-contain" />
+                      </div>
+                    ) : null}
+                    {content.appPromo.googlePlayBadgeImage ? (
+                      <div className="relative flex h-36 items-center justify-center overflow-hidden rounded-lg border bg-muted/30 p-2">
+                        <img src={content.appPromo.googlePlayBadgeImage} alt="Google Play badge preview" className="max-h-full object-contain" />
+                      </div>
+                    ) : null}
+                  </div>
+                )}
 
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="flex items-center justify-between p-3 rounded-lg border">

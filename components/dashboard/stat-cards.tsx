@@ -137,7 +137,7 @@ export function StatCardsGrid({ stats }: StatCardsGridProps) {
 }
 
 export function StatCards() {
-  const [summary, setSummary] = useState<{ totalRevenue: number; totalOrders: number } | null>(null)
+  const [summary, setSummary] = useState<{ totalRevenue: number; totalOrders: number; totalUsers?: number } | null>(null)
   const [aggOps, setAggOps] = useState<number | null>(null)
   const [aggPlans, setAggPlans] = useState<number | null>(null)
 
@@ -152,16 +152,18 @@ export function StatCards() {
         const agg = (await aggRes.json().catch(() => ({}))) as any
         const revenue = Number(dashboard?.summary?.total_revenue)
         const orders = Number(dashboard?.summary?.total_orders)
+        const users = Number(dashboard?.summary?.total_users)
         const ops = Number(agg?.summary?.operators?.withActivePlans)
         const plans = Number(agg?.summary?.plans?.total)
         setSummary({
           totalRevenue: Number.isFinite(revenue) ? revenue : 0,
           totalOrders: Number.isFinite(orders) ? orders : 0,
+          totalUsers: Number.isFinite(users) ? users : 0,
         })
         setAggOps(Number.isFinite(ops) ? ops : null)
         setAggPlans(Number.isFinite(plans) ? plans : null)
       } catch {
-        setSummary({ totalRevenue: 0, totalOrders: 0 })
+        setSummary({ totalRevenue: 0, totalOrders: 0, totalUsers: 0 })
         setAggOps(null)
         setAggPlans(null)
       }
@@ -186,6 +188,12 @@ export function StatCards() {
       <StatCard
         title="DT One Coverage"
         value={aggOps != null && aggPlans != null ? `${aggOps} operators • ${aggPlans} plans` : 'No catalog data'}
+        change={0}
+        trend="up"
+      />
+      <StatCard
+        title="Total Customers"
+        value={new Intl.NumberFormat('en-US').format(summary?.totalUsers ?? 0)}
         change={0}
         trend="up"
       />
