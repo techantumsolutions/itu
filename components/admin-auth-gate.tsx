@@ -55,7 +55,14 @@ export function AdminAuthGate({ children }: AdminAuthGateProps) {
     }
   }, [router, setSession])
 
-  if (!ready) {
+  useEffect(() => {
+    if (ready && !isClientAdminUser(user)) {
+      console.log('[AdminAuthGate] User session cleared or not admin, redirecting to /admin/login')
+      router.replace('/admin/login')
+    }
+  }, [user, ready, router])
+
+  if (!ready || !isClientAdminUser(user)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background text-muted-foreground">
         <div className="flex items-center gap-3 rounded-2xl border bg-card px-5 py-4 shadow-sm">
