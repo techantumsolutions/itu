@@ -72,6 +72,7 @@ async function upsertSuperAdminProfile(userId: string, email: string, name: stri
         name,
         app_role: 'super_admin',
         admin_permissions: null,
+        is_active: true,
         updated_at: new Date().toISOString(),
       },
     ]),
