@@ -61,6 +61,10 @@ export async function POST(req: Request) {
     }
 
     if (type === 'email') {
+      const currentProfile = await fetchProfileForUser(userId)
+      if (currentProfile?.app_role === 'admin') {
+        return NextResponse.json({ ok: false, error: 'Administrators are not allowed to change their email address' }, { status: 400 })
+      }
       // 1. Update user email in Supabase Auth (GoTrue)
       const adminRes = await supabaseAdminUpdateUser(userId, {
         email: value,

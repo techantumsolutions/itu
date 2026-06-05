@@ -63,6 +63,52 @@ function SettingsContent() {
   const [passwords, setPasswords] = useState<Record<string, string>>({})
   const [showPassMap, setShowPassMap] = useState<Record<string, boolean>>({})
 
+  // Security password update states
+  const [currentPassword, setCurrentPassword] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false)
+  const [showCurrentPass, setShowCurrentPass] = useState(false)
+  const [showNewPass, setShowNewPass] = useState(false)
+  const [showConfirmPass, setShowConfirmPass] = useState(false)
+
+  const handleUpdatePassword = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      toast.error("Please fill in all password fields")
+      return
+    }
+    if (newPassword.length < 6) {
+      toast.error("New password must be at least 6 characters long")
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error("New passwords do not match")
+      return
+    }
+
+    setIsUpdatingPassword(true)
+    try {
+      const res = await fetch('/api/profile/update-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.ok) {
+        toast.success('Password updated successfully')
+        setCurrentPassword('')
+        setNewPassword('')
+        setConfirmPassword('')
+      } else {
+        toast.error(data.error ?? 'Failed to update password')
+      }
+    } catch {
+      toast.error('Failed to update password')
+    } finally {
+      setIsUpdatingPassword(false)
+    }
+  }
+
   useEffect(() => {
     if (!isSuperAdmin) return
     async function loadPasswords() {
@@ -488,7 +534,13 @@ function SettingsContent() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
+                    disabled={user?.role === 'admin'}
                   />
+                  {user?.role === 'admin' && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Email address changes are disabled for administrators. Contact a super admin if you need to update your email.
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="phone">Phone Number</Label>
@@ -662,19 +714,79 @@ function SettingsContent() {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="current-password">Current Password</Label>
-                  <Input id="current-password" type="password" />
+                  <div className="relative">
+                    <Input
+                      id="current-password"
+                      type={showCurrentPass ? 'text' : 'password'}
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="h-10 rounded-xl pr-10 border-neutral-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPass(!showCurrentPass)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+                      aria-label={showCurrentPass ? 'Hide password' : 'Show password'}
+                    >
+                      {showCurrentPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="new-password">New Password</Label>
-                  <Input id="new-password" type="password" />
+                  <div className="relative">
+                    <Input
+                      id="new-password"
+                      type={showNewPass ? 'text' : 'password'}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="At least 6 characters"
+                      className="h-10 rounded-xl pr-10 border-neutral-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPass(!showNewPass)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+                      aria-label={showNewPass ? 'Hide password' : 'Show password'}
+                    >
+                      {showNewPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="confirm-password">Confirm New Password</Label>
-                  <Input id="confirm-password" type="password" />
+                  <div className="relative">
+                    <Input
+                      id="confirm-password"
+                      type={showConfirmPass ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Repeat new password"
+                      className="h-10 rounded-xl pr-10 border-neutral-200"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPass(!showConfirmPass)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+                      aria-label={showConfirmPass ? 'Hide password' : 'Show password'}
+                    >
+                      {showConfirmPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              <Button>Update Password</Button>
+              <Button onClick={handleUpdatePassword} disabled={isUpdatingPassword} className="rounded-xl bg-neutral-900 text-white hover:bg-neutral-800">
+                {isUpdatingPassword ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  'Update Password'
+                )}
+              </Button>
 
               <Separator />
 
@@ -688,13 +800,7 @@ function SettingsContent() {
 
               <Separator />
 
-              <div className="space-y-4">
-                <h3 className="font-medium text-destructive">Danger Zone</h3>
-                <p className="text-sm text-muted-foreground">
-                  Permanently delete your account and all associated data
-                </p>
-                <Button variant="destructive">Delete Account</Button>
-              </div>
+
             </CardContent>
           </Card>
         </TabsContent>

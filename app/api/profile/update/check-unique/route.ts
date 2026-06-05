@@ -35,6 +35,12 @@ export async function POST(req: Request) {
 
     // 1. Verify email uniqueness if changed
     if (email && email.toLowerCase() !== (currentProfile?.email ?? '').toLowerCase()) {
+      if (currentProfile?.app_role === 'admin') {
+        return NextResponse.json({
+          ok: false,
+          error: 'Administrators are not allowed to change their email address.'
+        })
+      }
       const checkRes = await supabaseRest(
         `profiles?email=eq.${encodeURIComponent(email.toLowerCase())}&id=neq.${encodeURIComponent(userId)}&select=id&limit=1`
       )
