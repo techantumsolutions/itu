@@ -10,7 +10,7 @@ import {
   operatorNameConfidenceScore,
   resolveTelecomOperatorName,
 } from '@/lib/aggregator/operator-classifier'
-import type { NormalizedPlan } from '@/lib/providers/types'
+import { NormalizedPlan } from '@/lib/providers/types'
 
 function plan(overrides: Partial<NormalizedPlan> = {}): NormalizedPlan {
   return {

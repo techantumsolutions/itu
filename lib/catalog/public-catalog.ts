@@ -171,28 +171,17 @@ async function listCountriesFromSystemOperators(): Promise<PublicCountry[]> {
 }
 
 export async function fetchPublicCountries(): Promise<PublicCountry[]> {
-  if (await isAggregatorSchemaReady()) {
-    const fromSystem = await listCountriesFromSystemOperators()
-    if (fromSystem.length) return fromSystem
-  }
-
-  const fromInternal = await listCountriesFromInternalPlans()
-  if (fromInternal.length) return fromInternal
-
   try {
-    const legacy = await dbFetchCountries()
-    return legacy.map((c) => {
-      const iso3 = normalizeCountryIso3(c.country_iso)
-      console.log("rows of list of countries from legacy")
-      return {
-        code: c.country_iso,
-        iso3,
-        name: c.name,
-        flag: flagEmojiFromIso(c.country_iso),
-        dialCode: c.dial_prefix ?? DIAL_CODES[iso3] ?? '',
-      }
-    })
-  } catch {
+    const dbCountries = await dbFetchCountries()
+    return dbCountries.map((c) => ({
+      code: c.iso2,
+      iso3: c.iso3,
+      name: c.name,
+      flag: flagEmojiFromIso(c.iso2),
+      dialCode: c.dial_prefix || DIAL_CODES[c.iso3] || '',
+    }))
+  } catch (error) {
+    console.error('Failed to fetch public countries:', error)
     return []
   }
 }

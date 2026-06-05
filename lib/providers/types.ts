@@ -62,6 +62,8 @@ export type NormalizedPlan = {
   validityDays?: number
   benefits: NormalizedBenefit[]
   requiredFields: string[][]
+  category?: string
+  subcategory?: string
   raw: unknown
 }
 

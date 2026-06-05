@@ -1,5 +1,5 @@
 import { dingConnector } from './ding-connector'
-import type { ProviderConfig, RawPlanRecord } from './types'
+import { ProviderConfig, RawPlanRecord } from './types'
 
 describe('dingConnector', () => {
   const config: ProviderConfig = {

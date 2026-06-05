@@ -1,5 +1,5 @@
 import { normalizedPlanSignature } from '@/lib/aggregator/signature'
-import type { NormalizedPlan } from '@/lib/providers/types'
+import { NormalizedPlan } from '@/lib/providers/types'
 
 function plan(overrides: Partial<NormalizedPlan>): NormalizedPlan {
   return {

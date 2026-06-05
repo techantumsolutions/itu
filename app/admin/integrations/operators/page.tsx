@@ -112,7 +112,9 @@ export default function OperatorsPage() {
     isRefresh = false,
     country = countryFilter,
     provider = providerFilter,
-    queryText = search
+    queryText = search,
+    status = statusFilter,
+    currentDataType = dataType
   ) => {
     if (isRefresh) setRefreshing(true)
     else setLoading(true)
@@ -121,6 +123,7 @@ export default function OperatorsPage() {
     if (country !== 'ALL') params.set('country', country)
     if (provider !== 'ALL') params.set('providerId', provider)
     if (queryText.trim()) params.set('q', queryText.trim())
+    if (currentDataType === 'system' && status !== 'ALL') params.set('status', status)
 
     const queryStr = params.toString()
     const url = queryStr ? `${endpoint}?${queryStr}` : endpoint
@@ -143,11 +146,11 @@ export default function OperatorsPage() {
   // Trigger debounced load on filters or search input changes (resolves PostgREST row limits)
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      void load(false, countryFilter, providerFilter, search)
+      void load(false, countryFilter, providerFilter, search, statusFilter, dataType)
     }, 300)
 
     return () => clearTimeout(delayDebounceFn)
-  }, [countryFilter, providerFilter, search])
+  }, [countryFilter, providerFilter, search, statusFilter, dataType])
 
   // Sync All Providers
   const triggerSyncAll = async () => {
@@ -258,16 +261,16 @@ export default function OperatorsPage() {
     return mapped.sort((a, b) => {
       const codeA = String(a.countryCode ?? '').trim().toUpperCase()
       const codeB = String(b.countryCode ?? '').trim().toUpperCase()
-      
+
       const countryNameA = countryNameMap.get(codeA) || codeA
       const countryNameB = countryNameMap.get(codeB) || codeB
-      
+
       const comp = countryNameA.localeCompare(countryNameB, undefined, { sensitivity: 'base' })
       if (comp !== 0) return comp
-      
+
       const nameA = String(a.mainName ?? '').trim().toUpperCase()
       const nameB = String(b.mainName ?? '').trim().toUpperCase()
-      
+
       return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' })
     })
   }, [systemOperators, rawOperators, dataType, typeFilter, statusFilter, countryNameMap])
@@ -334,14 +337,14 @@ export default function OperatorsPage() {
       </div>
 
       <Card className="border-border/60 shadow-sm">
-        <CardHeader className="pb-3">
+        {/* <CardHeader className="pb-3">
           <CardTitle>Operators List</CardTitle>
           <CardDescription>
             <Link href="/admin/integrations" className="font-medium text-primary hover:underline">
               Back to integrations
             </Link>
           </CardDescription>
-        </CardHeader>
+        </CardHeader> */}
         <CardContent className="space-y-4">
 
           {/* Filters Bar */}

@@ -97,6 +97,8 @@ export const dtoneConnector: ProviderConnector = {
           validityDays,
           benefits,
           requiredFields,
+          category: text(p?.service?.name) || undefined,
+          subcategory: text(p?.service?.subservice?.name) || undefined,
           raw: p,
         } satisfies NormalizedPlan
       })

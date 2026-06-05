@@ -1,5 +1,5 @@
 import { fingerprintPlan } from '@/lib/uti/normalize'
-import type { NormalizedPlan } from '@/lib/providers/types'
+import { NormalizedPlan } from '@/lib/providers/types'
 
 function basePlan(overrides: Partial<NormalizedPlan> = {}): NormalizedPlan {
   return {

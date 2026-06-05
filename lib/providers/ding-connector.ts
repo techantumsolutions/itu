@@ -221,6 +221,8 @@ export const dingConnector: ProviderConnector = {
           validityDays,
           benefits,
           requiredFields: [], // Ding standard sendsAccountNumber normalized, handled by core transfer service
+          category: hasData ? 'DATA' : 'AIRTIME',
+          subcategory: hasData ? 'DATA' : 'AIRTIME',
           raw: { ...p, dingProviderName: providerNameByCode.get(operatorId) ?? null, providerName: providerOperatorName },
         } satisfies NormalizedPlan
       })
