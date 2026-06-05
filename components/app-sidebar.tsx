@@ -194,7 +194,7 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon" className="border-r border-border/70 bg-sidebar shadow-elevated-sm">
-      <SidebarHeader className="border-b border-sidebar-border/80 p-4">
+      <SidebarHeader className="border-b border-sidebar-border/80 p-1.5">
         <Link href="/admin" className="flex items-center gap-3 rounded-xl px-1 py-0.5 transition-colors hover:bg-sidebar-accent/60">
           <ItuLogoMark className="rounded-xl" />
           <div className="group-data-[collapsible=icon]:hidden">
