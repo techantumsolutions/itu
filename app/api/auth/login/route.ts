@@ -157,6 +157,7 @@ export async function POST(req: Request) {
               email,
               name: (user.user_metadata?.name as string) ?? '',
               app_role: email === 'admin@itu.com' ? 'super_admin' : 'user',
+              is_active: true,
               updated_at: new Date().toISOString(),
             },
           ]),

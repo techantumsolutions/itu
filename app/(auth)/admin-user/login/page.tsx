@@ -28,7 +28,7 @@ export default function AdminUserLoginPage() {
   const [error, setError] = useState('')
   const [devHint, setDevHint] = useState<string | null>(null)
   const [resetting, setResetting] = useState(false)
-  
+
   const [turnstileToken, setTurnstileToken] = useState('')
 
   // 2FA States
@@ -49,6 +49,13 @@ export default function AdminUserLoginPage() {
     })
   }, [router])
 
+  // Reset Turnstile token when email or password is empty
+  useEffect(() => {
+    if (!email.trim() || !password) {
+      setTurnstileToken('')
+    }
+  }, [email, password])
+
 
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -56,12 +63,12 @@ export default function AdminUserLoginPage() {
     setError('')
 
     if (!turnstileToken && process.env.NODE_ENV === 'production') {
-       setError('Please complete the CAPTCHA')
-       return
+      setError('Please complete the CAPTCHA')
+      return
     }
 
     const result = await login(email.trim(), password, fingerprint || undefined, turnstileToken, 'admin-user')
-    
+
     if (result.ok && result.requires_2fa) {
       setRequires2FA(true)
       setTempToken(result.temp_token || null)
@@ -80,7 +87,7 @@ export default function AdminUserLoginPage() {
     }
     setError(
       result.error ??
-        'Invalid email or password. If this is a new project, run: npm run bootstrap:admin (requires Supabase keys in .env).',
+      'Invalid email or password. If this is a new project, run: npm run bootstrap:admin (requires Supabase keys in .env).',
     )
   }
 
@@ -98,10 +105,10 @@ export default function AdminUserLoginPage() {
       })
       const data = await res.json()
       if (data.ok) {
-         setSession(data.user)
-         router.push('/admin')
+        setSession(data.user)
+        router.push('/admin')
       } else {
-         setError(data.error || 'Invalid 2FA code')
+        setError(data.error || 'Invalid 2FA code')
       }
     } catch (err) {
       setError('Failed to verify 2FA')
@@ -116,13 +123,13 @@ export default function AdminUserLoginPage() {
         <Card className="overflow-hidden rounded-2xl border-neutral-200 shadow-lg">
           <CardHeader className="space-y-3 border-b border-neutral-100 bg-white pb-6 text-center">
             <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-neutral-900 text-amber-400 shadow-inner">
-               {requires2FA ? <QrCode className="size-7" /> : <Shield className="size-7" aria-hidden />}
+              {requires2FA ? <QrCode className="size-7" /> : <Shield className="size-7" aria-hidden />}
             </div>
             <CardTitle className="text-xl font-bold text-neutral-900">
-               {requires2FA ? 'Two-Factor Authentication' : 'Staff sign in'}
+              {requires2FA ? 'Two-Factor Authentication' : 'Staff sign in'}
             </CardTitle>
             <p className="text-sm text-neutral-500">
-              {requires2FA 
+              {requires2FA
                 ? 'We have sent a 6-digit authentication code to your email.'
                 : 'Super admins and admins use email and password.'}
             </p>
@@ -173,11 +180,17 @@ export default function AdminUserLoginPage() {
                   </div>
                 </div>
 
-                <div className="flex justify-center py-2">
-                  <Turnstile 
-                    siteKey={TURNSTILE_SITE_KEY} 
-                    onSuccess={(token) => setTurnstileToken(token)}
-                  />
+                <div className="flex justify-center py-2 min-h-[75px] items-center">
+                  {email.trim() && password ? (
+                    <Turnstile
+                      siteKey={TURNSTILE_SITE_KEY}
+                      onSuccess={(token) => setTurnstileToken(token)}
+                    />
+                  ) : (
+                    <p className="text-xs text-neutral-400 italic">
+                      Please enter your email and password to verify CAPTCHA
+                    </p>
+                  )}
                 </div>
 
                 <Button
@@ -199,48 +212,48 @@ export default function AdminUserLoginPage() {
               <form className="space-y-6" onSubmit={handleVerify2FA}>
 
 
-                 <div className="space-y-2">
-                    <Label htmlFor="totp-code">Authentication Code</Label>
-                    <Input
-                      id="totp-code"
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      value={totpCode}
-                      onChange={(e) => setTotpCode(e.target.value)}
-                      placeholder="000000"
-                      className="h-11 rounded-xl text-center text-lg tracking-widest"
-                      maxLength={6}
-                      required
-                    />
-                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="totp-code">Authentication Code</Label>
+                  <Input
+                    id="totp-code"
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={totpCode}
+                    onChange={(e) => setTotpCode(e.target.value)}
+                    placeholder="000000"
+                    className="h-11 rounded-xl text-center text-lg tracking-widest"
+                    maxLength={6}
+                    required
+                  />
+                </div>
 
-                 <Button
-                    type="submit"
-                    className="h-11 w-full rounded-xl bg-neutral-900 text-base font-semibold text-white hover:bg-neutral-800"
-                    disabled={verifying2FA || totpCode.length < 6}
-                  >
-                    {verifying2FA ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Verifying…
-                      </>
-                    ) : (
-                      'Verify & Continue'
-                    )}
-                 </Button>
+                <Button
+                  type="submit"
+                  className="h-11 w-full rounded-xl bg-neutral-900 text-base font-semibold text-white hover:bg-neutral-800"
+                  disabled={verifying2FA || totpCode.length < 6}
+                >
+                  {verifying2FA ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Verifying…
+                    </>
+                  ) : (
+                    'Verify & Continue'
+                  )}
+                </Button>
               </form>
             )}
 
             {!requires2FA && (
               <>
-                <p className="text-center text-sm text-neutral-500">
+                {/* <p className="text-center text-sm text-neutral-500">
                   <Link href="/login" className="font-semibold text-[var(--hero-cta-orange)] hover:underline">
                     Customer login (mobile / OTP)
                   </Link>
-                </p>
+                </p> */}
 
-                {isDev ? (
+                {/* {isDev ? (
                   <div className="space-y-2 rounded-xl border border-dashed border-amber-200 bg-amber-50/80 px-4 py-3 text-xs text-amber-950">
                     <p className="font-medium">Local dev</p>
                     <p>
@@ -276,7 +289,7 @@ export default function AdminUserLoginPage() {
                       {resetting ? 'Resetting…' : 'Reset dev super-admin password'}
                     </Button>
                   </div>
-                ) : null}
+                ) : null} */}
               </>
             )}
           </CardContent>

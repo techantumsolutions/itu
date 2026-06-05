@@ -115,6 +115,7 @@ interface WalletState {
   addRewardPoints: (points: number, orderId: string) => void
   getTransactions: () => Transaction[]
   fetchTransactions: () => Promise<void>
+  fetchBalance: () => Promise<void>
 }
 
 export const useWalletStore = create<WalletState>()(
@@ -126,13 +127,22 @@ export const useWalletStore = create<WalletState>()(
       topUp: async (amount: number) => {
         set({ isLoading: true })
         try {
+          const userId = useAuthStore.getState().user?.id
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+          if (userId) headers['x-user-id'] = userId
+
           const res = await fetch('/api/wallet/topup', {
             method: 'POST',
             credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ amount }),
           })
-          return res.ok
+          if (res.ok) {
+            await get().fetchBalance()
+            await get().fetchTransactions()
+            return true
+          }
+          return false
         } finally {
           set({ isLoading: false })
         }
@@ -140,13 +150,22 @@ export const useWalletStore = create<WalletState>()(
       deduct: async (amount: number, description: string, metadata?: Transaction['metadata']) => {
         set({ isLoading: true })
         try {
+          const userId = useAuthStore.getState().user?.id
+          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+          if (userId) headers['x-user-id'] = userId
+
           const res = await fetch('/api/wallet/deduct', {
             method: 'POST',
             credentials: 'include',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ amount, description, metadata }),
           })
-          return res.ok
+          if (res.ok) {
+            await get().fetchBalance()
+            await get().fetchTransactions()
+            return true
+          }
+          return false
         } finally {
           set({ isLoading: false })
         }
@@ -163,11 +182,43 @@ export const useWalletStore = create<WalletState>()(
       fetchTransactions: async () => {
         set({ isLoading: true })
         try {
-          const res = await fetch('/api/profile/transactions', { credentials: 'include', cache: 'no-store' })
+          const userId = useAuthStore.getState().user?.id
+          const headers: Record<string, string> = {}
+          if (userId) headers['x-user-id'] = userId
+
+          const res = await fetch('/api/profile/transactions', { 
+            credentials: 'include', 
+            headers,
+            cache: 'no-store' 
+          })
           if (res.ok) {
             const data = await res.json()
             if (data && Array.isArray(data.transactions)) {
               set({ transactions: data.transactions })
+            }
+          }
+        } catch {
+          // ignore
+        } finally {
+          set({ isLoading: false })
+        }
+      },
+      fetchBalance: async () => {
+        set({ isLoading: true })
+        try {
+          const userId = useAuthStore.getState().user?.id
+          const headers: Record<string, string> = {}
+          if (userId) headers['x-user-id'] = userId
+
+          const res = await fetch('/api/wallet/balance', {
+            credentials: 'include',
+            headers,
+            cache: 'no-store'
+          })
+          if (res.ok) {
+            const data = await res.json()
+            if (data && typeof data.balance === 'number') {
+              set({ balance: data.balance })
             }
           }
         } catch {

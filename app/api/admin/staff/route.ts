@@ -89,6 +89,7 @@ export async function POST(request: Request) {
           name,
           app_role: 'admin',
           admin_permissions: permissions,
+          is_active: true,
           updated_at: new Date().toISOString(),
         },
       ]),

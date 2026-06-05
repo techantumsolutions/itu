@@ -136,13 +136,13 @@ export default function AdminLoginPage() {
               </Button>
             </form>
 
-            <p className="text-center text-sm text-neutral-500">
+            {/* <p className="text-center text-sm text-neutral-500">
               <Link href="/login" className="font-semibold text-[var(--hero-cta-orange)] hover:underline">
                 Customer login (mobile / OTP)
               </Link>
-            </p>
+            </p> */}
 
-            {isDev ? (
+            {/* {isDev ? (
               <div className="space-y-2 rounded-xl border border-dashed border-amber-200 bg-amber-50/80 px-4 py-3 text-xs text-amber-950">
                 <p className="font-medium">Local dev</p>
                 <p>
@@ -178,16 +178,16 @@ export default function AdminLoginPage() {
                   {resetting ? 'Resetting…' : 'Reset dev super-admin password'}
                 </Button>
               </div>
-            ) : null}
+            ) : null} */}
           </CardContent>
         </Card>
 
-        <p className="mt-8 text-center text-xs text-neutral-400">
+        {/* <p className="mt-8 text-center text-xs text-neutral-400">
           <span className="inline-flex items-center gap-2">
             <Image src="/auth/icon-secure.png" alt="" width={20} height={20} className="opacity-70" />
             Session cookies are set for secure admin access.
           </span>
-        </p>
+        </p> */}
       </div>
     </div>
   )

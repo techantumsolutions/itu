@@ -8,11 +8,14 @@ import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { CalendarDays, ChevronDown, MessageSquareText, PhoneCall, Sparkles, Wifi } from 'lucide-react'
+import { CalendarDays, Check, ChevronDown, MessageSquareText, PhoneCall, Sparkles, Wifi } from 'lucide-react'
 import { useTopupStore, type TopupPlan } from '@/store/topupStore'
 import { useLocalePreferencesStore } from '@/lib/stores'
 import { getDialCode } from '@/lib/lcr/countries'
 import { flagEmojiFromIso } from '@/lib/lcr/countries'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { countriesList, getFlagEmoji } from '@/lib/country-codes'
 
 function cleanOperatorName(name: string): string {
   let val = (name ?? '').trim()
@@ -95,10 +98,15 @@ export default function TopupPlanSelectionPage() {
     useTopupStore()
   const { currencyCode, languageCode } = useLocalePreferencesStore()
   const userCurrency: 'INR' | 'EUR' = currencyCode === 'INR' ? 'INR' : 'EUR'
-  const dialPrefix = getDialCode(countryCode)
-  const countryFlag = flagEmojiFromIso(countryCode)
+  const selectedCountry = useMemo(() => {
+    return countriesList.find((c) => c.code.toUpperCase() === countryCode.toUpperCase())
+  }, [countryCode])
+
+  const dialPrefix = selectedCountry ? selectedCountry.dialCode : getDialCode(countryCode)
+  const countryFlag = selectedCountry ? selectedCountry.flag : flagEmojiFromIso(countryCode)
 
   const [localPhone, setLocalPhone] = useState(phoneNumber)
+  const [openCountry, setOpenCountry] = useState(false)
   const [detecting, setDetecting] = useState(false)
   const [loadingPlans, setLoadingPlans] = useState(false)
   const [plans, setPlans] = useState<TopupPlan[]>([])
@@ -171,8 +179,8 @@ export default function TopupPlanSelectionPage() {
     }
   }, [detecting, operator, localPhone, manualOperatorOverride])
 
+  // Fetch providers list automatically whenever countryCode changes in background
   useEffect(() => {
-    if (!operatorDialogOpen) return
     const loadProviders = async () => {
       setProvidersLoading(true)
       try {
@@ -183,20 +191,32 @@ export default function TopupPlanSelectionPage() {
         const json = (await res.json().catch(() => ({}))) as { providers?: DbProvider[] }
         const mapped = Array.isArray(json.providers) ? json.providers : []
         setProviders(mapped)
-        if (!selectedProviderCode && mapped.length) {
-          const initial =
-            resolvedProviderCode && mapped.some((m) => m.code === resolvedProviderCode)
-              ? resolvedProviderCode
-              : mapped[0]!.code
-          setSelectedProviderCode(initial)
-        }
+      } catch (err) {
+        console.error('Failed to load providers:', err)
       } finally {
         setProvidersLoading(false)
       }
     }
     void loadProviders()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [operatorDialogOpen, countryCode])
+  }, [countryCode])
+
+  // Sync selectedProviderCode with resolvedProviderCode or first provider in list
+  useEffect(() => {
+    if (providers.length > 0) {
+      const initial =
+        resolvedProviderCode && providers.some((m) => m.code === resolvedProviderCode)
+          ? resolvedProviderCode
+          : providers[0]!.code
+      setSelectedProviderCode(initial)
+    }
+  }, [resolvedProviderCode, providers])
+
+  // Reset selectedProviderCode when the operator dialog is opened
+  useEffect(() => {
+    if (operatorDialogOpen && resolvedProviderCode && providers.some((m) => m.code === resolvedProviderCode)) {
+      setSelectedProviderCode(resolvedProviderCode)
+    }
+  }, [operatorDialogOpen, resolvedProviderCode, providers])
 
   useEffect(() => {
     const load = async () => {
@@ -262,11 +282,48 @@ export default function TopupPlanSelectionPage() {
 
         <div className="mx-auto mt-8 rounded-2xl bg-[#eaf6ff] px-5 py-6 shadow-sm ring-1 ring-black/5 md:px-7 md:py-7">
           <div className="grid gap-3 md:grid-cols-[180px_1fr_220px_260px]">
-            <div className="flex items-center gap-2 rounded-xl bg-[#f8f6f7] px-4 py-3 ring-1 ring-black/10">
-              <span className="text-lg">{countryFlag}</span>
-              <span className="text-sm font-semibold text-neutral-900">+{dialPrefix}</span>
-              <ChevronDown className="ml-auto h-4 w-4 text-neutral-400" />
-            </div>
+            <Popover open={openCountry} onOpenChange={setOpenCountry}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-2 rounded-xl bg-[#fff] px-4 py-3 ring-1 ring-black/10 cursor-pointer transition-colors w-full text-left"
+                >
+                  {/* <span className="text-lg">{countryFlag}</span> */}
+                  <span className="text-sm font-semibold text-neutral-900">+{dialPrefix}</span>
+                  <ChevronDown className="ml-auto h-4 w-4 text-neutral-400" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[300px] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search country or code..." />
+                  <CommandList>
+                    <CommandEmpty>No country found.</CommandEmpty>
+                    <CommandGroup className="max-h-[250px] overflow-y-auto">
+                      {countriesList.map((c) => (
+                        <CommandItem
+                          key={c.code}
+                          value={`${c.name} ${c.code} ${c.dialCode}`}
+                          onSelect={() => {
+                            setPhoneDetails({ countryCode: c.code, phoneNumber: localPhone })
+                            setOpenCountry(false)
+                          }}
+                          className="flex items-center justify-between py-2 cursor-pointer"
+                        >
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">{c.flag}</span>
+                            <span className="font-medium text-neutral-900">{c.name}</span>
+                            <span className="text-neutral-400 font-normal">(+{c.dialCode})</span>
+                          </div>
+                          {countryCode.toUpperCase() === c.code.toUpperCase() && (
+                            <Check className="h-4 w-4 text-[var(--hero-cta-orange)]" />
+                          )}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
             <div className="flex items-center gap-2 rounded-xl bg-white px-4 py-3 ring-1 ring-black/10">
               <Input
                 value={localPhone}
@@ -312,177 +369,177 @@ export default function TopupPlanSelectionPage() {
             ) : null}
 
             {operatorReady ? (
-            <>
-            <div className="mt-10 flex flex-col items-center justify-between gap-4 md:flex-row">
-              <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="w-full md:w-auto">
-                <TabsList className="h-12 rounded-full bg-transparent p-0 shadow-none ring-0">
-                  {tabs.map((t) => (
-                    <TabsTrigger
-                      key={t.id}
-                      value={t.id}
-                      className={cn(
-                        'h-10 rounded-full px-6 text-[11px] font-bold uppercase tracking-[0.12em]',
-                        'data-[state=active]:bg-neutral-200/80 data-[state=active]:text-[var(--hero-cta-orange)] data-[state=active]:shadow-none',
-                        'data-[state=inactive]:text-neutral-700 data-[state=inactive]:bg-transparent',
-                      )}
-                    >
-                      {t.label}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
+              <>
+                <div className="mt-10 flex flex-col items-center justify-between gap-4 md:flex-row">
+                  <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="w-full md:w-auto">
+                    <TabsList className="h-12 rounded-full bg-transparent p-0 shadow-none ring-0">
+                      {tabs.map((t) => (
+                        <TabsTrigger
+                          key={t.id}
+                          value={t.id}
+                          className={cn(
+                            'h-10 rounded-full px-6 text-[11px] font-bold uppercase tracking-[0.12em]',
+                            'data-[state=active]:bg-neutral-200/80 data-[state=active]:text-[var(--hero-cta-orange)] data-[state=active]:shadow-none',
+                            'data-[state=inactive]:text-neutral-700 data-[state=inactive]:bg-transparent',
+                          )}
+                        >
+                          {t.label}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                  </Tabs>
 
-              <div className="flex w-full items-center justify-end gap-3 md:w-auto">
-                <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Filter by:</span>
-                <Select value={sort} onValueChange={(v) => setSort(v as any)}>
-                <SelectTrigger className="h-11 w-[190px] rounded-full bg-[#f8f6f7] shadow-none ring-1 ring-black/10">
-                    <SelectValue placeholder="Popular" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="popular">Popular</SelectItem>
-                    <SelectItem value="price">Price Low-High</SelectItem>
-                    <SelectItem value="validity">Validity</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+                  <div className="flex w-full items-center justify-end gap-3 md:w-auto">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Filter by:</span>
+                    <Select value={sort} onValueChange={(v) => setSort(v as any)}>
+                      <SelectTrigger className="h-11 w-[190px] rounded-full bg-[#f8f6f7] shadow-none ring-1 ring-black/10">
+                        <SelectValue placeholder="Popular" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="popular">Popular</SelectItem>
+                        <SelectItem value="price">Price Low-High</SelectItem>
+                        <SelectItem value="validity">Validity</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
 
-            <div className="mt-6 space-y-6">
-              {loadingPlans ? (
-                <div className="space-y-4">
-                  {Array.from({ length: 2 }).map((_, i) => (
-                    <div key={i} className="h-28 rounded-2xl bg-white/70 ring-1 ring-black/5" />
-                  ))}
-                </div>
-              ) : visiblePlans.length === 0 ? (
-                <div className="rounded-2xl bg-white px-6 py-12 text-center shadow-sm ring-1 ring-black/5">
-                  <p className="text-sm font-semibold text-neutral-900">No plans available for this operator</p>
-                  <p className="mt-2 text-xs text-neutral-500">
-                    Plans are loaded from the application catalog database. Ask an admin to sync providers in the
-                    admin panel, or choose a different operator using Change.
-                  </p>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mt-4"
-                    onClick={() => setOperatorDialogOpen(true)}
-                  >
-                    Choose operator
-                  </Button>
-                </div>
-              ) : (
-                visiblePlans.map((plan) => (
-                  <div
-                    key={plan.id}
-                    className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-[0_18px_44px_-34px_rgba(15,23,42,0.35)]"
-                  >
-                    <div className="grid items-stretch gap-0 md:grid-cols-[180px_1fr_150px_150px]">
-                      <div className="relative flex items-center justify-center bg-white p-4 md:p-5">
-                        <div className="w-full rounded-xl border border-neutral-300 bg-white px-4 py-5 text-center">
-                          {plan.tag === 'popular' ? (
-                            <div className="pointer-events-none absolute right-4 top-4 overflow-hidden rounded-tr-xl">
-                              <div className="absolute right-[-36px] top-[6px] rotate-45 bg-[var(--hero-cta-orange)] px-10 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-white">
-                                Popular
+                <div className="mt-6 space-y-6">
+                  {loadingPlans ? (
+                    <div className="space-y-4">
+                      {Array.from({ length: 2 }).map((_, i) => (
+                        <div key={i} className="h-28 rounded-2xl bg-white/70 ring-1 ring-black/5" />
+                      ))}
+                    </div>
+                  ) : visiblePlans.length === 0 ? (
+                    <div className="rounded-2xl bg-white px-6 py-12 text-center shadow-sm ring-1 ring-black/5">
+                      <p className="text-sm font-semibold text-neutral-900">No plans available for this operator</p>
+                      <p className="mt-2 text-xs text-neutral-500">
+                        Plans are loaded from the application catalog database. Ask an admin to sync providers in the
+                        admin panel, or choose a different operator using Change.
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-4"
+                        onClick={() => setOperatorDialogOpen(true)}
+                      >
+                        Choose operator
+                      </Button>
+                    </div>
+                  ) : (
+                    visiblePlans.map((plan) => (
+                      <div
+                        key={plan.id}
+                        className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-[0_18px_44px_-34px_rgba(15,23,42,0.35)]"
+                      >
+                        <div className="grid items-stretch gap-0 md:grid-cols-[180px_1fr_150px_150px]">
+                          <div className="relative flex items-center justify-center bg-white p-4 md:p-5">
+                            <div className="w-full rounded-xl border border-neutral-300 bg-white px-4 py-5 text-center">
+                              {plan.tag === 'popular' ? (
+                                <div className="pointer-events-none absolute right-4 top-4 overflow-hidden rounded-tr-xl">
+                                  <div className="absolute right-[-36px] top-[6px] rotate-45 bg-[var(--hero-cta-orange)] px-10 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-white">
+                                    Popular
+                                  </div>
+                                </div>
+                              ) : null}
+                              <p className="text-2xl font-extrabold text-neutral-900">INR {plan.price_inr}</p>
+                              <p className="mt-1 text-[11px] font-bold text-neutral-700">(EURO - €{plan.price_eur})</p>
+                            </div>
+                          </div>
+
+                          <div className="border-t border-neutral-100 bg-white px-5 py-4 md:border-l md:border-t-0 md:py-5">
+                            <div className="grid grid-cols-3 items-center gap-4">
+                              <div className="flex items-center gap-2">
+                                <span className="flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
+                                  <PhoneCall className="h-4 w-4 text-neutral-700" />
+                                </span>
+                                <div>
+                                  <p className="text-xs font-semibold text-neutral-700">Unlimited</p>
+                                  <p className="text-[11px] text-neutral-500">Calls</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
+                                  <Wifi className="h-4 w-4 text-neutral-700" />
+                                </span>
+                                <div>
+                                  <p className="text-xs font-semibold text-neutral-700">{plan.data || '2GB/Day'}</p>
+                                  <p className="text-[11px] text-neutral-500">Data</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
+                                  <MessageSquareText className="h-4 w-4 text-neutral-700" />
+                                </span>
+                                <div>
+                                  <p className="text-xs font-semibold text-neutral-700">{plan.sms || '100 SMS/Day'}</p>
+                                  <p className="text-[11px] text-neutral-500">SMS</p>
+                                </div>
                               </div>
                             </div>
-                          ) : null}
-                          <p className="text-2xl font-extrabold text-neutral-900">INR {plan.price_inr}</p>
-                          <p className="mt-1 text-[11px] font-bold text-neutral-700">(EURO - €{plan.price_eur})</p>
-                        </div>
-                      </div>
-
-                      <div className="border-t border-neutral-100 bg-white px-5 py-4 md:border-l md:border-t-0 md:py-5">
-                        <div className="grid grid-cols-3 items-center gap-4">
-                          <div className="flex items-center gap-2">
-                            <span className="flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
-                              <PhoneCall className="h-4 w-4 text-neutral-700" />
-                            </span>
-                            <div>
-                              <p className="text-xs font-semibold text-neutral-700">Unlimited</p>
-                              <p className="text-[11px] text-neutral-500">Calls</p>
+                            <div className="mt-4 border-t border-neutral-200/70 pt-3 text-[11px] text-neutral-600">
+                              <span className="font-semibold text-neutral-800">{cleanOperatorName(operator) || '—'}</span>
+                              <span className="ml-2">{translateBenefits(plan.benefits, languageCode) || 'Thanks app: Free hello tunes + Wynk music'}</span>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
-                              <Wifi className="h-4 w-4 text-neutral-700" />
-                            </span>
-                            <div>
-                              <p className="text-xs font-semibold text-neutral-700">{plan.data || '2GB/Day'}</p>
-                              <p className="text-[11px] text-neutral-500">Data</p>
+
+                          <div className="flex items-center justify-center border-t border-neutral-100 bg-white px-4 py-4 md:border-l md:border-t-0">
+                            <div className="text-center">
+                              <span className="mx-auto mb-1 flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
+                                <CalendarDays className="h-4 w-4 text-neutral-700" />
+                              </span>
+                              <p className="text-sm font-bold text-neutral-900">{plan.validity || '28 Days'}</p>
+                              <p className="text-[11px] text-neutral-500">Validity</p>
                             </div>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <span className="flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
-                              <MessageSquareText className="h-4 w-4 text-neutral-700" />
-                            </span>
-                            <div>
-                              <p className="text-xs font-semibold text-neutral-700">{plan.sms || '100 SMS/Day'}</p>
-                              <p className="text-[11px] text-neutral-500">SMS</p>
-                            </div>
+
+                          <div className="flex items-center justify-center border-t border-neutral-100 bg-white px-4 py-4 md:border-l md:border-t-0">
+                            <Button
+                              className={cn(
+                                'h-9 rounded-full bg-[var(--hero-cta-orange)] px-6 text-[11px] font-bold uppercase tracking-wide text-white shadow-none hover:brightness-105',
+                              )}
+                              onClick={() => onBuy(plan)}
+                            >
+                              Buy Now
+                            </Button>
                           </div>
                         </div>
-                        <div className="mt-4 border-t border-neutral-200/70 pt-3 text-[11px] text-neutral-600">
-                          <span className="font-semibold text-neutral-800">{cleanOperatorName(operator) || '—'}</span>
-                          <span className="ml-2">{translateBenefits(plan.benefits, languageCode) || 'Thanks app: Free hello tunes + Wynk music'}</span>
-                        </div>
                       </div>
+                    ))
+                  )}
+                </div>
 
-                      <div className="flex items-center justify-center border-t border-neutral-100 bg-white px-4 py-4 md:border-l md:border-t-0">
-                        <div className="text-center">
-                          <span className="mx-auto mb-1 flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
-                            <CalendarDays className="h-4 w-4 text-neutral-700" />
-                          </span>
-                          <p className="text-sm font-bold text-neutral-900">{plan.validity || '28 Days'}</p>
-                          <p className="text-[11px] text-neutral-500">Validity</p>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-center border-t border-neutral-100 bg-white px-4 py-4 md:border-l md:border-t-0">
-                        <Button
-                          className={cn(
-                            'h-9 rounded-full bg-[var(--hero-cta-orange)] px-6 text-[11px] font-bold uppercase tracking-wide text-white shadow-none hover:brightness-105',
-                          )}
-                          onClick={() => onBuy(plan)}
-                        >
-                          Buy Now
-                        </Button>
-                      </div>
+                <div className="mt-10 flex flex-wrap items-center justify-center gap-10 text-center text-sm text-neutral-600">
+                  <div className="flex items-center gap-3">
+                    <span className="flex size-10 items-center justify-center rounded-full bg-violet-600/10 text-violet-700">
+                      <Sparkles className="h-5 w-5" />
+                    </span>
+                    <div className="text-left">
+                      <p className="font-semibold text-neutral-900">Instant Top-Up</p>
+                      <p className="text-xs text-neutral-500">In seconds</p>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
-
-            <div className="mt-10 flex flex-wrap items-center justify-center gap-10 text-center text-sm text-neutral-600">
-              <div className="flex items-center gap-3">
-                <span className="flex size-10 items-center justify-center rounded-full bg-violet-600/10 text-violet-700">
-                  <Sparkles className="h-5 w-5" />
-                </span>
-                <div className="text-left">
-                  <p className="font-semibold text-neutral-900">Instant Top-Up</p>
-                  <p className="text-xs text-neutral-500">In seconds</p>
+                  <div className="flex items-center gap-3">
+                    <span className="flex size-10 items-center justify-center rounded-full bg-emerald-600/10 text-emerald-700">
+                      <span className="text-sm font-bold">✓</span>
+                    </span>
+                    <div className="text-left">
+                      <p className="font-semibold text-neutral-900">100% Secure</p>
+                      <p className="text-xs text-neutral-500">Safe payments</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="flex size-10 items-center justify-center rounded-full bg-orange-600/10 text-orange-700">
+                      <span className="text-sm font-bold">%</span>
+                    </span>
+                    <div className="text-left">
+                      <p className="font-semibold text-neutral-900">Best Rates</p>
+                      <p className="text-xs text-neutral-500">No hidden fees</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="flex size-10 items-center justify-center rounded-full bg-emerald-600/10 text-emerald-700">
-                  <span className="text-sm font-bold">✓</span>
-                </span>
-                <div className="text-left">
-                  <p className="font-semibold text-neutral-900">100% Secure</p>
-                  <p className="text-xs text-neutral-500">Safe payments</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="flex size-10 items-center justify-center rounded-full bg-orange-600/10 text-orange-700">
-                  <span className="text-sm font-bold">%</span>
-                </span>
-                <div className="text-left">
-                  <p className="font-semibold text-neutral-900">Best Rates</p>
-                  <p className="text-xs text-neutral-500">No hidden fees</p>
-                </div>
-              </div>
-            </div>
-            </>
+              </>
             ) : null}
           </>
         ) : (
