@@ -33,7 +33,8 @@ export async function POST(req: Request) {
 
     // Enforce that the user must be registered with email to upload avatar
     const currentProfile = await fetchProfileForUser(userId)
-    if (currentProfile && !currentProfile.is_registered_with_email) {
+    const isAdmin = currentProfile?.app_role === 'admin' || currentProfile?.app_role === 'super_admin'
+    if (currentProfile && !currentProfile.is_registered_with_email && !isAdmin) {
       return NextResponse.json(
         { ok: false, error: 'Email & password registration is required to upload profile image.' },
         { status: 403 }

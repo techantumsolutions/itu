@@ -22,7 +22,7 @@ export default function AdminUserLoginPage() {
   const { login, isLoading, setSession } = useAuthStore()
   const fingerprint = useFingerprint()
 
-  const [email, setEmail] = useState(isDev ? DEV_DEFAULT_EMAIL : '')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
@@ -30,6 +30,11 @@ export default function AdminUserLoginPage() {
   const [resetting, setResetting] = useState(false)
 
   const [turnstileToken, setTurnstileToken] = useState('')
+
+  // Forgot password States
+  const [authView, setAuthView] = useState<'login' | 'forgot' | 'forgot-success'>('login')
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [sendingReset, setSendingReset] = useState(false)
 
   // 2FA States
   const [requires2FA, setRequires2FA] = useState(false)
@@ -122,16 +127,32 @@ export default function AdminUserLoginPage() {
       <div className="mx-auto w-full max-w-md">
         <Card className="overflow-hidden rounded-2xl border-neutral-200 shadow-lg">
           <CardHeader className="space-y-3 border-b border-neutral-100 bg-white pb-6 text-center">
-            <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-neutral-900 text-amber-400 shadow-inner">
-              {requires2FA ? <QrCode className="size-7" /> : <Shield className="size-7" aria-hidden />}
-            </div>
+            {authView === 'forgot-success' ? (
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-green-50 text-green-600 ring-4 ring-green-50">
+                <span className="text-2xl font-bold">✓</span>
+              </div>
+            ) : (
+              <div className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-neutral-900 text-amber-400 shadow-inner">
+                {requires2FA ? <QrCode className="size-7" /> : <Shield className="size-7" aria-hidden />}
+              </div>
+            )}
             <CardTitle className="text-xl font-bold text-neutral-900">
-              {requires2FA ? 'Two-Factor Authentication' : 'Staff sign in'}
+              {authView === 'forgot'
+                ? 'Reset staff password'
+                : authView === 'forgot-success'
+                  ? 'Check your email'
+                  : requires2FA
+                    ? 'Two-Factor Authentication'
+                    : 'Staff sign in'}
             </CardTitle>
             <p className="text-sm text-neutral-500">
-              {requires2FA
-                ? 'We have sent a 6-digit authentication code to your email.'
-                : 'Super admins and admins use email and password.'}
+              {authView === 'forgot'
+                ? 'Enter your work email to receive a password reset link.'
+                : authView === 'forgot-success'
+                  ? 'We have sent a secure link to reset your staff password.'
+                  : requires2FA
+                    ? 'We have sent a 6-digit authentication code to your email.'
+                    : 'Super admins and admins use email and password.'}
             </p>
           </CardHeader>
           <CardContent className="space-y-5 bg-white px-6 py-8">
@@ -141,7 +162,85 @@ export default function AdminUserLoginPage() {
               </div>
             ) : null}
 
-            {!requires2FA ? (
+            {authView === 'forgot' ? (
+              <form className="space-y-4" onSubmit={async (e) => {
+                e.preventDefault()
+                setError('')
+                setSendingReset(true)
+                try {
+                  const res = await fetch('/api/auth/admin-reset-password/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() }),
+                  })
+                  const data = await res.json().catch(() => ({}))
+                  if (!res.ok || !data.ok) {
+                    throw new Error(data.error || 'Failed to send reset link.')
+                  }
+                  setAuthView('forgot-success')
+                } catch (err: any) {
+                  setError(err?.message || 'Failed to send reset link.')
+                } finally {
+                  setSendingReset(false)
+                }
+              }}>
+                <div className="space-y-2">
+                  <Label htmlFor="forgot-email">Work email</Label>
+                  <Input
+                    id="forgot-email"
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    placeholder="you@company.com"
+                    className="h-11 rounded-xl"
+                    required
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  className="h-11 w-full rounded-xl bg-neutral-900 text-base font-semibold text-white hover:bg-neutral-800"
+                  disabled={sendingReset || !forgotEmail.trim().includes('@')}
+                >
+                  {sendingReset ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Sending Link…
+                    </>
+                  ) : (
+                    'Send Reset Link'
+                  )}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="h-11 w-full rounded-xl text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
+                  onClick={() => {
+                    setAuthView('login')
+                    setError('')
+                  }}
+                >
+                  Back to Login
+                </Button>
+              </form>
+            ) : authView === 'forgot-success' ? (
+              <div className="space-y-4">
+                <p className="text-center text-sm text-neutral-600">
+                  Please check your inbox at <strong>{forgotEmail}</strong> and click the link we sent to reset your password.
+                </p>
+                <Button
+                  className="h-11 w-full rounded-xl bg-neutral-900 text-base font-semibold text-white hover:bg-neutral-800"
+                  onClick={() => {
+                    setAuthView('login')
+                    setError('')
+                    setForgotEmail('')
+                  }}
+                >
+                  Back to Login
+                </Button>
+              </div>
+            ) : !requires2FA ? (
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div className="space-y-2">
                   <Label htmlFor="admin-email">Work email</Label>
@@ -178,15 +277,30 @@ export default function AdminUserLoginPage() {
                       {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                     </button>
                   </div>
+                  <div className="text-right">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError('')
+                        setForgotEmail(email)
+                        setPassword('')
+                        setAuthView('forgot')
+                      }}
+                      className="text-xs font-semibold text-neutral-500 hover:text-neutral-900 hover:underline"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex justify-center py-2 min-h-[75px] items-center">
-                  {email.trim() && password ? (
+                  <div className={email.trim() && password ? '' : 'hidden'}>
                     <Turnstile
                       siteKey={TURNSTILE_SITE_KEY}
                       onSuccess={(token) => setTurnstileToken(token)}
                     />
-                  ) : (
+                  </div>
+                  {!(email.trim() && password) && (
                     <p className="text-xs text-neutral-400 italic">
                       Please enter your email and password to verify CAPTCHA
                     </p>
@@ -210,8 +324,6 @@ export default function AdminUserLoginPage() {
               </form>
             ) : (
               <form className="space-y-6" onSubmit={handleVerify2FA}>
-
-
                 <div className="space-y-2">
                   <Label htmlFor="totp-code">Authentication Code</Label>
                   <Input

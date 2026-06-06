@@ -55,6 +55,10 @@ export async function POST(req: Request) {
 
     // Check if email or phone is already in use by another user
     if (type === 'email') {
+      const currentProfile = await fetchProfileForUser(userId)
+      if (currentProfile?.app_role === 'admin') {
+        return NextResponse.json({ ok: false, error: 'Administrators are not allowed to change their email address' }, { status: 400 })
+      }
       try {
         const checkRes = await supabaseRest(
           `profiles?email=eq.${encodeURIComponent(value.toLowerCase())}&id=neq.${encodeURIComponent(userId)}&select=id&limit=1`

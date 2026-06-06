@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { Loader2, ShieldAlert } from 'lucide-react'
 import { useAuthStore } from '@/lib/stores'
@@ -19,11 +19,19 @@ export function AdminAuthGate({ children }: AdminAuthGateProps) {
   const setSession = useAuthStore((s) => s.setSession)
   const user = useAuthStore((s) => s.user)
   const [ready, setReady] = useState(false)
+  const lastRoleRef = useRef<string | null>(null)
+
+  // Track the user's role while logged in
+  if (user) {
+    lastRoleRef.current = user.role
+  }
 
   useEffect(() => {
     let cancelled = false
 
     async function refreshSession() {
+      const prevUser = useAuthStore.getState().user
+      const prevRole = prevUser?.role || null
       try {
         console.log('[AdminAuthGate] Fetching /api/auth/me...')
         const res = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' })
@@ -35,8 +43,12 @@ export function AdminAuthGate({ children }: AdminAuthGateProps) {
         setSession(user)
 
         if (!isClientAdminUser(user)) {
-          console.warn('[AdminAuthGate] User is not an admin, redirecting to /admin/login. User:', user)
-          router.replace('/admin/login')
+          console.warn('[AdminAuthGate] User is not an admin, redirecting. User:', user)
+          if (prevRole === 'admin') {
+            router.replace('/admin-user/login')
+          } else {
+            router.replace('/admin/login')
+          }
           return
         }
 
@@ -44,7 +56,13 @@ export function AdminAuthGate({ children }: AdminAuthGateProps) {
         setReady(true)
       } catch (err) {
         console.error('[AdminAuthGate] Error fetching session:', err)
-        if (!cancelled) router.replace('/admin/login')
+        if (!cancelled) {
+          if (prevRole === 'admin') {
+            router.replace('/admin-user/login')
+          } else {
+            router.replace('/admin/login')
+          }
+        }
       }
     }
 
@@ -55,7 +73,20 @@ export function AdminAuthGate({ children }: AdminAuthGateProps) {
     }
   }, [router, setSession])
 
-  if (!ready) {
+  useEffect(() => {
+    if (ready && !isClientAdminUser(user)) {
+      const lastRole = lastRoleRef.current
+      if (lastRole === 'admin') {
+        console.log('[AdminAuthGate] Admin session cleared, redirecting to /admin-user/login')
+        router.replace('/admin-user/login')
+      } else {
+        console.log('[AdminAuthGate] User session cleared or not admin, redirecting to /admin/login')
+        router.replace('/admin/login')
+      }
+    }
+  }, [user, ready, router])
+
+  if (!ready || !isClientAdminUser(user)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background text-muted-foreground">
         <div className="flex items-center gap-3 rounded-2xl border bg-card px-5 py-4 shadow-sm">

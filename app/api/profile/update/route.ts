@@ -40,7 +40,8 @@ export async function POST(req: Request) {
 
     // Resolve country context from the current profile
     const currentProfile = await fetchProfileForUser(userId)
-    if (currentProfile && !currentProfile.is_registered_with_email) {
+    const isAdmin = currentProfile?.app_role === 'admin' || currentProfile?.app_role === 'super_admin'
+    if (currentProfile && !currentProfile.is_registered_with_email && !isAdmin) {
       return NextResponse.json(
         { ok: false, error: 'Email & password registration is required to edit your profile.' },
         { status: 403 }
