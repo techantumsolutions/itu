@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { RefreshCcw, Search, Loader2, GitMerge } from 'lucide-react'
+import { RefreshCcw, Search, Loader2, GitMerge, Play, CheckCircle2, XCircle, AlertCircle, GitFork } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -83,6 +83,120 @@ export default function OperatorsPage() {
   const [merging, setMerging] = useState(false)
 
   const endpoint = '/api/admin/aggregator/operators'
+
+  // Pipeline Step States
+  const [pipelineSteps, setPipelineSteps] = useState<any[]>([
+    {
+      key: 'step1_check',
+      label: 'Step 1: Connection Check',
+      description: 'Verify adapter connection status and loaded credentials.',
+      status: 'idle',
+      message: '',
+    },
+    {
+      key: 'step2_fetch',
+      label: 'Step 2: API Fetch & Raw Store',
+      description: 'Fetch operator/plan API payloads and store entirely raw in DB.',
+      status: 'idle',
+      message: '',
+    },
+    {
+      key: 'step3_countries',
+      label: 'Step 3: Country Normalization',
+      description: 'Normalize country ISO codes and persist in canonical countries list.',
+      status: 'idle',
+      message: '',
+    },
+    {
+      key: 'step4_normalize',
+      label: 'Step 4: Staging Normalization',
+      description: 'Map raw operators & plans into intermediate agg staging tables.',
+      status: 'idle',
+      message: '',
+    },
+    {
+      key: 'step5_filter_telecom',
+      label: 'Step 5: Filter 1 (Telecom Gate)',
+      description: 'Filter telecom, mobile data, airtime, and combo operators only.',
+      status: 'idle',
+      message: '',
+    },
+    {
+      key: 'step6_merge',
+      label: 'Step 6: Filter 2 (Consolidation Merge)',
+      description: 'Merge operators in same country having minor suffix/prefix name variations.',
+      status: 'idle',
+      message: '',
+    },
+    {
+      key: 'step7_promote',
+      label: 'Step 7: Filter 3 (Promote to Live Catalog)',
+      description: 'Inactivate empty operators. Promote remaining active items to system tables.',
+      status: 'idle',
+      message: '',
+    },
+    {
+      key: 'step8_filter_benefits',
+      label: 'Step 8: Plan Benefit Filtering',
+      description: 'Clean promoted system_plans that do not contain mobile/data benefits.',
+      status: 'idle',
+      message: '',
+    },
+  ])
+  const [selectedPipelineProviderId, setSelectedPipelineProviderId] = useState<string>('')
+
+  // Set default provider when providers list loads
+  useEffect(() => {
+    if (providers.length > 0 && !selectedPipelineProviderId) {
+      setSelectedPipelineProviderId(providers[0].id)
+    }
+  }, [providers, selectedPipelineProviderId])
+
+  const runPipelineStep = async (stepKey: string) => {
+    if (!selectedPipelineProviderId) {
+      toast.error('Please select a provider first.')
+      return
+    }
+
+    setPipelineSteps((prev) =>
+      prev.map((s) => (s.key === stepKey ? { ...s, status: 'running', message: 'Executing step...' } : s))
+    )
+
+    try {
+      const res = await fetch('/api/admin/aggregator/sync-step', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step: stepKey,
+          providerId: selectedPipelineProviderId,
+        }),
+      })
+
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to execute step')
+      }
+
+      setPipelineSteps((prev) =>
+        prev.map((s) =>
+          s.key === stepKey
+            ? { ...s, status: data.success ? 'success' : 'failed', message: data.message || 'Done' }
+            : s
+        )
+      )
+      toast.success('Step executed successfully.')
+      await load(true)
+    } catch (err: any) {
+      setPipelineSteps((prev) =>
+        prev.map((s) => (s.key === stepKey ? { ...s, status: 'failed', message: err.message || 'Error' } : s))
+      )
+      toast.error(err.message || 'Step execution failed.')
+    }
+  }
+
+  const resetPipelineSteps = () => {
+    setPipelineSteps((prev) => prev.map((s) => ({ ...s, status: 'idle', message: '' })))
+  }
 
   // Create a map from country code (both 2-letter and 3-letter) to country name
   const countryNameMap = useMemo(() => {
@@ -165,6 +279,27 @@ export default function OperatorsPage() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error ?? 'Sync failed')
       toast.success('Catalog sync finished')
+      await load(true)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Sync failed')
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  // Sync System Operators from raw tables locally
+  const triggerLocalSync = async () => {
+    setRefreshing(true)
+    try {
+      const res = await fetch('/api/admin/aggregator/operators/sync-local', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerId: providerFilter }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? 'Sync failed')
+      toast.success(data.message || 'Local operator sync started in background')
       await load(true)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Sync failed')
@@ -333,8 +468,94 @@ export default function OperatorsPage() {
           <Button onClick={() => void triggerSyncAll()} disabled={loading || refreshing}>
             {refreshing ? 'Syncing…' : 'Sync all providers'}
           </Button>
+          {dataType === 'system' && (
+            <Button variant="secondary" onClick={() => void triggerLocalSync()} disabled={loading || refreshing}>
+              Sync System Operators
+            </Button>
+          )}
         </div>
       </div>
+
+      <Card className="border-border/60 shadow-sm bg-gradient-to-br from-zinc-900/50 to-zinc-950/80 mb-6">
+        <CardHeader className="pb-3 border-b border-border/40">
+          <CardTitle className="flex items-center gap-2 text-xl font-bold tracking-tight">
+            <GitFork className="size-5 text-primary" />
+            Manual Staging Ingestion Pipeline
+          </CardTitle>
+          <CardDescription className="text-zinc-400">
+            Select a provider and run the staging pipeline stages manually.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-4 space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-col gap-1.5 w-[240px]">
+              <span className="text-xs font-semibold text-zinc-400">Active Ingestion Provider</span>
+              <Select value={selectedPipelineProviderId} onValueChange={setSelectedPipelineProviderId}>
+                <SelectTrigger className="bg-background border-border/80">
+                  <SelectValue placeholder="Select Ingestion Provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  {providers.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {p.name} ({p.code})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button variant="outline" className="mt-5" onClick={resetPipelineSteps}>
+              Reset Timeline
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+            {pipelineSteps.map((step, idx) => (
+              <div
+                key={step.key}
+                className={`flex flex-col justify-between p-4 rounded-lg border transition-all duration-200 ${
+                  step.status === 'running'
+                    ? 'border-primary/60 bg-primary/5 shadow-md shadow-primary/5'
+                    : step.status === 'success'
+                    ? 'border-emerald-500/30 bg-emerald-500/5'
+                    : step.status === 'failed'
+                    ? 'border-red-500/30 bg-red-500/5'
+                    : 'border-border/60 bg-background/50'
+                }`}
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted-foreground">STAGE {idx + 1}</span>
+                    {step.status === 'running' && <Loader2 className="size-4 animate-spin text-primary" />}
+                    {step.status === 'success' && <CheckCircle2 className="size-4 text-emerald-500" />}
+                    {step.status === 'failed' && <XCircle className="size-4 text-red-500" />}
+                    {step.status === 'idle' && <AlertCircle className="size-4 text-zinc-500" />}
+                  </div>
+                  <h4 className="font-semibold text-sm leading-tight">{step.label}</h4>
+                  <p className="text-xs text-muted-foreground leading-normal">{step.description}</p>
+                </div>
+
+                <div className="mt-4 pt-3 border-t border-border/30 flex flex-col gap-2">
+                  {step.message && (
+                    <div className="text-[10px] font-mono leading-tight max-h-[48px] overflow-y-auto break-words bg-zinc-950/40 p-1.5 rounded border border-border/30">
+                      {step.message}
+                    </div>
+                  )}
+                  <Button
+                    size="sm"
+                    className="w-full text-xs font-semibold"
+                    variant={step.status === 'success' ? 'secondary' : 'default'}
+                    disabled={step.status === 'running' || !selectedPipelineProviderId}
+                    onClick={() => void runPipelineStep(step.key)}
+                  >
+                    <Play className="mr-1.5 size-3" />
+                    {step.status === 'success' ? 'Run Again' : 'Run Stage'}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <Card className="border-border/60 shadow-sm">
         {/* <CardHeader className="pb-3">
