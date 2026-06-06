@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     supabaseRest('admin_dashboard_summary?select=*', { cache: 'no-store' }),
     supabaseRest('admin_daily_sales?select=day,currency,revenue,orders&order=day.desc&limit=30', { cache: 'no-store' }),
     supabaseRest('admin_top_products?select=product_name,operator_name,orders,revenue,currency&limit=10', { cache: 'no-store' }),
-    supabaseRest('profiles?select=id&limit=1', { 
+    supabaseRest('profiles?app_role=eq.user&select=id&limit=1', { 
       headers: { Prefer: 'count=exact' },
       cache: 'no-store'
     }),
