@@ -18,6 +18,8 @@ export interface HeroContent {
   /** Hex for the accent second line in the title; empty uses site CTA orange token */
   accentLineColor: string
   ctaText: string
+  /** URL for the Hero CTA button */
+  ctaUrl: string
   showWelcomeBack: boolean
   /** Subcopy under the card title inside the hero form card */
   cardHelperText: string
@@ -116,6 +118,8 @@ export interface PopularCountry {
 }
 
 export interface FooterContent {
+  /** Optional custom footer logo. Falls back to ITU Logo Mark if empty */
+  footerLogo?: string
   /** Intro paragraph under the logo */
   brandTagline: string
   companyLinks: { label: string; href: string }[]
@@ -211,6 +215,26 @@ export interface HowItWorksContent {
   steps: HowItWorksStep[]
 }
 
+export interface HelpQuickLink {
+  id: string
+  icon: string
+  title: string
+  body: string
+  actionLabel: string
+  actionHref: string
+}
+
+export interface HelpPageContent {
+  title: string
+  subtitle: string
+  searchPlaceholder: string
+  quickLinks: HelpQuickLink[]
+  faqTitle: string
+  faqSubtitle: string
+  faqs: FAQItem[]
+  footerText: string
+}
+
 export interface SiteContent {
   header: HeaderContent
   hero: HeroContent
@@ -228,6 +252,7 @@ export interface SiteContent {
   popularCountries: PopularCountry[]
   trustSection: TrustSectionContent
   footer: FooterContent
+  helpPage: HelpPageContent
 }
 
 export interface CountriesGridItem {
@@ -274,6 +299,7 @@ const defaultContent: SiteContent = {
     sectionBgColor: '',
     accentLineColor: '',
     ctaText: 'Start top-up',
+    ctaUrl: '',
     showWelcomeBack: true,
     cardHelperText: 'Enter the phone number you want to recharge',
     appDownloadLine: '',
@@ -466,6 +492,7 @@ const defaultContent: SiteContent = {
     ],
   },
   footer: {
+    footerLogo: '',
     brandTagline:
       'Instantly recharge mobile numbers worldwide with a fast and secure experience. Stay connected with your loved ones anytime, anywhere.',
     companyLinks: [
@@ -495,6 +522,70 @@ const defaultContent: SiteContent = {
     mainBackgroundColor: '#e4e4e4',
     subFooterBackgroundColor: '#d0d0d0',
     copyrightTemplate: '© {{brand}} {{year}}. All rights reserved.',
+  },
+  helpPage: {
+    title: 'Help',
+    subtitle: 'Find answers fast, or contact our support team.',
+    searchPlaceholder: 'Search help articles (sample)…',
+    quickLinks: [
+      {
+        id: 'ql1',
+        icon: 'phone',
+        title: 'Call support',
+        body: 'Talk to our team for urgent issues.',
+        actionLabel: 'Call now',
+        actionHref: 'tel:+10000000000',
+      },
+      {
+        id: 'ql2',
+        icon: 'mail',
+        title: 'Email us',
+        body: 'We usually reply within 24 hours.',
+        actionLabel: 'Send email',
+        actionHref: 'mailto:support@itu.com',
+      },
+      {
+        id: 'ql3',
+        icon: 'message',
+        title: 'Open a ticket',
+        body: 'Track updates right from your account.',
+        actionLabel: 'Create ticket',
+        actionHref: '/account/tickets',
+      },
+    ],
+    faqTitle: 'Frequently asked questions',
+    faqSubtitle: 'Sample FAQ content consistent with existing UI.',
+    faqs: [
+      {
+        id: 'h1',
+        question: 'How long does a top-up take?',
+        answer: 'Most recharges complete instantly. In rare cases, it may take a few minutes depending on operator response time.',
+        order: 0,
+        isActive: true,
+      },
+      {
+        id: 'h2',
+        question: 'What if I entered a wrong number?',
+        answer: 'Top-ups are processed immediately and can’t be reversed in most cases. Please double-check the number before paying.',
+        order: 1,
+        isActive: true,
+      },
+      {
+        id: 'h3',
+        question: 'Can I use vouchers with top-ups?',
+        answer: 'Yes. If you purchased a voucher, you can redeem it during the top-up flow to apply balance/discount.',
+        order: 2,
+        isActive: true,
+      },
+      {
+        id: 'h4',
+        question: 'Where can I download my receipt?',
+        answer: 'After a successful recharge you can download a PDF receipt from the success screen and your transaction history.',
+        order: 3,
+        isActive: true,
+      },
+    ],
+    footerText: 'Still stuck? Start a top-up again or contact support.',
   },
 }
 
@@ -535,6 +626,7 @@ interface CMSStore {
   updateCountriesGridItem: (id: string, item: Partial<CountriesGridItem>) => void
   addCountriesGridItem: (item: Omit<CountriesGridItem, 'id' | 'order'>) => void
   deleteCountriesGridItem: (id: string) => void
+  updateHelpPage: (helpPage: Partial<HelpPageContent>) => void
   resetToDefault: () => void
   markClean: () => void
 }
@@ -603,6 +695,12 @@ function mergeSiteContent(partial: Partial<SiteContent> | undefined): SiteConten
       companyLinks: p.footer?.companyLinks ?? defaultContent.footer.companyLinks,
       legalLinks: p.footer?.legalLinks ?? defaultContent.footer.legalLinks,
       helpLinks: p.footer?.helpLinks ?? defaultContent.footer.helpLinks,
+    },
+    helpPage: {
+      ...defaultContent.helpPage,
+      ...p.helpPage,
+      quickLinks: p.helpPage?.quickLinks ?? defaultContent.helpPage.quickLinks,
+      faqs: p.helpPage?.faqs ?? defaultContent.helpPage.faqs,
     },
   }
 }
@@ -729,6 +827,15 @@ export const useCMSStore = create<CMSStore>()(
                 ? { ...state.content.footer.socialLinks, ...footer.socialLinks }
                 : state.content.footer.socialLinks,
             },
+          },
+          isDirty: true,
+        })),
+
+      updateHelpPage: (helpPage) =>
+        set((state) => ({
+          content: {
+            ...state.content,
+            helpPage: { ...state.content.helpPage, ...helpPage },
           },
           isDirty: true,
         })),
