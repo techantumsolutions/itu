@@ -27,9 +27,9 @@ async function test() {
   console.log('Invoking GET /api/admin/aggregator/operators route...')
   const request = new Request('http://localhost:3000/api/admin/aggregator/operators', {
     headers: {
-      // Mock cookie / auth if needed, but route.ts checks integrations feature permission
-      // which bypasses in some configurations or uses allowLegacyHeader
-      'x-admin-legacy-key': 'true' // if allowLegacyHeader is true, or similar
+      'x-user-role': 'admin',
+      'x-user-email': 'admin@itu.com',
+      'x-user-id': 'admin-id'
     }
   })
 

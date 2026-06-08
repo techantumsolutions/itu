@@ -37,7 +37,7 @@ export function DashboardHeader({ title }: DashboardHeaderProps) {
   }
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border/70 bg-card/90 px-4 shadow-elevated-sm backdrop-blur-xl supports-[backdrop-filter]:bg-card/80 lg:px-6">
+    <header className="sticky top-0 z-30 flex h-16 py-10 items-center justify-between border-b border-border/70 bg-card/90 px-4 shadow-elevated-sm backdrop-blur-xl supports-[backdrop-filter]:bg-card/80 lg:px-6">
       <div className="flex items-center gap-3">
         <SidebarTrigger className="md:hidden rounded-lg border border-border/60" />
         <div>
@@ -48,7 +48,7 @@ export function DashboardHeader({ title }: DashboardHeaderProps) {
 
       <div className="flex items-center gap-2 sm:gap-3">
         {/* Search */}
-        <div className="relative hidden md:block">
+        {/* <div className="relative hidden md:block">
           <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search"
@@ -59,7 +59,7 @@ export function DashboardHeader({ title }: DashboardHeaderProps) {
           <kbd className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-xs font-medium text-muted-foreground">
             <span className="text-xs">Cmd</span>+K
           </kbd>
-        </div>
+        </div> */}
 
         {/* Notifications */}
         <Button variant="ghost" size="icon" className="relative rounded-xl text-muted-foreground hover:text-foreground">

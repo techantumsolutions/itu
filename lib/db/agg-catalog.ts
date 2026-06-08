@@ -26,13 +26,22 @@ function text(v: unknown): string {
 
 export async function dbUpsertAggCountries(rows: Array<{ iso3: string; iso2?: string; name: string; raw_response?: unknown }>) {
   if (!rows.length) return
+  const uniqueRows: typeof rows = []
+  const seen = new Set<string>()
+  for (const r of rows) {
+    const key = r.iso3
+    if (!seen.has(key)) {
+      seen.add(key)
+      uniqueRows.push(r)
+    }
+  }
   const res = await supabaseRest('agg_countries?on_conflict=iso3', {
     method: 'POST',
     headers: {
       Prefer: 'resolution=merge-duplicates',
     },
     body: JSON.stringify(
-      rows.map((r) => ({
+      uniqueRows.map((r) => ({
         iso3: r.iso3,
         iso2: r.iso2 ?? null,
         name: r.name,
@@ -55,13 +64,22 @@ export async function dbUpsertAggOperators(
   }>
 ) {
   if (!rows.length) return
+  const uniqueRows: typeof rows = []
+  const seen = new Set<string>()
+  for (const r of rows) {
+    const key = `${r.provider}:${r.aggregator_operator_id}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      uniqueRows.push(r)
+    }
+  }
   const res = await supabaseRest('agg_operators?on_conflict=provider,aggregator_operator_id', {
     method: 'POST',
     headers: {
       Prefer: 'resolution=merge-duplicates,return=representation',
     },
     body: JSON.stringify(
-      rows.map((r) => ({
+      uniqueRows.map((r) => ({
         provider: r.provider,
         aggregator_operator_id: r.aggregator_operator_id,
         country_iso3: r.country_iso3,
@@ -78,11 +96,20 @@ export async function dbUpsertAggOperators(
 
 export async function dbUpsertAggServices(rows: Array<{ provider: AggProvider; service_id: number; name: string; raw_response?: unknown }>) {
   if (!rows.length) return
+  const uniqueRows: typeof rows = []
+  const seen = new Set<string>()
+  for (const r of rows) {
+    const key = `${r.provider}:${r.service_id}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      uniqueRows.push(r)
+    }
+  }
   const res = await supabaseRest('agg_services?on_conflict=provider,service_id', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates' },
     body: JSON.stringify(
-      rows.map((r) => ({
+      uniqueRows.map((r) => ({
         provider: r.provider,
         service_id: r.service_id,
         name: r.name,
@@ -98,11 +125,20 @@ export async function dbUpsertAggSubservices(
   rows: Array<{ provider: AggProvider; subservice_id: number; service_id: number; name: string; raw_response?: unknown }>
 ) {
   if (!rows.length) return
+  const uniqueRows: typeof rows = []
+  const seen = new Set<string>()
+  for (const r of rows) {
+    const key = `${r.provider}:${r.subservice_id}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      uniqueRows.push(r)
+    }
+  }
   const res = await supabaseRest('agg_subservices?on_conflict=provider,subservice_id', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates' },
     body: JSON.stringify(
-      rows.map((r) => ({
+      uniqueRows.map((r) => ({
         provider: r.provider,
         subservice_id: r.subservice_id,
         service_id: r.service_id,
@@ -146,11 +182,20 @@ export async function dbUpsertAggPlans(
   }>
 ) {
   if (!rows.length) return
+  const uniqueRows: typeof rows = []
+  const seen = new Set<string>()
+  for (const r of rows) {
+    const key = `${r.provider}:${r.aggregator_plan_id}`
+    if (!seen.has(key)) {
+      seen.add(key)
+      uniqueRows.push(r)
+    }
+  }
   const res = await supabaseRest('agg_plans?on_conflict=provider,aggregator_plan_id', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
     body: JSON.stringify(
-      rows.map((r) => ({
+      uniqueRows.map((r) => ({
         provider: r.provider,
         aggregator_plan_id: r.aggregator_plan_id,
         operator_id: r.operator_id,

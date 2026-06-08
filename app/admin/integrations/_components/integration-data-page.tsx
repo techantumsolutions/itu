@@ -153,7 +153,7 @@ export function IntegrationDataPage({
   actions,
   renderRowActions,
   enableBulkSync = true,
-  backLink = { href: '/admin/integrations', label: 'Back to integrations' },
+  backLink = { href: '/admin/integrations/operators', label: 'Back to operators' },
 }: IntegrationDataPageProps) {
   const [rows, setRows] = useState<Record<string, unknown>[]>([])
   const [loading, setLoading] = useState(true)

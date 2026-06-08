@@ -144,21 +144,28 @@ export function StatCards() {
   useEffect(() => {
     const run = async () => {
       try {
-        const [dashboardRes, aggRes] = await Promise.all([
+        const [dashboardRes, aggRes, customersRes] = await Promise.all([
           fetch('/api/admin/dashboard', { credentials: 'include', cache: 'no-store' }),
           fetch('/api/admin/reports/aggregator?provider=dtone', { credentials: 'include', cache: 'no-store' }),
+          fetch('/api/admin/customers', { credentials: 'include', cache: 'no-store' }),
         ])
         const dashboard = (await dashboardRes.json().catch(() => ({}))) as any
         const agg = (await aggRes.json().catch(() => ({}))) as any
+        const customersData = (await customersRes.json().catch(() => ({}))) as any
+        
         const revenue = Number(dashboard?.summary?.total_revenue)
         const orders = Number(dashboard?.summary?.total_orders)
-        const users = Number(dashboard?.summary?.total_users)
+        
+        // Ensure customers array exists before getting length
+        const users = Array.isArray(customersData?.customers) ? customersData.customers.length : 0
+        
         const ops = Number(agg?.summary?.operators?.withActivePlans)
         const plans = Number(agg?.summary?.plans?.total)
+        
         setSummary({
           totalRevenue: Number.isFinite(revenue) ? revenue : 0,
           totalOrders: Number.isFinite(orders) ? orders : 0,
-          totalUsers: Number.isFinite(users) ? users : 0,
+          totalUsers: users,
         })
         setAggOps(Number.isFinite(ops) ? ops : null)
         setAggPlans(Number.isFinite(plans) ? plans : null)

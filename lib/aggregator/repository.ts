@@ -1,4 +1,5 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
+import { isTelecomSystemPlan } from './telecom-validator'
 import type {
   AggregatorProviderRow,
   RawOperatorInput,
@@ -495,24 +496,31 @@ export async function aggUpsertFilteredOperator(input: {
 }
 
 export async function aggCleanupSystemOperatorsWithoutPlans(): Promise<number> {
-  // 1. Fetch all active system plans to see which operators have active plans
-  const activePlanOperatorIds = new Set<string>()
+  // 1. Fetch all active system plans and group by system_operator_id
   let offset = 0
   let hasMore = true
+  const plansByOperatorId = new Map<string, any[]>()
+
   while (hasMore) {
-    const res = await supabaseRest(`system_plans?status=eq.ACTIVE&select=system_operator_id&limit=1000&offset=${offset}`, { cache: 'no-store' })
+    const res = await supabaseRest(
+      `system_plans?status=eq.ACTIVE&select=system_operator_id,system_plan_name,description,plan_type,data_volume,sms,talktime&limit=1000&offset=${offset}`,
+      { cache: 'no-store' }
+    )
     if (!res.ok) {
       hasMore = false
       break
     }
-    const rows = (await res.json()) as { system_operator_id: string }[]
+    const rows = (await res.json()) as any[]
     if (!rows || !rows.length) {
       hasMore = false
       break
     }
     for (const row of rows) {
       if (row.system_operator_id) {
-        activePlanOperatorIds.add(row.system_operator_id)
+        if (!plansByOperatorId.has(row.system_operator_id)) {
+          plansByOperatorId.set(row.system_operator_id, [])
+        }
+        plansByOperatorId.get(row.system_operator_id)!.push(row)
       }
     }
     if (rows.length < 1000) {
@@ -528,12 +536,12 @@ export async function aggCleanupSystemOperatorsWithoutPlans(): Promise<number> {
   let deactivatedCount = 0
 
   while (hasMore) {
-    const res = await supabaseRest(`system_operators?select=id,status,system_operator_name&limit=1000&offset=${offset}`, { cache: 'no-store' })
+    const res = await supabaseRest(`system_operators?select=id,status,system_operator_name,country_id&limit=1000&offset=${offset}`, { cache: 'no-store' })
     if (!res.ok) {
       hasMore = false
       break
     }
-    const rows = (await res.json()) as { id: string; status: string; system_operator_name: string }[]
+    const rows = (await res.json()) as { id: string; status: string; system_operator_name: string; country_id: string }[]
     if (!rows || !rows.length) {
       hasMore = false
       break
@@ -542,7 +550,33 @@ export async function aggCleanupSystemOperatorsWithoutPlans(): Promise<number> {
     const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000)
 
     for (const row of rows) {
-      if (activePlanOperatorIds.has(row.id)) {
+      const plans = plansByOperatorId.get(row.id) || []
+      const totalPlanCount = plans.length
+      
+      let telecomPlanCount = 0
+      for (const plan of plans) {
+        if (isTelecomSystemPlan(plan)) {
+          telecomPlanCount++
+        }
+      }
+      
+      const telecomRatio = totalPlanCount > 0 ? telecomPlanCount / totalPlanCount : 0
+      
+      let validationPassed = true
+      let filterReason = ''
+      
+      if (totalPlanCount === 0) {
+        validationPassed = false
+        filterReason = 'NO_VALID_PLANS'
+      } else if (telecomPlanCount === 0) {
+        validationPassed = false
+        filterReason = 'NO_TELECOM_PLANS'
+      } else if (telecomRatio < 0.1) {
+        validationPassed = false
+        filterReason = 'LOW_TELECOM_RATIO'
+      }
+
+      if (validationPassed) {
         if (row.status !== 'ACTIVE') {
           await supabaseRest(`system_operators?id=eq.${encodeURIComponent(row.id)}`, {
             method: 'PATCH',
@@ -551,11 +585,31 @@ export async function aggCleanupSystemOperatorsWithoutPlans(): Promise<number> {
         }
       } else {
         if (row.status === 'ACTIVE') {
+          console.log(`[Cleanup] Deactivating system operator '${row.system_operator_name}' (${row.id}) in ${row.country_id}. Reason: ${filterReason}. Total plans: ${totalPlanCount}, Telecom plans: ${telecomPlanCount}, Ratio: ${telecomRatio}`)
           await supabaseRest(`system_operators?id=eq.${encodeURIComponent(row.id)}`, {
             method: 'PATCH',
             body: JSON.stringify({ status: 'INACTIVE' }),
           }).catch(() => {})
           deactivatedCount++
+
+          // Audit log for deactivation
+          await aggInsertClassificationAudit({
+            providerCode: 'SYSTEM_CLEANUP',
+            providerOperatorId: row.id,
+            entityType: 'operator',
+            entityName: row.system_operator_name,
+            decision: 'REJECTED',
+            classification: 'UNKNOWN',
+            confidence: telecomRatio,
+            reason_code: filterReason,
+            details: {
+              country: row.country_id,
+              telecomPlanCount,
+              totalPlanCount,
+              telecomRatio,
+              action: 'DEACTIVATE_CLEANUP'
+            }
+          }).catch(() => {})
         } else if (row.status === 'INACTIVE') {
           const updatedAt = new Date((row as any).updated_at || Date.now())
           if (updatedAt < cutoffDate) {

@@ -62,6 +62,28 @@ function getNormalizedBaseName(name: string, countryName: string, iso2: string, 
 
   // Normalize whitespace
   normalized = normalized.replace(/\s+/g, ' ').trim();
+
+  // Telecom Alias Consolidation (Rule 7)
+  const compact = normalized.replace(/[^a-z0-9]/g, '');
+  if (compact === 'reliancejio' || compact === 'jioindia' || compact === 'jio') {
+    return 'jio';
+  }
+  if (compact === 'vodafoneidea' || compact === 'vi' || compact === 'vodafoneideaindia') {
+    return 'vi';
+  }
+  if (compact === 'vodafoneindia' || compact === 'vodafone') {
+    return 'vodafone';
+  }
+  if (compact === 'bsnlindia' || compact === 'bsnl') {
+    return 'bsnl';
+  }
+  if (compact === 'airtelindia' || compact === 'airtel') {
+    return 'airtel';
+  }
+  if (compact === 'mtnlindia' || compact === 'mtnl') {
+    return 'mtnl';
+  }
+
   return normalized;
 }
 
