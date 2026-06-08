@@ -73,6 +73,9 @@ export type SystemOperatorInput = {
   logo?: string | null
   operatorType?: string | null
   status?: CatalogStatus | string
+  operatorDomain?: string | null
+  operatorDomainConfidence?: number | null
+  domainClassificationSource?: string | null
 }
 
 export type SystemPlanInput = {

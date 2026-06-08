@@ -1,3 +1,49 @@
+export type OperatorDomain =
+  | 'MOBILE'
+  | 'DTH'
+  | 'UTILITY'
+  | 'GAMING'
+  | 'GIFTCARD'
+  | 'RETAIL'
+  | 'OTT'
+  | 'TRAVEL'
+  | 'FOOD'
+  | 'BANKING'
+  | 'UNKNOWN'
+
+export type PlanDomainClassification = {
+  domain: OperatorDomain
+  confidence: number
+  matchedKeywords: string[]
+  reasons: string[]
+}
+
+export type OperatorDomainEvaluation = {
+  domain: OperatorDomain
+  confidence: number
+  reasons: string[]
+  matchedKeywords: string[]
+  matchedRules: string[]
+  classificationSource: string
+  isBlockedFromTelecom: boolean
+  domainBreakdown: Record<string, number>
+  rejectionReason?: string
+}
+
+export type NonTelecomOperatorMatch = {
+  normalizedName: string
+  operatorName: string
+  operatorDomain: OperatorDomain
+  confidence: number
+}
+
+export type OperatorDomainRegistryMatch = {
+  normalizedName: string
+  operatorName: string
+  operatorDomain: OperatorDomain
+  confidence: number
+}
+
 export type TelecomConfidenceLevel =
   | 'HIGH_CONFIDENCE_TELECOM'
   | 'MEDIUM_CONFIDENCE_TELECOM'
@@ -72,6 +118,11 @@ export type OperatorPromotionOutput = {
   totalPlanCount: number
   telecomRatio: number
   failedSyncCount?: number
+  operatorDomain: OperatorDomain
+  operatorDomainConfidence: number
+  domainClassificationSource?: string
+  domainBlocked: boolean
+  domainEvaluation?: OperatorDomainEvaluation
 }
 
 export type TrustedOperatorMatch = {

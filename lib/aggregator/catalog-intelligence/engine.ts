@@ -8,9 +8,15 @@ import {
 } from '@/lib/aggregator/telecom-validator'
 import { classifyPlan } from '@/lib/aggregator/plan-classifier'
 import { buildCombinedPlanText, computeRawQuality, enrichPlanFromRaw } from './enrichment'
+import { matchNonTelecomOperator, matchOperatorDomainRegistry, isMobileTelecomDomain } from './domain-registries'
+import { classifyPlanDomain } from './plan-domain'
 import { matchTrustedOperator } from './trust-registry'
 import type {
   LayerScores,
+  NonTelecomOperatorMatch,
+  OperatorDomain,
+  OperatorDomainEvaluation,
+  OperatorDomainRegistryMatch,
   OperatorPromotionOutput,
   PlanCatalogStatus,
   PlanClassificationOutput,
@@ -47,7 +53,11 @@ function catalogStatusFromLevel(level: TelecomConfidenceLevel): PlanCatalogStatu
 }
 
 export class CatalogIntelligenceEngine {
-  constructor(private trustedOperators: TrustedOperatorMatch[] = []) {}
+  constructor(
+    private trustedOperators: TrustedOperatorMatch[] = [],
+    private domainRegistry: OperatorDomainRegistryMatch[] = [],
+    private nonTelecomRegistry: NonTelecomOperatorMatch[] = [],
+  ) {}
 
   classifyRawPlan(input: {
     raw: unknown
@@ -200,6 +210,125 @@ export class CatalogIntelligenceEngine {
     return rawResult
   }
 
+  evaluateOperatorDomain(input: {
+    operatorName: string
+    countryCode?: string | null
+    rawPlans?: unknown[]
+  }): OperatorDomainEvaluation {
+    const reasons: string[] = []
+    const matchedKeywords: string[] = []
+    const matchedRules: string[] = []
+    const domainBreakdown: Record<string, number> = {}
+    const rawPlans = input.rawPlans ?? []
+
+    const trusted = matchTrustedOperator(input.operatorName, input.countryCode, this.trustedOperators)
+    if (trusted?.isVerifiedTelecom) {
+      return {
+        domain: 'MOBILE',
+        confidence: 95,
+        reasons: [`trusted_telecom_registry:${trusted.displayName}`],
+        matchedKeywords: [trusted.normalizedName],
+        matchedRules: ['layer1_trusted_telecom_registry'],
+        classificationSource: 'trusted_telecom_registry',
+        isBlockedFromTelecom: false,
+        domainBreakdown: { MOBILE: rawPlans.length || 1 },
+      }
+    }
+
+    const domainRegistryHit = matchOperatorDomainRegistry(input.operatorName, this.domainRegistry)
+    if (domainRegistryHit?.operatorDomain === 'MOBILE') {
+      return {
+        domain: 'MOBILE',
+        confidence: domainRegistryHit.confidence,
+        reasons: [`operator_domain_registry:${domainRegistryHit.operatorName}`],
+        matchedKeywords: [domainRegistryHit.normalizedName],
+        matchedRules: ['layer1_operator_domain_registry'],
+        classificationSource: 'operator_domain_registry',
+        isBlockedFromTelecom: false,
+        domainBreakdown: { MOBILE: rawPlans.length || 1 },
+      }
+    }
+
+    const nonTelecomHit = matchNonTelecomOperator(input.operatorName, this.nonTelecomRegistry)
+    if (nonTelecomHit) {
+      domainBreakdown[nonTelecomHit.operatorDomain] = rawPlans.length || 1
+      return {
+        domain: nonTelecomHit.operatorDomain,
+        confidence: nonTelecomHit.confidence,
+        reasons: [`non_telecom_registry:${nonTelecomHit.operatorName}`],
+        matchedKeywords: [nonTelecomHit.normalizedName],
+        matchedRules: ['layer2_non_telecom_registry'],
+        classificationSource: 'non_telecom_registry',
+        isBlockedFromTelecom: true,
+        domainBreakdown,
+        rejectionReason: `NON_MOBILE_DOMAIN:${nonTelecomHit.operatorDomain}`,
+      }
+    }
+
+    for (const raw of rawPlans) {
+      const planDomain = classifyPlanDomain(raw, input.operatorName)
+      domainBreakdown[planDomain.domain] = (domainBreakdown[planDomain.domain] ?? 0) + 1
+      matchedKeywords.push(...planDomain.matchedKeywords)
+    }
+
+    const totalPlans = rawPlans.length
+    let dominantDomain: OperatorDomain = 'UNKNOWN'
+    let dominantCount = 0
+    for (const [domain, count] of Object.entries(domainBreakdown)) {
+      if (count > dominantCount) {
+        dominantDomain = domain as OperatorDomain
+        dominantCount = count
+      }
+    }
+
+    if (totalPlans > 0) {
+      const mobileCount = domainBreakdown.MOBILE ?? 0
+      const mobileRatio = mobileCount / totalPlans
+      matchedRules.push('layer3_plan_pattern_analysis')
+
+      if (mobileRatio >= 0.6 && mobileCount > 0) {
+        reasons.push(`dominant_mobile_plans:${Math.round(mobileRatio * 100)}%`)
+        return {
+          domain: 'MOBILE',
+          confidence: Math.round(mobileRatio * 100),
+          reasons,
+          matchedKeywords: [...new Set(matchedKeywords)],
+          matchedRules,
+          classificationSource: 'plan_pattern_analysis',
+          isBlockedFromTelecom: false,
+          domainBreakdown,
+        }
+      }
+
+      if (dominantDomain !== 'UNKNOWN' && dominantDomain !== 'MOBILE') {
+        const ratio = dominantCount / totalPlans
+        reasons.push(`dominant_non_mobile_domain:${dominantDomain}`)
+        return {
+          domain: dominantDomain,
+          confidence: Math.round(ratio * 100),
+          reasons,
+          matchedKeywords: [...new Set(matchedKeywords)],
+          matchedRules,
+          classificationSource: 'plan_pattern_analysis',
+          isBlockedFromTelecom: true,
+          domainBreakdown,
+          rejectionReason: `DOMINANT_NON_MOBILE:${dominantDomain}`,
+        }
+      }
+    }
+
+    return {
+      domain: 'UNKNOWN',
+      confidence: 40,
+      reasons: totalPlans ? ['insufficient_mobile_dominance'] : ['no_plans_for_domain_analysis'],
+      matchedKeywords: [...new Set(matchedKeywords)],
+      matchedRules: ['layer3_plan_pattern_analysis'],
+      classificationSource: 'unknown',
+      isBlockedFromTelecom: false,
+      domainBreakdown,
+    }
+  }
+
   evaluateOperatorPromotion(input: {
     operatorName: string
     countryCode?: string | null
@@ -207,10 +336,40 @@ export class CatalogIntelligenceEngine {
     failedSyncCount?: number
     hasTelecomHistory?: boolean
   }): OperatorPromotionOutput {
+    const domainEval = this.evaluateOperatorDomain(input)
     const trusted = matchTrustedOperator(input.operatorName, input.countryCode, this.trustedOperators)
     const classifications = input.rawPlans.map((raw) =>
       this.classifyRawPlan({ raw, operatorName: input.operatorName, countryCode: input.countryCode }),
     )
+
+    const baseReasons = [...domainEval.reasons]
+    if (!isMobileTelecomDomain(domainEval.domain)) {
+      const shouldDeactivate =
+        domainEval.isBlockedFromTelecom &&
+        (input.failedSyncCount ?? 0) >= 1 &&
+        !trusted?.isVerifiedTelecom
+
+      return {
+        shouldPromote: false,
+        shouldDeactivate,
+        confidenceLevel: 'CONFIRMED_NON_TELECOM',
+        confidenceScore: domainEval.confidence / 100,
+        reasons: [...baseReasons, `domain_gate:${domainEval.domain}`],
+        trustedOperator: Boolean(trusted?.isVerifiedTelecom),
+        telecomPlanCount: 0,
+        mediumConfidencePlanCount: 0,
+        lowConfidencePlanCount: 0,
+        confirmedNonTelecomCount: classifications.filter((c) => c.confidenceLevel === 'CONFIRMED_NON_TELECOM').length,
+        totalPlanCount: input.rawPlans.length,
+        telecomRatio: 0,
+        failedSyncCount: input.failedSyncCount,
+        operatorDomain: domainEval.domain,
+        operatorDomainConfidence: domainEval.confidence,
+        domainClassificationSource: domainEval.classificationSource,
+        domainBlocked: domainEval.isBlockedFromTelecom,
+        domainEvaluation: domainEval,
+      }
+    }
 
     const totalPlanCount = classifications.length
     const telecomPlanCount = classifications.filter((c, index) => {
@@ -227,22 +386,26 @@ export class CatalogIntelligenceEngine {
     const telecomRatio = totalPlanCount > 0 ? telecomPlanCount / totalPlanCount : 0
     const reasons: string[] = []
 
-    let shouldPromote = false
+    let shouldPromote = isMobileTelecomDomain(domainEval.domain)
     if (trusted?.isVerifiedTelecom) {
       shouldPromote = true
       reasons.push('trusted_operator_registry')
     }
-    if (input.hasTelecomHistory) {
+    if (input.hasTelecomHistory && isMobileTelecomDomain(domainEval.domain)) {
       shouldPromote = true
       reasons.push('telecom_history')
     }
-    if (telecomPlanCount >= 1) {
+    if (telecomPlanCount >= 1 && isMobileTelecomDomain(domainEval.domain)) {
       shouldPromote = true
       reasons.push('at_least_one_telecom_plan')
     }
-    if (mediumConfidencePlanCount >= 1) {
+    if (mediumConfidencePlanCount >= 1 && isMobileTelecomDomain(domainEval.domain)) {
       shouldPromote = true
       reasons.push('medium_confidence_plan_exists')
+    }
+    if (domainEval.domain === 'UNKNOWN' && telecomPlanCount >= 1 && trusted?.isVerifiedTelecom) {
+      shouldPromote = true
+      reasons.push('trusted_with_telecom_plans')
     }
 
     const failedSyncCount = input.failedSyncCount ?? 0
@@ -282,7 +445,7 @@ export class CatalogIntelligenceEngine {
       shouldDeactivate,
       confidenceLevel,
       confidenceScore: avgScore,
-      reasons,
+      reasons: [...baseReasons, ...reasons],
       trustedOperator: Boolean(trusted?.isVerifiedTelecom),
       telecomPlanCount,
       mediumConfidencePlanCount,
@@ -291,6 +454,11 @@ export class CatalogIntelligenceEngine {
       totalPlanCount,
       telecomRatio,
       failedSyncCount,
+      operatorDomain: domainEval.domain,
+      operatorDomainConfidence: domainEval.confidence,
+      domainClassificationSource: domainEval.classificationSource,
+      domainBlocked: false,
+      domainEvaluation: domainEval,
     }
   }
 }

@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server'
 import { cacheGetJson, cacheSetJson } from '@/lib/cache/redis'
 import { rateLimit } from '@/lib/security/rate-limit'
-import { isGenuineTelecomOperatorName } from '@/lib/aggregator/operator-classifier'
 import { aggListSystemOperators } from '@/lib/aggregator/repository'
+import { isMobileCatalogOperator } from '@/lib/catalog/mobile-catalog-filter'
 
 export async function GET(request: Request) {
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anonymous'
@@ -23,10 +23,9 @@ export async function GET(request: Request) {
     q: q || undefined,
     limit: Number.isFinite(limit) ? limit : 50,
     offset: Number.isFinite(offset) ? offset : 0,
+    mobileCatalogOnly: true,
   })
-  const telecomRows = rows.filter((row: any) =>
-    isGenuineTelecomOperatorName(String(row.system_operator_name ?? ''), row.country_id),
-  )
+  const telecomRows = rows.filter((row: any) => isMobileCatalogOperator(row))
   const payload = {
     operators: telecomRows.map((row: any) => ({
       id: row.id,
@@ -35,6 +34,7 @@ export async function GET(request: Request) {
       country: row.country_id,
       logo: row.logo,
       operatorType: row.operator_type,
+      operatorDomain: row.operator_domain ?? 'MOBILE',
       status: row.status,
     })),
     pagination: {

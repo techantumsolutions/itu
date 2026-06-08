@@ -162,6 +162,9 @@ export async function aggUpsertSystemOperator(input: SystemOperatorInput) {
       logo: input.logo ?? null,
       operator_type: input.operatorType ?? null,
       status: input.status ?? 'ACTIVE',
+      operator_domain: input.operatorDomain ?? null,
+      operator_domain_confidence: input.operatorDomainConfidence ?? null,
+      domain_classification_source: input.domainClassificationSource ?? null,
     }),
   })
   const rows = await jsonRows(res)
@@ -403,7 +406,16 @@ export async function aggListRawPlans(params: { limit?: number; offset?: number;
   return jsonRowsOrEmpty(res)
 }
 
-export async function aggListSystemOperators(params: { country?: string; q?: string; limit?: number; offset?: number; status?: string; includeAllStatus?: boolean }) {
+export async function aggListSystemOperators(params: {
+  country?: string
+  q?: string
+  limit?: number
+  offset?: number
+  status?: string
+  includeAllStatus?: boolean
+  operatorDomain?: string
+  mobileCatalogOnly?: boolean
+}) {
   const targetLimit = params.limit ?? 50
   const startOffset = params.offset ?? 0
 
@@ -431,6 +443,11 @@ export async function aggListSystemOperators(params: { country?: string; q?: str
     )
     if (params.country) filters.push(`country_id=eq.${enc(params.country)}`)
     if (params.q) filters.push(`system_operator_name=ilike.*${enc(params.q)}*`)
+    if (params.operatorDomain) {
+      filters.push(`operator_domain=eq.${enc(params.operatorDomain)}`)
+    } else if (params.mobileCatalogOnly) {
+      filters.push('operator_domain=eq.MOBILE')
+    }
     const res = await supabaseRest(`system_operators?${filters.join('&')}`, { cache: 'no-store' })
     const rows = await jsonRowsOrEmpty(res)
 
@@ -512,8 +529,12 @@ export async function aggUpsertFilteredOperator(input: {
 }
 
 export async function aggCleanupSystemOperatorsWithoutPlans(): Promise<number> {
-  const trustedOperators = await aggLoadTrustedOperators()
-  const engine = new CatalogIntelligenceEngine(trustedOperators)
+  const { trustedOperators, domainRegistry, nonTelecomRegistry } = await aggLoadCatalogIntelligenceRegistries().catch(() => ({
+    trustedOperators: [],
+    domainRegistry: [],
+    nonTelecomRegistry: [],
+  }))
+  const engine = new CatalogIntelligenceEngine(trustedOperators, domainRegistry, nonTelecomRegistry)
 
   // 1. Fetch all active system plans and group by system_operator_id
   let offset = 0
@@ -607,7 +628,9 @@ export async function aggCleanupSystemOperatorsWithoutPlans(): Promise<number> {
         hasTelecomHistory: Boolean(row.last_valid_sync_at),
       })
 
-      const shouldKeepActive = trusted || promotionEval.shouldPromote || telecomPlanCount > 0
+      const shouldKeepActive =
+        (trusted || promotionEval.shouldPromote) &&
+        (promotionEval.operatorDomain === 'MOBILE' || row.operator_domain === 'MOBILE')
       const shouldDeactivate = !shouldKeepActive && promotionEval.shouldDeactivate
 
       if (shouldKeepActive) {
@@ -1062,4 +1085,96 @@ export async function aggPatchSystemOperatorSyncHealth(
     method: 'PATCH',
     body: JSON.stringify(body),
   }).catch(() => {})
+}
+
+export async function aggPatchSystemOperatorDomain(
+  systemOperatorId: string,
+  patch: {
+    operatorDomain: string
+    operatorDomainConfidence?: number
+    domainClassificationSource?: string | null
+  },
+) {
+  await supabaseRest(`system_operators?id=eq.${enc(systemOperatorId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      operator_domain: patch.operatorDomain,
+      operator_domain_confidence: patch.operatorDomainConfidence ?? null,
+      domain_classification_source: patch.domainClassificationSource ?? null,
+    }),
+  }).catch(() => {})
+}
+
+export async function aggLoadOperatorDomainRegistry(): Promise<
+  Array<{ normalizedName: string; operatorName: string; operatorDomain: string; confidence: number }>
+> {
+  const res = await supabaseRest(
+    'operator_domain_registry?is_verified=eq.true&select=operator_name,normalized_name,operator_domain,confidence',
+    { cache: 'no-store' },
+  ).catch(() => null)
+  if (!res?.ok) return []
+  const rows = (await res.json().catch(() => [])) as Array<Record<string, unknown>>
+  return rows.map((row) => ({
+    normalizedName: String(row.normalized_name ?? ''),
+    operatorName: String(row.operator_name ?? row.normalized_name ?? ''),
+    operatorDomain: String(row.operator_domain ?? 'UNKNOWN'),
+    confidence: Number(row.confidence ?? 90),
+  }))
+}
+
+export async function aggLoadNonTelecomOperatorRegistry(): Promise<
+  Array<{ normalizedName: string; operatorName: string; operatorDomain: string; confidence: number }>
+> {
+  const res = await supabaseRest(
+    'non_telecom_operator_registry?is_verified=eq.true&select=operator_name,normalized_name,operator_domain,confidence',
+    { cache: 'no-store' },
+  ).catch(() => null)
+  if (!res?.ok) return []
+  const rows = (await res.json().catch(() => [])) as Array<Record<string, unknown>>
+  return rows.map((row) => ({
+    normalizedName: String(row.normalized_name ?? ''),
+    operatorName: String(row.operator_name ?? row.normalized_name ?? ''),
+    operatorDomain: String(row.operator_domain ?? 'RETAIL'),
+    confidence: Number(row.confidence ?? 95),
+  }))
+}
+
+export async function aggInsertOperatorDomainAudit(input: {
+  operatorId?: string | null
+  operatorName?: string | null
+  providerCode?: string | null
+  detectedDomain: string
+  confidence: number
+  classificationSource?: string | null
+  matchedRules?: string[]
+  matchedKeywords?: string[]
+  syncRunId?: string | null
+  rejectionReason?: string | null
+  domainBreakdown?: Record<string, unknown>
+}) {
+  await supabaseRest('operator_domain_audit_logs', {
+    method: 'POST',
+    body: JSON.stringify({
+      operator_id: input.operatorId ?? null,
+      operator_name: input.operatorName ?? null,
+      provider_code: input.providerCode ?? null,
+      detected_domain: input.detectedDomain,
+      confidence: input.confidence,
+      classification_source: input.classificationSource ?? null,
+      matched_rules: input.matchedRules ?? [],
+      matched_keywords: input.matchedKeywords ?? [],
+      sync_run_id: input.syncRunId ?? null,
+      rejection_reason: input.rejectionReason ?? null,
+      domain_breakdown: input.domainBreakdown ?? {},
+    }),
+  }).catch(() => {})
+}
+
+export async function aggLoadCatalogIntelligenceRegistries() {
+  const [trustedOperators, domainRegistry, nonTelecomRegistry] = await Promise.all([
+    aggLoadTrustedOperators(),
+    aggLoadOperatorDomainRegistry(),
+    aggLoadNonTelecomOperatorRegistry(),
+  ])
+  return { trustedOperators, domainRegistry, nonTelecomRegistry }
 }

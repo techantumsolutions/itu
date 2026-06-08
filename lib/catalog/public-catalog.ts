@@ -3,9 +3,9 @@
  * Sources (in order): system_operators/system_plans → internal_plans → legacy operators/plans tables.
  */
 import { supabaseRest } from '@/lib/db/supabase-rest'
-import { isGenuineTelecomOperatorName } from '@/lib/aggregator/operator-classifier'
 import { isAggregatorSchemaReady } from '@/lib/aggregator/repository'
 import { aggListSystemOperators, aggListSystemPlans } from '@/lib/aggregator/repository'
+import { isMobileCatalogOperator } from '@/lib/catalog/mobile-catalog-filter'
 import { dbFetchCountries, dbFetchOperators, dbFetchPlans, pickOperatorForPhone } from '@/lib/db/catalog'
 import {
   countryDisplayName,
@@ -220,17 +220,21 @@ export async function fetchPublicOperators(countryInput: string): Promise<Public
   if (!countryIso3) return []
   console.log("fetchPublicOperators called")
   if (await isAggregatorSchemaReady()) {
-    const rows = (await aggListSystemOperators({ country: countryIso3, limit: 500, offset: 0 })) as Array<{
+    const rows = (await aggListSystemOperators({
+      country: countryIso3,
+      limit: 500,
+      offset: 0,
+      mobileCatalogOnly: true,
+    })) as Array<{
       id: string
       system_operator_name: string
       country_id: string
       slug?: string
       logo?: string | null
+      operator_domain?: string | null
     }>
     const beforeFilter = rows.length
-    const filtered = rows.filter((row) =>
-      isGenuineTelecomOperatorName(row.system_operator_name, row.country_id),
-    )
+    const filtered = rows.filter((row) => isMobileCatalogOperator(row))
     console.log(
       `[Public Catalog] fetchPublicOperators — Country: ${countryIso3} | DB rows: ${beforeFilter} | After filter: ${filtered.length}`,
     )
