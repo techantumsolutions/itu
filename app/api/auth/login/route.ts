@@ -210,14 +210,12 @@ export async function POST(req: Request) {
     }
 
     let isTrusted = false
-<<<<<<< HEAD
     if (isStaff && source === 'admin') {
-      isTrusted = true // Staff sign-in at /admin/login — skip 2FA
-=======
-    if (isAdmin) {
+      isTrusted = true // Super-admin sign-in at /admin/login — skip 2FA
+    } else if (isAdmin) {
       if (!is2FAEnabled) {
-        isTrusted = true // Skip 2FA if 2FA is globally disabled for admins/super_admins
-      } else if (user?.id) {
+        isTrusted = true // Skip 2FA when globally disabled for admins
+      } else if (user?.id && fingerprint) {
         try {
           const devRes = await supabaseRest(`trusted_devices?user_id=eq.${encodeURIComponent(user.id)}&device_fingerprint=eq.${encodeURIComponent(fingerprint)}&select=id&limit=1`)
           if (devRes.ok) {
@@ -228,8 +226,7 @@ export async function POST(req: Request) {
           console.error('Fetch trusted device error:', e)
         }
       }
->>>>>>> 29666fac354a397dddd8989fa0f87a1620f572d2
-    } else if (user?.id) {
+    } else if (user?.id && fingerprint) {
       // Regular user flow: check trusted device
       try {
         const devRes = await supabaseRest(`trusted_devices?user_id=eq.${encodeURIComponent(user.id)}&device_fingerprint=eq.${encodeURIComponent(fingerprint)}&select=id&limit=1`)
