@@ -144,6 +144,9 @@ export async function aggUpsertRawPlan(input: RawPlanInput) {
       catalog_status: input.catalogStatus ?? null,
       confidence_level: input.confidenceLevel ?? null,
       confidence_score: input.confidenceScore ?? null,
+      service_domain: input.serviceDomain ?? null,
+      service_domain_confidence: input.serviceDomainConfidence ?? null,
+      service_domain_source: input.serviceDomainSource ?? null,
       fetched_at: new Date().toISOString(),
     }),
   })
@@ -165,6 +168,9 @@ export async function aggUpsertSystemOperator(input: SystemOperatorInput) {
       operator_domain: input.operatorDomain ?? null,
       operator_domain_confidence: input.operatorDomainConfidence ?? null,
       domain_classification_source: input.domainClassificationSource ?? null,
+      service_domain: input.serviceDomain ?? input.operatorDomain ?? null,
+      service_domain_confidence: input.serviceDomainConfidence ?? input.operatorDomainConfidence ?? null,
+      service_domain_source: input.serviceDomainSource ?? input.domainClassificationSource ?? null,
     }),
   })
   const rows = await jsonRows(res)
@@ -219,6 +225,9 @@ export async function aggUpsertSystemPlan(input: SystemPlanInput) {
       catalog_status: input.catalogStatus ?? null,
       confidence_level: input.confidenceLevel ?? null,
       confidence_score: input.confidenceScore ?? null,
+      service_domain: input.serviceDomain ?? null,
+      service_domain_confidence: input.serviceDomainConfidence ?? null,
+      service_domain_source: input.serviceDomainSource ?? null,
     }),
   })
   const rows = await jsonRows(res)
@@ -446,7 +455,7 @@ export async function aggListSystemOperators(params: {
     if (params.operatorDomain) {
       filters.push(`operator_domain=eq.${enc(params.operatorDomain)}`)
     } else if (params.mobileCatalogOnly) {
-      filters.push('operator_domain=eq.MOBILE')
+      filters.push('or=(service_domain.eq.MOBILE,operator_domain.eq.MOBILE)')
     }
     const res = await supabaseRest(`system_operators?${filters.join('&')}`, { cache: 'no-store' })
     const rows = await jsonRowsOrEmpty(res)
@@ -461,7 +470,14 @@ export async function aggListSystemOperators(params: {
   return allRows
 }
 
-export async function aggListSystemPlans(params: { systemOperatorId?: string; q?: string; limit?: number; offset?: number }) {
+export async function aggListSystemPlans(params: {
+  systemOperatorId?: string
+  q?: string
+  limit?: number
+  offset?: number
+  mobileCatalogOnly?: boolean
+  serviceDomain?: string
+}) {
   const filters = [
     'select=*',
     'status=eq.ACTIVE',
@@ -469,6 +485,11 @@ export async function aggListSystemPlans(params: { systemOperatorId?: string; q?
     `offset=${params.offset ?? 0}`,
     'order=amount.asc',
   ]
+  if (params.mobileCatalogOnly) {
+    filters.push('or=(service_domain.eq.MOBILE,service_domain.is.null)')
+  } else if (params.serviceDomain) {
+    filters.push(`service_domain=eq.${enc(params.serviceDomain)}`)
+  }
   if (params.systemOperatorId) filters.push(`system_operator_id=eq.${enc(params.systemOperatorId)}`)
   if (params.q) filters.push(`system_plan_name=ilike.*${enc(params.q)}*`)
   const res = await supabaseRest(`system_plans?${filters.join('&')}`, { cache: 'no-store' })
