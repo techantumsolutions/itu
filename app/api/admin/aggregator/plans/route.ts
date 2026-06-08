@@ -7,6 +7,7 @@ import {
   isAggregatorSchemaReady,
   isMissingAggregatorSchemaError,
 } from '@/lib/aggregator/repository'
+import { convertServerPatchToFullTree } from 'next/dist/client/components/segment-cache/navigation'
 
 export async function GET(request: Request) {
   if (!(await adminCanUseAnyFeature(request, ['integrations', 'products'], { allowLegacyHeader: true }))) {
@@ -52,10 +53,12 @@ export async function GET(request: Request) {
         systemOperatorId: systemOperatorId || undefined,
         q: q || undefined,
       }),
+
       supabaseRest('plan_mappings?select=system_plan_id,service_provider_id&limit=10000', { cache: 'no-store' }).catch(
         () => null as Response | null,
       ),
     ])
+    console.log("Raw plans", rawPlans)
   } catch (error) {
     if (isMissingAggregatorSchemaError(error)) {
       return NextResponse.json({
