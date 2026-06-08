@@ -9,7 +9,11 @@ import {
   aggUpsertOperatorMapping,
   aggUpsertSystemPlan,
   aggUpsertPlanMapping,
+  aggLoadTrustedOperators,
+  aggInsertPlanClassificationAudit,
+  aggInsertCatalogReviewQueue,
 } from '@/lib/aggregator/repository'
+import { CatalogIntelligenceEngine } from '@/lib/aggregator/catalog-intelligence'
 import { getConnector } from '@/lib/providers/registry'
 import { rowToProviderConfig } from '@/lib/lcr-v2/provider-credentials'
 import { getOrCreateCanonicalCountry } from '@/lib/aggregator/country-normalizer'
@@ -317,11 +321,14 @@ export async function POST(request: Request) {
       }
 
       case 'step5_filter_telecom': {
+        const trustedOperators = await aggLoadTrustedOperators().catch(() => [])
+        const catalogEngine = new CatalogIntelligenceEngine(trustedOperators)
         const opsRes = await supabaseRest(`agg_operators?provider=eq.${config.code}&status=eq.active`, { cache: 'no-store' })
         const aggOps = await opsRes.json().catch(() => []) as any[]
 
         let activeCount = 0
         let inactiveCount = 0
+        let reviewCount = 0
 
         for (const op of aggOps) {
           const plansRes = await supabaseRest(`agg_plans?operator_id=eq.${op.id}`, { cache: 'no-store' })
@@ -334,8 +341,15 @@ export async function POST(request: Request) {
               : []
           })) as any[]
 
-          const validation = validateRawOperatorPlans(validatorPlans)
-          if (!validation.passed) {
+          const validation = validateRawOperatorPlans(validatorPlans, {
+            operatorName: op.operator_name || op.name,
+            countryCode: op.country_iso3,
+            engine: catalogEngine,
+          })
+
+          if (validation.passed) {
+            activeCount++
+          } else if (validation.promotion?.shouldDeactivate) {
             await supabaseRest(`agg_operators?id=eq.${op.id}`, {
               method: 'PATCH',
               body: JSON.stringify({ status: 'inactive' })
@@ -346,13 +360,14 @@ export async function POST(request: Request) {
             })
             inactiveCount++
           } else {
+            reviewCount++
             activeCount++
           }
         }
 
         return NextResponse.json({
           success: true,
-          message: `Filter 1 (Telecom Gate) applied. Evaluated ${aggOps.length} staging operators. Active: ${activeCount}, Inactive/Filtered Out: ${inactiveCount}.`
+          message: `Filter 1 (Catalog Intelligence) applied. Evaluated ${aggOps.length} staging operators. Active: ${activeCount}, Review/Uncertain: ${reviewCount}, Inactive (strong non-telecom): ${inactiveCount}.`
         })
       }
 
@@ -540,46 +555,91 @@ export async function POST(request: Request) {
       }
 
       case 'step8_filter_benefits': {
-        // Find all promoted plans for this provider
+        const trustedOperators = await aggLoadTrustedOperators().catch(() => [])
+        const catalogEngine = new CatalogIntelligenceEngine(trustedOperators)
         const mappingsRes = await supabaseRest(`plan_mappings?service_provider_id=eq.${providerId}&select=system_plan_id,provider_plan_raw_id`, { cache: 'no-store' })
         const mappings = await mappingsRes.json().catch(() => []) as any[]
 
-        let deletedPlans = 0
+        let quarantinedPlans = 0
+        let reviewPlans = 0
+        let activePlans = 0
 
         for (const map of mappings) {
           const sysPlanId = map.system_plan_id
           const rawPlanId = map.provider_plan_raw_id
 
-          // Fetch raw plan to inspect benefits
           const rawPlanRes = await supabaseRest(`provider_plans_raw?id=eq.${rawPlanId}&limit=1`, { cache: 'no-store' })
           const rawPlanRows = await rawPlanRes.json().catch(() => []) as any[]
           const rawPlan = rawPlanRows[0]
 
-          if (rawPlan) {
-            const rawBenefits = Array.isArray(rawPlan.benefits_json) ? rawPlan.benefits_json : []
-            if (rawBenefits.length > 0) {
-              // Check if any benefit matches telecom categories
-              const hasTelecomBenefit = rawBenefits.some((b: any) => {
-                const typeStr = String(b.type || b.benefitType || b.unit_type || b.unit || b.benefit_type || '').toUpperCase()
-                const infoStr = String(b.additionalInformation || b.additional_information || '').toUpperCase()
-                const val = `${typeStr} ${infoStr}`
+          if (!rawPlan) continue
 
-                return /\b(DATA|SMS|TALKTIME|VOICE|MINUTES|AIRTIME|MOBILE)\b/i.test(val)
-              })
+          const planIntel = catalogEngine.classifyRawPlan({
+            raw: rawPlan.raw_json || rawPlan,
+            providerCategory: rawPlan.plan_type,
+          })
 
-              if (!hasTelecomBenefit) {
-                // Delete plan from system_plans
-                await supabaseRest(`system_plans?id=eq.${sysPlanId}`, { method: 'DELETE' })
-                await supabaseRest(`plan_mappings?system_plan_id=eq.${sysPlanId}`, { method: 'DELETE' })
-                deletedPlans++
-              }
+          await supabaseRest(`provider_plans_raw?id=eq.${rawPlanId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              catalog_status: planIntel.catalogStatus,
+              confidence_level: planIntel.confidenceLevel,
+              confidence_score: planIntel.confidenceScore,
+              status: planIntel.catalogStatus === 'ACTIVE' ? 'active' : planIntel.catalogStatus.toLowerCase(),
+            }),
+          }).catch(() => {})
+
+          await aggInsertPlanClassificationAudit({
+            providerCode: config.code,
+            providerPlanRawId: rawPlanId,
+            providerPlanId: rawPlan.provider_plan_id,
+            classification: planIntel.confidenceLevel,
+            confidenceLevel: planIntel.confidenceLevel,
+            confidenceScore: planIntel.confidenceScore,
+            catalogStatus: planIntel.catalogStatus,
+            matchedKeywords: planIntel.matchedKeywords,
+            confidenceBreakdown: planIntel.layerScores,
+            rejectionReason: planIntel.rejectionReason ?? null,
+          }).catch(() => {})
+
+          const systemPatch = {
+            catalog_status: planIntel.catalogStatus,
+            confidence_level: planIntel.confidenceLevel,
+            confidence_score: planIntel.confidenceScore,
+            status: planIntel.catalogStatus === 'NON_TELECOM' ? 'INACTIVE' : 'ACTIVE',
+          }
+          await supabaseRest(`system_plans?id=eq.${sysPlanId}`, {
+            method: 'PATCH',
+            body: JSON.stringify(systemPatch),
+          }).catch(() => {})
+
+          if (planIntel.catalogStatus === 'NON_TELECOM' || planIntel.catalogStatus === 'QUARANTINED') {
+            quarantinedPlans++
+            if (planIntel.shouldQuarantine) {
+              await aggInsertCatalogReviewQueue({
+                providerCode: config.code,
+                providerPlanRawId: rawPlanId,
+                providerPlanId: rawPlan.provider_plan_id,
+                entityType: 'plan',
+                entityName: rawPlan.provider_plan_name || rawPlan.provider_plan_id,
+                confidenceLevel: planIntel.confidenceLevel,
+                confidenceScore: planIntel.confidenceScore,
+                classification: planIntel.confidenceLevel,
+                catalogStatus: planIntel.catalogStatus,
+                rawPayload: rawPlan.raw_json,
+                notes: planIntel.rejectionReason ?? null,
+              }).catch(() => {})
             }
+          } else if (planIntel.catalogStatus === 'REVIEW') {
+            reviewPlans++
+          } else {
+            activePlans++
           }
         }
 
         return NextResponse.json({
           success: true,
-          message: `Step 8 complete. Filtered promoted plan benefits. Removed ${deletedPlans} non-telecom plans from system_plans.`
+          message: `Step 8 complete. Soft catalog filtering applied. Active: ${activePlans}, Review: ${reviewPlans}, Quarantined/Non-telecom: ${quarantinedPlans}. No plans were deleted.`
         })
       }
 

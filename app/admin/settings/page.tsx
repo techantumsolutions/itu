@@ -72,6 +72,53 @@ function SettingsContent() {
   const [showNewPass, setShowNewPass] = useState(false)
   const [showConfirmPass, setShowConfirmPass] = useState(false)
 
+  // Global 2FA States & Handlers
+  const [global2FAEnabled, setGlobal2FAEnabled] = useState(false)
+  const [isSaving2FA, setIsSaving2FA] = useState(false)
+
+  useEffect(() => {
+    if (activeTab !== 'security') return
+    async function loadGlobal2FA() {
+      try {
+        const res = await fetch('/api/admin/settings/2fa')
+        if (res.ok) {
+          const data = await res.json()
+          setGlobal2FAEnabled(data.enabled ?? false)
+        }
+      } catch {
+        // ignore
+      }
+    }
+    void loadGlobal2FA()
+  }, [activeTab])
+
+  const handleToggle2FA = async () => {
+    if (!isSuperAdmin) {
+      toast.error('Only super administrators can toggle global 2FA settings.')
+      return
+    }
+    setIsSaving2FA(true)
+    try {
+      const targetState = !global2FAEnabled
+      const res = await fetch('/api/admin/settings/2fa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: targetState }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'Failed to update 2FA status.')
+      }
+
+      setGlobal2FAEnabled(targetState)
+      toast.success(targetState ? 'Global 2FA enabled' : 'Global 2FA disabled')
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to update 2FA status.')
+    } finally {
+      setIsSaving2FA(false)
+    }
+  }
+
   const handleUpdatePassword = async () => {
     if (!currentPassword || !newPassword || !confirmPassword) {
       toast.error("Please fill in all password fields")
@@ -371,6 +418,15 @@ function SettingsContent() {
     const emailChanged = email.trim().toLowerCase() !== (user?.email ?? '').trim().toLowerCase()
     const phoneChanged = fullPhone !== (user?.phone ?? '').trim()
 
+    if (emailChanged) {
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+      if (!emailRegex.test(email.trim()) || email.includes('..')) {
+        toast.error('Please enter a valid email address.')
+        setIsSaving(false)
+        return
+      }
+    }
+
     if (phoneChanged && phone.trim() !== '') {
       if (!isValidPhoneNumber(phone, selectedCountryCode)) {
         toast.error('Invalid phone number for the selected country.')
@@ -534,9 +590,9 @@ function SettingsContent() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    disabled={user?.role === 'admin'}
+                    disabled={!isSuperAdmin}
                   />
-                  {user?.role === 'admin' && (
+                  {!isSuperAdmin && (
                     <p className="text-xs text-muted-foreground mt-1">
                       Email address changes are disabled for administrators. Contact a super admin if you need to update your email.
                     </p>
@@ -793,9 +849,29 @@ function SettingsContent() {
               <div className="space-y-4">
                 <h3 className="font-medium">Two-Factor Authentication</h3>
                 <p className="text-sm text-muted-foreground">
-                  Add an extra layer of security to your account
+                  {global2FAEnabled 
+                    ? "Two-factor authentication is globally enabled for all administrators and super administrators." 
+                    : "Add an extra layer of security to all administrative accounts"}
                 </p>
-                <Button variant="outline">Enable 2FA</Button>
+                <Button 
+                  variant={global2FAEnabled ? "destructive" : "outline"}
+                  onClick={handleToggle2FA}
+                  disabled={isSaving2FA || !isSuperAdmin}
+                >
+                  {isSaving2FA ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {global2FAEnabled ? "Disabling..." : "Enabling..."}
+                    </>
+                  ) : (
+                    global2FAEnabled ? "Disable 2FA" : "Enable 2FA"
+                  )}
+                </Button>
+                {!isSuperAdmin && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Only super administrators can configure global security policies.
+                  </p>
+                )}
               </div>
 
               <Separator />

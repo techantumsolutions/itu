@@ -35,6 +35,8 @@ export function getRequiredFeatureForPath(pathname: string): AdminFeatureKey | '
   if (pathname.startsWith('/admin/statistics')) return 'statistics'
   if (pathname.startsWith('/admin/settings')) return 'settings'
   if (pathname.startsWith('/admin/help')) return 'help'
+  if (pathname.startsWith('/admin/transactions')) return 'transactions'
+  if (pathname.startsWith('/admin/wallet')) return 'wallet'
   if (pathname === '/admin' || pathname === '/admin/') return 'dashboard'
   
   // Return null if no specific protection matched (or if it's login/etc)

@@ -35,6 +35,13 @@ export async function POST(req: Request) {
 
     // 1. Verify email uniqueness if changed
     if (email && email.toLowerCase() !== (currentProfile?.email ?? '').toLowerCase()) {
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+      if (!emailRegex.test(email) || email.includes('..')) {
+        return NextResponse.json({
+          ok: false,
+          error: 'Please enter a valid email address.'
+        })
+      }
       if (currentProfile?.app_role === 'admin') {
         return NextResponse.json({
           ok: false,

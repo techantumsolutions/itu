@@ -322,11 +322,11 @@ export default function PublicLayout({
                   <DropdownMenuItem
                     key={c.code}
                     className={cn('rounded-xl', c.code === region.code && 'bg-muted font-medium')}
-                      onClick={() => {
-                        setRegion(c.code)
-                        setManualOverride(true)
-                        setLocaleCookiesClient({ country: c.code, manual: true })
-                      }}
+                    onClick={() => {
+                      setRegion(c.code)
+                      setManualOverride(true)
+                      setLocaleCookiesClient({ country: c.code, manual: true })
+                    }}
                   >
                     <span className="mr-2 text-base leading-none">{c.flag}</span>
                     <span className="flex-1">{c.name}</span>
@@ -659,95 +659,99 @@ export default function PublicLayout({
             style={
               footerBgImage
                 ? {
-                    backgroundImage: `linear-gradient(rgba(228, 228, 228, 0.94), rgba(228, 228, 228, 0.94)), url(${footerBgImage})`,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center',
-                  }
+                  backgroundImage: `linear-gradient(rgba(228, 228, 228, 0.94), rgba(228, 228, 228, 0.94)), url(${footerBgImage})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                }
                 : { backgroundColor: footerMainBg }
             }
           >
-                <div className="container mx-auto max-w-6xl px-4 py-12 md:py-16">
-                  <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-12">
-                    <div className="space-y-5 sm:col-span-2 lg:col-span-1">
-                      <Link href="/" className="inline-flex" aria-label={`${content.header.logoText} home`}>
-                        <ItuLogoMark size="lg" />
-                      </Link>
-                      <p className="max-w-sm text-sm font-normal leading-relaxed text-neutral-800">
-                        {content.footer.brandTagline}
-                      </p>
-                      <div className="flex flex-wrap gap-2.5 pt-1">
-                        <a
-                          href={content.footer.socialLinks.twitter}
-                          className={footerSocialClass}
-                          aria-label="X (Twitter)"
-                        >
-                          <Twitter className="h-4 w-4" strokeWidth={2} />
-                        </a>
-                        <a href={content.footer.socialLinks.facebook} className={footerSocialClass} aria-label="Facebook">
-                          <Facebook className="h-4 w-4" strokeWidth={2} />
-                        </a>
-                        <a href={content.footer.socialLinks.youtube} className={footerSocialClass} aria-label="YouTube">
-                          <Youtube className="h-4 w-4" strokeWidth={2} />
-                        </a>
-                        <a href={content.footer.socialLinks.linkedin} className={footerSocialClass} aria-label="LinkedIn">
-                          <Linkedin className="h-4 w-4" strokeWidth={2} />
-                        </a>
-                      </div>
-                    </div>
-
-                    <div>
-                      <h4 className="mb-4 text-sm font-bold text-neutral-900">Company</h4>
-                      <ul className="space-y-3 text-sm font-normal text-neutral-800">
-                        {content.footer.companyLinks.map((link) => (
-                          <li key={`${link.href}-${link.label}`}>
-                            <Link
-                              href={link.href}
-                              className="transition-colors hover:text-neutral-950 hover:underline underline-offset-4"
-                            >
-                              {link.label}
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <div>
-                      <h4 className="mb-4 text-sm font-bold text-neutral-900">Legal</h4>
-                      <ul className="space-y-3 text-sm font-normal text-neutral-800">
-                        {content.footer.legalLinks.map((link) => (
-                          <li key={`${link.href}-${link.label}`}>
-                            <Link
-                              href={link.href}
-                              className="transition-colors hover:text-neutral-950 hover:underline underline-offset-4"
-                            >
-                              {link.label}
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                      <div className="mt-8 border-t border-neutral-400/30 pt-6">
-                        <FooterPaymentLogos />
-                      </div>
-                    </div>
-
-                    <div>
-                      <h4 className="mb-4 text-sm font-bold text-neutral-900">Help</h4>
-                      <ul className="space-y-3 text-sm font-normal text-neutral-800">
-                        {content.footer.helpLinks.map((link) => (
-                          <li key={`${link.href}-${link.label}`}>
-                            <Link
-                              href={link.href}
-                              className="transition-colors hover:text-neutral-950 hover:underline underline-offset-4"
-                            >
-                              {link.label}
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+            <div className="container mx-auto max-w-6xl px-4 py-12 md:py-16">
+              <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-12">
+                <div className="space-y-5 sm:col-span-2 lg:col-span-1">
+                  <Link href="/" className="inline-flex" aria-label={`${content.header.logoText} home`}>
+                    {content.footer.footerLogo ? (
+                      <img src={content.footer.footerLogo} alt={content.header.logoText} className="h-10 w-auto object-contain" />
+                    ) : (
+                      <ItuLogoMark size="lg" />
+                    )}
+                  </Link>
+                  <p className="max-w-sm text-sm font-normal leading-relaxed text-neutral-800">
+                    {content.footer.brandTagline}
+                  </p>
+                  <div className="flex flex-wrap gap-2.5 pt-1">
+                    <a
+                      href={content.footer.socialLinks.twitter}
+                      className={footerSocialClass}
+                      aria-label="X (Twitter)"
+                    >
+                      <Twitter className="h-4 w-4" strokeWidth={2} />
+                    </a>
+                    <a href={content.footer.socialLinks.facebook} className={footerSocialClass} aria-label="Facebook">
+                      <Facebook className="h-4 w-4" strokeWidth={2} />
+                    </a>
+                    <a href={content.footer.socialLinks.youtube} className={footerSocialClass} aria-label="YouTube">
+                      <Youtube className="h-4 w-4" strokeWidth={2} />
+                    </a>
+                    <a href={content.footer.socialLinks.linkedin} className={footerSocialClass} aria-label="LinkedIn">
+                      <Linkedin className="h-4 w-4" strokeWidth={2} />
+                    </a>
                   </div>
                 </div>
+
+                <div>
+                  <h4 className="mb-4 text-sm font-bold text-neutral-900">Company</h4>
+                  <ul className="space-y-3 text-sm font-normal text-neutral-800">
+                    {content.footer.companyLinks.map((link) => (
+                      <li key={`${link.href}-${link.label}`}>
+                        <Link
+                          href={link.href}
+                          className="transition-colors hover:text-neutral-950 hover:underline underline-offset-4"
+                        >
+                          {link.label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div>
+                  <h4 className="mb-4 text-sm font-bold text-neutral-900">Legal</h4>
+                  <ul className="space-y-3 text-sm font-normal text-neutral-800">
+                    {content.footer.legalLinks.map((link) => (
+                      <li key={`${link.href}-${link.label}`}>
+                        <Link
+                          href={link.href}
+                          className="transition-colors hover:text-neutral-950 hover:underline underline-offset-4"
+                        >
+                          {link.label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-8 border-t border-neutral-400/30 pt-6">
+                    <FooterPaymentLogos />
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="mb-4 text-sm font-bold text-neutral-900">Help</h4>
+                  <ul className="space-y-3 text-sm font-normal text-neutral-800">
+                    {content.footer.helpLinks.map((link) => (
+                      <li key={`${link.href}-${link.label}`}>
+                        <Link
+                          href={link.href}
+                          className="transition-colors hover:text-neutral-950 hover:underline underline-offset-4"
+                        >
+                          {link.label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
+            </div>
+          </div>
 
           <div className="border-t border-neutral-400/25" style={{ backgroundColor: footerSubBg }}>
             <p className="py-4 text-center text-sm font-bold tracking-tight text-neutral-900 md:py-5">

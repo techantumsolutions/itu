@@ -55,6 +55,10 @@ export async function POST(req: Request) {
 
     // Check if email or phone is already in use by another user
     if (type === 'email') {
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+      if (!emailRegex.test(value) || value.includes('..')) {
+        return NextResponse.json({ ok: false, error: 'Please enter a valid email address.' }, { status: 400 })
+      }
       const currentProfile = await fetchProfileForUser(userId)
       if (currentProfile?.app_role === 'admin') {
         return NextResponse.json({ ok: false, error: 'Administrators are not allowed to change their email address' }, { status: 400 })
@@ -118,33 +122,42 @@ export async function POST(req: Request) {
           return NextResponse.json({ ok: false, error: 'Email service configuration error' }, { status: 500 })
         }
       } else {
-        const transporter = nodemailer.createTransport({
-          host: smtpHost,
-          port: smtpPort,
-          secure: smtpPort === 465,
-          auth: {
-            user: smtpUser,
-            pass: smtpPass,
-          },
-        })
+        try {
+          const transporter = nodemailer.createTransport({
+            host: smtpHost,
+            port: smtpPort,
+            secure: smtpPort === 465,
+            auth: {
+              user: smtpUser,
+              pass: smtpPass,
+            },
+          })
 
-        await transporter.sendMail({
-          from: `"ITU Support" <${smtpUser}>`,
-          to: value,
-          subject: 'Verify your ITU email change',
-          text: `Your OTP is: ${otp}. It is valid for 5 minutes.`,
-          html: `
-            <div style="font-family: sans-serif; padding: 20px; color: #333;">
-              <h2>Email Change Verification</h2>
-              <p>Please use the following One-Time Password (OTP) to verify your new email address:</p>
-              <div style="font-size: 24px; font-weight: bold; background: #f0f0f0; padding: 10px 20px; display: inline-block; border-radius: 5px; margin: 10px 0;">
-                ${otp}
+          await transporter.sendMail({
+            from: `"ITU Support" <${smtpUser}>`,
+            to: value,
+            subject: 'Verify your ITU email change',
+            text: `Your OTP is: ${otp}. It is valid for 5 minutes.`,
+            html: `
+              <div style="font-family: sans-serif; padding: 20px; color: #333;">
+                <h2>Email Change Verification</h2>
+                <p>Please use the following One-Time Password (OTP) to verify your new email address:</p>
+                <div style="font-size: 24px; font-weight: bold; background: #f0f0f0; padding: 10px 20px; display: inline-block; border-radius: 5px; margin: 10px 0;">
+                  ${otp}
+                </div>
+                <p>This code is valid for 5 minutes.</p>
+                <p>If you did not request this change, please ignore this email.</p>
               </div>
-              <p>This code is valid for 5 minutes.</p>
-              <p>If you did not request this change, please ignore this email.</p>
-            </div>
-          `,
-        })
+            `,
+          })
+        } catch (mailErr) {
+          if (isDev) {
+            console.warn(`[DEV ONLY] Failed to send email via SMTP, logging OTP as fallback.`, mailErr)
+            console.log(`\n========================================\n[DEV ONLY] PROFILE UPDATE OTP FOR ${value}: ${otp}\n========================================\n`)
+          } else {
+            throw mailErr
+          }
+        }
       }
     }
 

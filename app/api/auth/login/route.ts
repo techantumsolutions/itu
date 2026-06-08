@@ -17,6 +17,38 @@ function cookieOptions() {
   }
 }
 
+type LoginProfileRow = {
+  id?: string
+  app_role?: string
+  is_active?: boolean
+  totp_enabled?: boolean
+}
+
+function isStaffAppRole(appRole: string | null | undefined, email: string): boolean {
+  const r = (appRole ?? '').trim().toLowerCase()
+  return r === 'admin' || r === 'super_admin' || email === 'admin@itu.com'
+}
+
+/** Profile lookup tolerates older schemas missing optional columns (e.g. is_active). */
+async function fetchLoginProfileByEmail(email: string): Promise<LoginProfileRow | null> {
+  const encEmail = encodeURIComponent(email)
+  const queries = [
+    `profiles?email=eq.${encEmail}&select=id,app_role,is_active,totp_enabled&limit=1`,
+    `profiles?email=eq.${encEmail}&select=id,app_role&limit=1`,
+  ]
+  for (const path of queries) {
+    try {
+      const res = await supabaseRest(path, { cache: 'no-store' })
+      if (!res.ok) continue
+      const rows = (await res.json().catch(() => [])) as LoginProfileRow[]
+      if (rows?.[0]) return rows[0]
+    } catch {
+      /* try fallback select */
+    }
+  }
+  return null
+}
+
 export async function POST(req: Request) {
   let ipAddress = req.headers.get('x-forwarded-for') || '127.0.0.1'
   if (ipAddress.includes(',')) ipAddress = ipAddress.split(',')[0].trim()
@@ -46,20 +78,8 @@ export async function POST(req: Request) {
     }
 
     // 1. Fetch profile to check role and is_active status
-    let existingProfile: any = null
-    try {
-      const checkRes = await supabaseRest(`profiles?email=eq.${encodeURIComponent(email)}&select=id,app_role,is_active,totp_enabled&limit=1`)
-      if (checkRes.ok) {
-        const rows = await checkRes.json().catch(() => [])
-        if (rows && rows.length > 0) {
-          existingProfile = rows[0]
-        }
-      }
-    } catch (e) {
-      console.error('Fetch profile login error:', e)
-    }
-
-    const isAdmin = existingProfile?.app_role === 'admin' || existingProfile?.app_role === 'super_admin'
+    const existingProfile = await fetchLoginProfileByEmail(email)
+    const isAdmin = isStaffAppRole(existingProfile?.app_role, email)
 
     // 2. Reject frozen admin accounts immediately
     if (isAdmin && existingProfile?.is_active === false) {
@@ -169,12 +189,48 @@ export async function POST(req: Request) {
     }
 
     const clientUser = user ? buildUserFromProfile(user, profile) : null
+    const isStaff =
+      isAdmin ||
+      isStaffAppRole(profile?.app_role ?? null, email) ||
+      clientUser?.role === 'admin' ||
+      clientUser?.role === 'super_admin'
 
-    // 6. Trusted Device check
+    // 6. Global 2FA and Trusted Device check
+    let is2FAEnabled = false
+    try {
+      const settingsRes = await supabaseRest(`app_settings?key=eq.global_2fa_settings&select=value&limit=1`)
+      if (settingsRes.ok) {
+        const rows = await settingsRes.json().catch(() => [])
+        if (rows && rows.length > 0 && rows[0]?.value) {
+          is2FAEnabled = Boolean(rows[0].value.enabled)
+        }
+      }
+    } catch (err) {
+      console.error('Fetch global 2FA setting error:', err)
+    }
+
     let isTrusted = false
-    if (isAdmin && source === 'admin') {
-      isTrusted = true // Skip 2FA for regular admin route
+<<<<<<< HEAD
+    if (isStaff && source === 'admin') {
+      isTrusted = true // Staff sign-in at /admin/login — skip 2FA
+=======
+    if (isAdmin) {
+      if (!is2FAEnabled) {
+        isTrusted = true // Skip 2FA if 2FA is globally disabled for admins/super_admins
+      } else if (user?.id) {
+        try {
+          const devRes = await supabaseRest(`trusted_devices?user_id=eq.${encodeURIComponent(user.id)}&device_fingerprint=eq.${encodeURIComponent(fingerprint)}&select=id&limit=1`)
+          if (devRes.ok) {
+            const devRows = await devRes.json().catch(() => [])
+            isTrusted = devRows.length > 0
+          }
+        } catch (e) {
+          console.error('Fetch trusted device error:', e)
+        }
+      }
+>>>>>>> 29666fac354a397dddd8989fa0f87a1620f572d2
     } else if (user?.id) {
+      // Regular user flow: check trusted device
       try {
         const devRes = await supabaseRest(`trusted_devices?user_id=eq.${encodeURIComponent(user.id)}&device_fingerprint=eq.${encodeURIComponent(fingerprint)}&select=id&limit=1`)
         if (devRes.ok) {
@@ -199,21 +255,25 @@ export async function POST(req: Request) {
         fingerprint
       }, 15 * 60)
 
+      let otp: string | undefined
       if (method === 'email_otp') {
-        const otp = generateOtp()
+        otp = generateOtp()
         await cacheSetJson(`login_otp:${tempToken}`, otp, 15 * 60)
         await sendLoginOtp({ email, otp })
       }
 
       await logLoginAudit({ userId: user?.id, email, status: '2fa_required', ipAddress, country, userAgent })
 
+      const isDev = process.env.NODE_ENV !== 'production'
+
       return NextResponse.json({
         ok: true, // we say ok: true, but provide requires_2fa so frontend handles it
         requires_2fa: true,
         method,
         temp_token: tempToken,
-        totp_enabled: profile?.totp_enabled ?? false, // useful for frontend if admin needs to setup TOTP
+        totp_enabled: is2FAEnabled, // useful for frontend if admin needs to setup TOTP
         user: clientUser,
+        ...(isDev && otp ? { otp } : {}),
       })
     }
 

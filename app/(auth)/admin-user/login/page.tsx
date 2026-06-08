@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/lib/stores'
 import { isClientAdminUser } from '@/lib/tickets/auth-headers'
 import { useFingerprint } from '@/hooks/use-fingerprint'
-import { Turnstile } from '@marsidev/react-turnstile'
+import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
 const DEV_DEFAULT_EMAIL = 'admin@itu.com'
 const isDev = process.env.NODE_ENV === 'development'
 const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '1x00000000000000000000AA' // Dummy key for dev
@@ -30,6 +30,7 @@ export default function AdminUserLoginPage() {
   const [resetting, setResetting] = useState(false)
 
   const [turnstileToken, setTurnstileToken] = useState('')
+  const turnstileRef = useRef<TurnstileInstance | null>(null)
 
   // Forgot password States
   const [authView, setAuthView] = useState<'login' | 'forgot' | 'forgot-success'>('login')
@@ -41,6 +42,7 @@ export default function AdminUserLoginPage() {
   const [tempToken, setTempToken] = useState<string | null>(null)
   const [totpCode, setTotpCode] = useState('')
   const [verifying2FA, setVerifying2FA] = useState(false)
+  const [devOtp, setDevOtp] = useState<string | null>(null)
 
   useEffect(() => {
     const p = useAuthStore.persist
@@ -77,6 +79,9 @@ export default function AdminUserLoginPage() {
     if (result.ok && result.requires_2fa) {
       setRequires2FA(true)
       setTempToken(result.temp_token || null)
+      if (result.otp) {
+        setDevOtp(result.otp)
+      }
       return
     }
 
@@ -90,6 +95,10 @@ export default function AdminUserLoginPage() {
       useAuthStore.getState().logout()
       return
     }
+    // Login failed! Clear captcha token and reset widget
+    setTurnstileToken('')
+    turnstileRef.current?.reset()
+
     setError(
       result.error ??
       'Invalid email or password. If this is a new project, run: npm run bootstrap:admin (requires Supabase keys in .env).',
@@ -241,7 +250,7 @@ export default function AdminUserLoginPage() {
                 </Button>
               </div>
             ) : !requires2FA ? (
-              <form className="space-y-4" onSubmit={handleSubmit}>
+              <form className="space-y-4 mt-0" onSubmit={handleSubmit}>
                 <div className="space-y-2">
                   <Label htmlFor="admin-email">Work email</Label>
                   <Input
@@ -296,6 +305,7 @@ export default function AdminUserLoginPage() {
                 <div className="flex justify-center py-2 min-h-[75px] items-center">
                   <div className={email.trim() && password ? '' : 'hidden'}>
                     <Turnstile
+                      ref={turnstileRef}
                       siteKey={TURNSTILE_SITE_KEY}
                       onSuccess={(token) => setTurnstileToken(token)}
                     />
@@ -339,6 +349,11 @@ export default function AdminUserLoginPage() {
                     required
                   />
                 </div>
+                {devOtp && (
+                  <div className="rounded-lg bg-amber-50 p-2.5 text-center text-xs font-semibold text-amber-800 border border-amber-200">
+                    [Development Mode] Your OTP is: <strong className="text-sm font-bold text-amber-900">{devOtp}</strong>
+                  </div>
+                )}
 
                 <Button
                   type="submit"
@@ -407,12 +422,7 @@ export default function AdminUserLoginPage() {
           </CardContent>
         </Card>
 
-        <p className="mt-8 text-center text-xs text-neutral-400">
-          <span className="inline-flex items-center gap-2">
-            <Image src="/auth/icon-secure.png" alt="" width={20} height={20} className="opacity-70" />
-            {requires2FA ? 'Secured by Two-Factor Authentication' : 'Session cookies are set for secure admin access.'}
-          </span>
-        </p>
+
       </div>
     </div>
   )

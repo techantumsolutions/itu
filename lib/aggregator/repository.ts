@@ -1,5 +1,7 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { isTelecomSystemPlan } from './telecom-validator'
+import { CatalogIntelligenceEngine } from './catalog-intelligence'
+import { matchTrustedOperator } from './catalog-intelligence/trust-registry'
 import type {
   AggregatorProviderRow,
   RawOperatorInput,
@@ -131,6 +133,17 @@ export async function aggUpsertRawPlan(input: RawPlanInput) {
       raw_json: input.rawJson,
       checksum_hash: input.checksumHash,
       status: input.status ?? 'ACTIVE',
+      raw_quality_score: input.rawQualityScore ?? null,
+      has_description: input.hasDescription ?? null,
+      has_benefits: input.hasBenefits ?? null,
+      has_category: input.hasCategory ?? null,
+      has_amount: input.hasAmount ?? null,
+      has_validity: input.hasValidity ?? null,
+      has_currency: input.hasCurrency ?? null,
+      raw_completeness_percent: input.rawCompletenessPercent ?? null,
+      catalog_status: input.catalogStatus ?? null,
+      confidence_level: input.confidenceLevel ?? null,
+      confidence_score: input.confidenceScore ?? null,
       fetched_at: new Date().toISOString(),
     }),
   })
@@ -200,6 +213,9 @@ export async function aggUpsertSystemPlan(input: SystemPlanInput) {
       description: input.description ?? null,
       normalized_signature: input.normalizedSignature,
       status: input.status ?? 'ACTIVE',
+      catalog_status: input.catalogStatus ?? null,
+      confidence_level: input.confidenceLevel ?? null,
+      confidence_score: input.confidenceScore ?? null,
     }),
   })
   const rows = await jsonRows(res)
@@ -496,6 +512,9 @@ export async function aggUpsertFilteredOperator(input: {
 }
 
 export async function aggCleanupSystemOperatorsWithoutPlans(): Promise<number> {
+  const trustedOperators = await aggLoadTrustedOperators()
+  const engine = new CatalogIntelligenceEngine(trustedOperators)
+
   // 1. Fetch all active system plans and group by system_operator_id
   let offset = 0
   let hasMore = true
@@ -503,7 +522,7 @@ export async function aggCleanupSystemOperatorsWithoutPlans(): Promise<number> {
 
   while (hasMore) {
     const res = await supabaseRest(
-      `system_plans?status=eq.ACTIVE&select=system_operator_id,system_plan_name,description,plan_type,data_volume,sms,talktime&limit=1000&offset=${offset}`,
+      `system_plans?status=eq.ACTIVE&select=system_operator_id,system_plan_name,description,plan_type,data_volume,sms,talktime,catalog_status,confidence_level&limit=1000&offset=${offset}`,
       { cache: 'no-store' }
     )
     if (!res.ok) {
@@ -530,18 +549,30 @@ export async function aggCleanupSystemOperatorsWithoutPlans(): Promise<number> {
     }
   }
 
-  // 2. Fetch all system operators and check if they need deactivation
+  // 2. Soft cleanup: only deactivate after repeated failures + strong non-telecom signal
   offset = 0
   hasMore = true
   let deactivatedCount = 0
 
   while (hasMore) {
-    const res = await supabaseRest(`system_operators?select=id,status,system_operator_name,country_id&limit=1000&offset=${offset}`, { cache: 'no-store' })
+    const res = await supabaseRest(
+      `system_operators?select=id,status,system_operator_name,country_id,failed_sync_count,last_valid_sync_at,is_trusted_telecom,updated_at&limit=1000&offset=${offset}`,
+      { cache: 'no-store' },
+    )
     if (!res.ok) {
       hasMore = false
       break
     }
-    const rows = (await res.json()) as { id: string; status: string; system_operator_name: string; country_id: string }[]
+    const rows = (await res.json()) as {
+      id: string
+      status: string
+      system_operator_name: string
+      country_id: string
+      failed_sync_count?: number
+      last_valid_sync_at?: string | null
+      is_trusted_telecom?: boolean
+      updated_at?: string
+    }[]
     if (!rows || !rows.length) {
       hasMore = false
       break
@@ -552,72 +583,85 @@ export async function aggCleanupSystemOperatorsWithoutPlans(): Promise<number> {
     for (const row of rows) {
       const plans = plansByOperatorId.get(row.id) || []
       const totalPlanCount = plans.length
-      
+      const trusted =
+        row.is_trusted_telecom ||
+        Boolean(matchTrustedOperator(row.system_operator_name, row.country_id, trustedOperators)?.isVerifiedTelecom)
+
       let telecomPlanCount = 0
       for (const plan of plans) {
-        if (isTelecomSystemPlan(plan)) {
+        if (isTelecomSystemPlan(plan) || plan.catalog_status === 'ACTIVE' || plan.catalog_status === 'REVIEW') {
           telecomPlanCount++
         }
       }
-      
-      const telecomRatio = totalPlanCount > 0 ? telecomPlanCount / totalPlanCount : 0
-      
-      let validationPassed = true
-      let filterReason = ''
-      
-      if (totalPlanCount === 0) {
-        validationPassed = false
-        filterReason = 'NO_VALID_PLANS'
-      } else if (telecomPlanCount === 0) {
-        validationPassed = false
-        filterReason = 'NO_TELECOM_PLANS'
-      } else if (telecomRatio < 0.1) {
-        validationPassed = false
-        filterReason = 'LOW_TELECOM_RATIO'
-      }
 
-      if (validationPassed) {
+      const promotionEval = engine.evaluateOperatorPromotion({
+        operatorName: row.system_operator_name,
+        countryCode: row.country_id,
+        rawPlans: plans.map((plan) => ({
+          product_name: plan.system_plan_name,
+          description: plan.description,
+          type: plan.plan_type,
+          benefits: [],
+        })),
+        failedSyncCount: row.failed_sync_count ?? 0,
+        hasTelecomHistory: Boolean(row.last_valid_sync_at),
+      })
+
+      const shouldKeepActive = trusted || promotionEval.shouldPromote || telecomPlanCount > 0
+      const shouldDeactivate = !shouldKeepActive && promotionEval.shouldDeactivate
+
+      if (shouldKeepActive) {
         if (row.status !== 'ACTIVE') {
           await supabaseRest(`system_operators?id=eq.${encodeURIComponent(row.id)}`, {
             method: 'PATCH',
-            body: JSON.stringify({ status: 'ACTIVE' }),
+            body: JSON.stringify({
+              status: 'ACTIVE',
+              is_trusted_telecom: trusted || row.is_trusted_telecom || false,
+              confidence_level: promotionEval.confidenceLevel,
+            }),
           }).catch(() => {})
         }
-      } else {
-        if (row.status === 'ACTIVE') {
-          console.log(`[Cleanup] Deactivating system operator '${row.system_operator_name}' (${row.id}) in ${row.country_id}. Reason: ${filterReason}. Total plans: ${totalPlanCount}, Telecom plans: ${telecomPlanCount}, Ratio: ${telecomRatio}`)
+        continue
+      }
+
+      if (shouldDeactivate && row.status === 'ACTIVE') {
+        console.log(
+          `[Cleanup] Soft-deactivating system operator '${row.system_operator_name}' (${row.id}). Reason: ${promotionEval.reasons.join(',')}. Failed syncs: ${row.failed_sync_count ?? 0}`,
+        )
+        await supabaseRest(`system_operators?id=eq.${encodeURIComponent(row.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            status: 'INACTIVE',
+            confidence_level: promotionEval.confidenceLevel,
+          }),
+        }).catch(() => {})
+        deactivatedCount++
+
+        await aggInsertClassificationAudit({
+          providerCode: 'SYSTEM_CLEANUP',
+          providerOperatorId: row.id,
+          entityType: 'operator',
+          entityName: row.system_operator_name,
+          decision: 'REJECTED',
+          classification: promotionEval.confidenceLevel,
+          confidence: promotionEval.confidenceScore,
+          reasonCode: promotionEval.reasons[0] || 'SOFT_DEACTIVATE',
+          details: {
+            country: row.country_id,
+            telecomPlanCount,
+            totalPlanCount,
+            telecomRatio: promotionEval.telecomRatio,
+            failedSyncCount: row.failed_sync_count ?? 0,
+            action: 'SOFT_DEACTIVATE_CLEANUP',
+          },
+        }).catch(() => {})
+      } else if (row.status === 'INACTIVE') {
+        const updatedAt = new Date(row.updated_at || Date.now())
+        if (updatedAt < cutoffDate) {
           await supabaseRest(`system_operators?id=eq.${encodeURIComponent(row.id)}`, {
             method: 'PATCH',
-            body: JSON.stringify({ status: 'INACTIVE' }),
+            body: JSON.stringify({ status: 'DEPRECATED' }),
           }).catch(() => {})
-          deactivatedCount++
-
-          // Audit log for deactivation
-          await aggInsertClassificationAudit({
-            providerCode: 'SYSTEM_CLEANUP',
-            providerOperatorId: row.id,
-            entityType: 'operator',
-            entityName: row.system_operator_name,
-            decision: 'REJECTED',
-            classification: 'UNKNOWN',
-            confidence: telecomRatio,
-            reason_code: filterReason,
-            details: {
-              country: row.country_id,
-              telecomPlanCount,
-              totalPlanCount,
-              telecomRatio,
-              action: 'DEACTIVATE_CLEANUP'
-            }
-          }).catch(() => {})
-        } else if (row.status === 'INACTIVE') {
-          const updatedAt = new Date((row as any).updated_at || Date.now())
-          if (updatedAt < cutoffDate) {
-            await supabaseRest(`system_operators?id=eq.${encodeURIComponent(row.id)}`, {
-              method: 'PATCH',
-              body: JSON.stringify({ status: 'DEPRECATED' }),
-            }).catch(() => {})
-          }
         }
       }
     }
@@ -869,4 +913,153 @@ export async function aggMergeSystemOperators(targetOperatorId: string, sourceOp
   }).catch(() => {})
 
   return { success: true, logs }
+}
+
+export async function aggLoadTrustedOperators(): Promise<
+  Array<{
+    normalizedName: string
+    displayName: string
+    countryCode: string
+    trustLevel: string
+    isVerifiedTelecom: boolean
+  }>
+> {
+  const res = await supabaseRest(
+    'operator_trust_registry?is_verified_telecom=eq.true&select=normalized_name,display_name,country_code,trust_level,is_verified_telecom',
+    { cache: 'no-store' },
+  ).catch(() => null)
+  if (!res?.ok) return []
+  const rows = (await res.json().catch(() => [])) as Array<Record<string, unknown>>
+  return rows.map((row) => ({
+    normalizedName: String(row.normalized_name ?? ''),
+    displayName: String(row.display_name ?? row.normalized_name ?? ''),
+    countryCode: String(row.country_code ?? '*'),
+    trustLevel: String(row.trust_level ?? 'HIGH'),
+    isVerifiedTelecom: Boolean(row.is_verified_telecom),
+  }))
+}
+
+export async function aggInsertPlanClassificationAudit(input: {
+  providerCode?: string | null
+  providerPlanRawId?: string | null
+  providerOperatorId?: string | null
+  providerPlanId?: string | null
+  entityType?: string
+  classification: string
+  confidenceLevel: string
+  confidenceScore: number
+  catalogStatus: string
+  matchedKeywords?: string[]
+  confidenceBreakdown?: Record<string, unknown>
+  rejectionReason?: string | null
+  syncRunId?: string | null
+}) {
+  await supabaseRest('plan_classification_audit', {
+    method: 'POST',
+    body: JSON.stringify({
+      provider_code: input.providerCode ?? null,
+      provider_plan_raw_id: input.providerPlanRawId ?? null,
+      provider_operator_id: input.providerOperatorId ?? null,
+      provider_plan_id: input.providerPlanId ?? null,
+      entity_type: input.entityType ?? 'plan',
+      classification: input.classification,
+      confidence_level: input.confidenceLevel,
+      confidence_score: input.confidenceScore,
+      catalog_status: input.catalogStatus,
+      matched_keywords: input.matchedKeywords ?? [],
+      confidence_breakdown: input.confidenceBreakdown ?? {},
+      rejection_reason: input.rejectionReason ?? null,
+      sync_run_id: input.syncRunId ?? null,
+    }),
+  }).catch(() => {})
+}
+
+export async function aggInsertCatalogReviewQueue(input: {
+  providerCode: string
+  providerOperatorId?: string | null
+  providerPlanId?: string | null
+  providerPlanRawId?: string | null
+  entityType: string
+  entityName: string
+  confidenceLevel: string
+  confidenceScore: number
+  classification?: string | null
+  catalogStatus?: string
+  rawPayload?: unknown
+  notes?: string | null
+}) {
+  await supabaseRest('catalog_review_queue', {
+    method: 'POST',
+    body: JSON.stringify({
+      provider_code: input.providerCode,
+      provider_operator_id: input.providerOperatorId ?? null,
+      provider_plan_id: input.providerPlanId ?? null,
+      provider_plan_raw_id: input.providerPlanRawId ?? null,
+      entity_type: input.entityType,
+      entity_name: input.entityName,
+      confidence_level: input.confidenceLevel,
+      confidence_score: input.confidenceScore,
+      classification: input.classification ?? null,
+      catalog_status: input.catalogStatus ?? 'REVIEW',
+      raw_payload: input.rawPayload ?? null,
+      notes: input.notes ?? null,
+      status: 'PENDING',
+    }),
+  }).catch(() => {})
+}
+
+export async function aggUpsertCatalogEnrichment(input: {
+  providerPlanRawId: string
+  normalizedTitle?: string | null
+  normalizedDescription?: string | null
+  inferredServiceType?: string | null
+  inferredSubservice?: string | null
+  inferredValidity?: string | null
+  inferredDataMb?: number | null
+  inferredTalktime?: string | null
+  inferredSms?: string | null
+  confidenceScore: number
+  enrichmentSource?: string
+}) {
+  await supabaseRest('catalog_enrichment?on_conflict=provider_plan_raw_id', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify({
+      provider_plan_raw_id: input.providerPlanRawId,
+      normalized_title: input.normalizedTitle ?? null,
+      normalized_description: input.normalizedDescription ?? null,
+      inferred_service_type: input.inferredServiceType ?? null,
+      inferred_subservice: input.inferredSubservice ?? null,
+      inferred_validity: input.inferredValidity ?? null,
+      inferred_data_mb: input.inferredDataMb ?? null,
+      inferred_talktime: input.inferredTalktime ?? null,
+      inferred_sms: input.inferredSms ?? null,
+      confidence_score: input.confidenceScore,
+      enrichment_source: input.enrichmentSource ?? 'title_intelligence',
+      updated_at: new Date().toISOString(),
+    }),
+  }).catch(() => {})
+}
+
+export async function aggPatchSystemOperatorSyncHealth(
+  systemOperatorId: string,
+  patch: {
+    failedSyncCount?: number
+    lastValidSyncAt?: string | null
+    status?: string
+    confidenceLevel?: string | null
+    isTrustedTelecom?: boolean
+  },
+) {
+  const body: Record<string, unknown> = {}
+  if (patch.failedSyncCount != null) body.failed_sync_count = patch.failedSyncCount
+  if (patch.lastValidSyncAt !== undefined) body.last_valid_sync_at = patch.lastValidSyncAt
+  if (patch.status != null) body.status = patch.status
+  if (patch.confidenceLevel !== undefined) body.confidence_level = patch.confidenceLevel
+  if (patch.isTrustedTelecom != null) body.is_trusted_telecom = patch.isTrustedTelecom
+  if (!Object.keys(body).length) return
+  await supabaseRest(`system_operators?id=eq.${enc(systemOperatorId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  }).catch(() => {})
 }

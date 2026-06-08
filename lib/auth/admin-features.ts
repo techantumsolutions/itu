@@ -14,6 +14,8 @@ export const ADMIN_FEATURE_KEYS = [
   'reports',
   'analytics',
   'statistics',
+  'transactions',
+  'wallet',
   'settings',
   'help',
 ] as const
@@ -22,21 +24,23 @@ export type AdminFeatureKey = (typeof ADMIN_FEATURE_KEYS)[number]
 
 export const ADMIN_FEATURE_LABELS: Record<AdminFeatureKey, string> = {
   dashboard: 'Dashboard',
-  providers: 'Providers (view)',
-  providers_manage: 'Providers (add / sync / bootstrap)',
-  integrations: 'Integrations / aggregator',
+  providers: 'Providers',
+  providers_manage: 'Providers (Add / Sync / Bootstrap)',
+  integrations: 'Operators (Integrations)',
   routing: 'Routing',
   products: 'Products',
   cms: 'Website CMS',
   customers: 'Customers',
-  tickets: 'Support tickets',
-  ads: 'Ads manager',
+  tickets: 'Support Tickets',
+  ads: 'Ads Manager',
   reconciliation: 'Reconciliation',
-  reports: 'Reports & analytics',
+  reports: 'Reports & Analytics',
   analytics: 'Analytics',
   statistics: 'Statistics',
+  transactions: 'Transactions',
+  wallet: 'Wallet',
   settings: 'Settings',
-  help: 'Help center',
+  help: 'Help Center',
 }
 
 /** Default ON for a new limited admin (tighten as you prefer). */
@@ -56,6 +60,8 @@ export function defaultLimitedAdminPermissions(): Record<AdminFeatureKey, boolea
     reports: false,
     analytics: false,
     statistics: false,
+    transactions: false,
+    wallet: false,
     settings: true,
     help: true,
   }

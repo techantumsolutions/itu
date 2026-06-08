@@ -9,7 +9,7 @@ interface AuthState {
   user: User | null
   isAuthenticated: boolean
   isLoading: boolean
-  login: (email: string, password: string, fingerprint?: string, cf_turnstile_response?: string, source?: string) => Promise<{ ok: boolean; error?: string; requires_2fa?: boolean; method?: string; temp_token?: string; totp_enabled?: boolean }>
+  login: (email: string, password: string, fingerprint?: string, cf_turnstile_response?: string, source?: string) => Promise<{ ok: boolean; error?: string; requires_2fa?: boolean; method?: string; temp_token?: string; totp_enabled?: boolean; otp?: string }>
   loginWithOTP: (phone: string, countryCode: string) => Promise<boolean>
   logout: () => void
   register: (email: string, password: string, name: string) => Promise<boolean>
@@ -43,6 +43,7 @@ export const useAuthStore = create<AuthState>()(
               method: data.method,
               temp_token: data.temp_token,
               totp_enabled: data.totp_enabled,
+              otp: data.otp,
             }
           }
 
