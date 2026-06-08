@@ -434,7 +434,12 @@ export default function HomePage() {
       setPhoneNumber(phoneInput)
       setTopupPhone({ countryCode: selectedCountry.code, phoneNumber: phoneInput })
     }
-    router.push('/topup')
+    const targetUrl = content.hero.ctaUrl?.trim() || '/topup'
+    if (targetUrl.startsWith('http')) {
+      window.location.href = targetUrl
+    } else {
+      router.push(targetUrl)
+    }
   }
 
   const popularCountries = content.popularCountries.filter((c) => c.isActive).sort((a, b) => a.order - b.order)
