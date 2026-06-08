@@ -61,39 +61,37 @@ describe('Telecom Validator Enhancements', () => {
       expect(result.reason).toBe('NO_VALID_PLANS')
     })
 
-    it('rejects operators with no telecom benefits (NO_TELECOM_BENEFITS)', () => {
+    it('soft-promotes operators with telecom title signals but no benefits', () => {
       const plans = [
-        mockRawPlan({ description: 'data recharge pack', benefits: [], service: { name: 'Mobile' } }), // Positive description, but no benefits
-        mockRawPlan({ description: 'data bundle', benefits: [], service: { name: 'Mobile' } })
+        mockRawPlan({ productName: '299 Combo 1.5GB/day 28 days', benefits: [], service: { name: 'Mobile' } }),
+        mockRawPlan({ productName: '199 data recharge pack', benefits: [], service: { name: 'Mobile' } }),
       ]
-      const result = validateRawOperatorPlans(plans)
-      expect(result.passed).toBe(false)
-      expect(result.reason).toBe('NO_TELECOM_BENEFITS')
+      const result = validateRawOperatorPlans(plans, { operatorName: 'Jio', countryCode: 'IND' })
+      expect(result.passed).toBe(true)
+      expect(result.telecomPlanCount).toBeGreaterThan(0)
     })
 
-    it('rejects operators with purely digital products (DIGITAL_PRODUCT_ONLY)', () => {
+    it('rejects purely digital product catalogs without telecom signal', () => {
       const plans = [
         mockRawPlan({ description: 'Crunchyroll Fan 1 Month', type: 'DigitalProduct' }),
         mockRawPlan({ description: 'Discord Nitro Premium membership', type: 'DigitalProduct' })
       ]
       const result = validateRawOperatorPlans(plans)
       expect(result.passed).toBe(false)
-      expect(result.reason).toBe('DIGITAL_PRODUCT_ONLY')
+      expect(result.promotion?.shouldDeactivate).toBe(false)
     })
 
-    it('rejects operators with zero telecom plans (NON_MOBILE_RECHARGE)', () => {
-      // Has telecom benefits (TALKTIME) but matched by non-telecom terms (Gaming / Razer Pin)
+    it('does not hard-reject gaming products that still carry telecom benefits', () => {
       const plans = [
         mockRawPlan({ benefits: [{ type: 'TALKTIME' }], description: 'Razer Pin Gaming Credits' })
       ]
       const result = validateRawOperatorPlans(plans)
-      expect(result.passed).toBe(false)
-      expect(result.reason).toBe('DIGITAL_PRODUCT_ONLY') // Razer Pin matches non-telecom keywords
+      expect(result.promotion?.shouldDeactivate).toBe(false)
     })
 
-    it('rejects operators with low telecom ratio (< 0.1)', () => {
+    it('soft-promotes trusted operators with low telecom ratio in mixed catalogs', () => {
       const plans = [
-        mockRawPlan({ benefits: [{ type: 'DATA' }], description: '10GB data', service: { name: 'Mobile' } }), // 1 telecom plan
+        mockRawPlan({ benefits: [{ type: 'DATA' }], description: '10GB data', service: { name: 'Mobile' } }),
         mockRawPlan({ description: 'Netflix subscription 1', type: 'DigitalProduct' }),
         mockRawPlan({ description: 'Netflix subscription 2', type: 'DigitalProduct' }),
         mockRawPlan({ description: 'Netflix subscription 3', type: 'DigitalProduct' }),
@@ -103,11 +101,11 @@ describe('Telecom Validator Enhancements', () => {
         mockRawPlan({ description: 'Netflix subscription 7', type: 'DigitalProduct' }),
         mockRawPlan({ description: 'Netflix subscription 8', type: 'DigitalProduct' }),
         mockRawPlan({ description: 'Netflix subscription 9', type: 'DigitalProduct' }),
-        mockRawPlan({ description: 'Netflix subscription 10', type: 'DigitalProduct' })
-      ] // ratio: 1/11 ~ 0.09 < 0.1
-      const result = validateRawOperatorPlans(plans)
-      expect(result.passed).toBe(false)
-      expect(result.reason).toBe('NON_MOBILE_RECHARGE')
+        mockRawPlan({ description: 'Netflix subscription 10', type: 'DigitalProduct' }),
+      ]
+      const result = validateRawOperatorPlans(plans, { operatorName: 'Jio', countryCode: 'IND' })
+      expect(result.passed).toBe(true)
+      expect(result.telecomPlanCount).toBeGreaterThanOrEqual(1)
     })
   })
 })

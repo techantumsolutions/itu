@@ -53,6 +53,17 @@ export type RawPlanInput = {
   rawJson: unknown
   checksumHash: string
   status?: CatalogStatus | string
+  rawQualityScore?: number | null
+  hasDescription?: boolean | null
+  hasBenefits?: boolean | null
+  hasCategory?: boolean | null
+  hasAmount?: boolean | null
+  hasValidity?: boolean | null
+  hasCurrency?: boolean | null
+  rawCompletenessPercent?: number | null
+  catalogStatus?: string | null
+  confidenceLevel?: string | null
+  confidenceScore?: number | null
 }
 
 export type SystemOperatorInput = {
@@ -79,6 +90,9 @@ export type SystemPlanInput = {
   description?: string | null
   normalizedSignature: string
   status?: CatalogStatus | string
+  catalogStatus?: string | null
+  confidenceLevel?: string | null
+  confidenceScore?: number | null
 }
 
 export type DuplicateCandidate = {

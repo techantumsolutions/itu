@@ -1,4 +1,9 @@
 import type { NormalizedPlan } from '@/lib/providers/types'
+import {
+  CatalogIntelligenceEngine,
+  defaultCatalogIntelligenceEngine,
+} from '@/lib/aggregator/catalog-intelligence'
+import type { OperatorPromotionOutput } from '@/lib/aggregator/catalog-intelligence/types'
 import { isValidSystemPlan } from './plan-normalizer'
 
 export function hasTelecomPositiveSignal(plan: NormalizedPlan): boolean {
@@ -249,92 +254,79 @@ export function isNonTelecomPlanRaw(raw: any): { matches: boolean; category?: st
   return { matches: false }
 }
 
-export function validateRawOperatorPlans(rawPlans: any[]): {
+export type RawOperatorValidationResult = {
   passed: boolean
   reason: string
   telecomPlanCount: number
   totalPlanCount: number
   telecomRatio: number
-} {
+  promotion?: OperatorPromotionOutput
+}
+
+export function validateRawOperatorPlans(
+  rawPlans: any[],
+  options?: {
+    operatorName?: string
+    countryCode?: string | null
+    engine?: CatalogIntelligenceEngine
+    failedSyncCount?: number
+    hasTelecomHistory?: boolean
+  },
+): RawOperatorValidationResult {
   const totalPlanCount = rawPlans.length
   if (totalPlanCount === 0) {
     return { passed: false, reason: 'NO_VALID_PLANS', telecomPlanCount: 0, totalPlanCount: 0, telecomRatio: 0 }
   }
 
-  let telecomPlanCount = 0
-  let nonTelecomPlanCount = 0
-  let digitalProductCount = 0
-  let hasTelecomBenefits = false
+  const engine = options?.engine ?? defaultCatalogIntelligenceEngine
+  const rawPayloads = rawPlans.map((p) => p.raw_json || p.row_json || p.raw || p)
+  const promotion = engine.evaluateOperatorPromotion({
+    operatorName: options?.operatorName ?? '',
+    countryCode: options?.countryCode,
+    rawPlans: rawPayloads,
+    failedSyncCount: options?.failedSyncCount,
+    hasTelecomHistory: options?.hasTelecomHistory,
+  })
 
-  for (const p of rawPlans) {
-    const raw = p.raw_json || p.row_json || p.raw || p
-    const isTelecom = isTelecomPlanRaw(raw)
-    const nonTelecomCheck = isNonTelecomPlanRaw(raw)
-
-    if (isTelecom) {
-      telecomPlanCount++
-    }
-
-    if (nonTelecomCheck.matches) {
-      nonTelecomPlanCount++
-      if (nonTelecomCheck.category === 'DIGITAL_PRODUCT_ONLY') {
-        digitalProductCount++
-      } else {
-        digitalProductCount++
-      }
-    }
-
-    // Check for benefit types (Rule 7)
-    const fields = extractRawPlanFields(raw)
-    const planHasBenefits = fields.benefits.some(b => {
-      if (typeof b === 'string') {
-        const strUpper = b.trim().toUpperCase()
-        return ['DATA', 'SMS', 'TALKTIME', 'VOICE', 'MINUTES', 'AIRTIME', 'MOBILE'].includes(strUpper)
-      }
-      
-      const typeStr = String(b.type || b.benefitType || b.benefit_type || '').toUpperCase()
-      const unitTypeStr = String(b.unit_type || b.unitType || b.unit || '').toUpperCase()
-      
-      const isTelecomType = ['DATA', 'SMS', 'TALKTIME', 'VOICE', 'MINUTES', 'AIRTIME'].includes(typeStr) ||
-                            ['DATA', 'SMS', 'TALKTIME', 'VOICE', 'MINUTES', 'AIRTIME'].includes(unitTypeStr)
-      if (isTelecomType) return true
-
-      // If the plan itself is classified as telecom airtime and has credits/currency/cash benefits, count it!
-      const isAirtime = isTelecomPlanRaw(raw)
-      const isCredits = ['CREDITS', 'CURRENCY', 'CASH', 'MONEY'].includes(typeStr) || ['CREDITS', 'CURRENCY', 'CASH', 'MONEY'].includes(unitTypeStr)
-      if (isAirtime && isCredits) return true
-
-      return false
-    })
-    if (planHasBenefits) {
-      hasTelecomBenefits = true
+  if (promotion.shouldPromote) {
+    return {
+      passed: true,
+      reason: promotion.reasons.join(',') || 'PROMOTED',
+      telecomPlanCount: promotion.telecomPlanCount,
+      totalPlanCount: promotion.totalPlanCount,
+      telecomRatio: promotion.telecomRatio,
+      promotion,
     }
   }
 
-  const telecomRatio = totalPlanCount > 0 ? telecomPlanCount / totalPlanCount : 0
-
-  // Rule 7 Checks:
-  if (digitalProductCount === totalPlanCount || nonTelecomPlanCount === totalPlanCount) {
-    return { passed: false, reason: 'DIGITAL_PRODUCT_ONLY', telecomPlanCount, totalPlanCount, telecomRatio }
+  if (promotion.shouldDeactivate) {
+    return {
+      passed: false,
+      reason: promotion.reasons[0] || 'STRONG_NON_TELECOM',
+      telecomPlanCount: promotion.telecomPlanCount,
+      totalPlanCount: promotion.totalPlanCount,
+      telecomRatio: promotion.telecomRatio,
+      promotion,
+    }
   }
 
-  if (!hasTelecomBenefits) {
-    return { passed: false, reason: 'NO_TELECOM_BENEFITS', telecomPlanCount, totalPlanCount, telecomRatio }
+  if (promotion.telecomPlanCount > 0 || promotion.lowConfidencePlanCount > 0) {
+    return {
+      passed: true,
+      reason: 'SOFT_PROMOTE_UNCERTAIN',
+      telecomPlanCount: promotion.telecomPlanCount,
+      totalPlanCount: promotion.totalPlanCount,
+      telecomRatio: promotion.telecomRatio,
+      promotion,
+    }
   }
 
-  if (telecomPlanCount === 0) {
-    return { passed: false, reason: 'NON_MOBILE_RECHARGE', telecomPlanCount, totalPlanCount, telecomRatio }
+  return {
+    passed: false,
+    reason: 'INSUFFICIENT_TELECOM_SIGNAL',
+    telecomPlanCount: promotion.telecomPlanCount,
+    totalPlanCount: promotion.totalPlanCount,
+    telecomRatio: promotion.telecomRatio,
+    promotion,
   }
-
-  // Ratio Check (Rule 4)
-  if (telecomRatio < 0.1) {
-    return { passed: false, reason: 'NON_MOBILE_RECHARGE', telecomPlanCount, totalPlanCount, telecomRatio }
-  }
-
-  // Category Dominance Check
-  if (nonTelecomPlanCount > telecomPlanCount) {
-    return { passed: false, reason: 'NON_MOBILE_RECHARGE', telecomPlanCount, totalPlanCount, telecomRatio }
-  }
-
-  return { passed: true, reason: '', telecomPlanCount, totalPlanCount, telecomRatio }
 }

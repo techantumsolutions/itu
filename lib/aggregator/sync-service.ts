@@ -41,6 +41,7 @@ import { getOrCreateCanonicalCountry } from '@/lib/aggregator/country-normalizer
 import { buildSystemOperatorInput } from '@/lib/aggregator/operator-normalizer'
 import { buildSystemPlanInput, scorePlanCandidate, isValidSystemPlan } from '@/lib/aggregator/plan-normalizer'
 import { validateOperatorTelecomService, validateRawOperatorPlans, extractRawPlanFields } from '@/lib/aggregator/telecom-validator'
+import { CatalogIntelligenceEngine } from '@/lib/aggregator/catalog-intelligence'
 
 import { extractPlanSignatureParts, sha256 } from '@/lib/aggregator/signature'
 import type { AggregatorSyncResult } from '@/lib/aggregator/types'
@@ -50,6 +51,9 @@ import {
   aggFindSystemPlanCandidates,
   aggGetProvider,
   aggInsertSyncLog,
+  aggListProviders,
+  aggListRawOperators,
+  aggListRawPlans,
   aggPatchProvider,
   aggUpsertDuplicateSuggestion,
   aggUpsertOperatorMapping,
@@ -64,6 +68,11 @@ import {
   aggUpdateSyncRun,
   aggInsertClassificationAudit,
   aggInsertClassificationReviewQueue,
+  aggLoadTrustedOperators,
+  aggInsertPlanClassificationAudit,
+  aggInsertCatalogReviewQueue,
+  aggUpsertCatalogEnrichment,
+  aggPatchSystemOperatorSyncHealth,
 } from '@/lib/aggregator/repository'
 import { classifyOperatorByPlans, classifyOperator } from '@/lib/aggregator/telecom-classifier'
 import { classifyPlan } from '@/lib/aggregator/plan-classifier'
@@ -160,6 +169,8 @@ export async function syncAggregatorProvider(
   try {
     const diag = createSyncDiagnostics(providerId, config.code)
     const dynamicMode = await canUseDynamicClassification().catch(() => false)
+    const trustedOperators = await aggLoadTrustedOperators().catch(() => [])
+    const catalogEngine = new CatalogIntelligenceEngine(trustedOperators)
     const connector = getConnector(config.adapterKey)
     const raw = await connector.fetchRawPlans(config, { countries: syncedCountries.length ? syncedCountries : undefined })
     diag.stages.ding_api_fetch.recordsReceived = raw.length
@@ -226,10 +237,17 @@ export async function syncAggregatorProvider(
       }
 
       const planResult = classifyPlan(plan)
+      const planIntel = catalogEngine.classifyNormalizedPlan(plan)
       let planDecision = 'REJECTED'
-      if (planResult.confidence >= 0.90 && planResult.classification !== 'UNKNOWN') {
+      if (planIntel.confidenceLevel === 'CONFIRMED_NON_TELECOM' && planIntel.confidenceScore <= 0.15) {
+        planDecision = 'REJECTED'
+      } else if (planIntel.shouldPromote || planIntel.catalogStatus === 'ACTIVE') {
         planDecision = 'ACCEPTED'
-      } else if (planResult.confidence >= 0.60 || planResult.classification === 'UNKNOWN') {
+      } else if (planIntel.catalogStatus === 'REVIEW' || planIntel.catalogStatus === 'QUARANTINED' || planResult.classification === 'UNKNOWN') {
+        planDecision = 'PENDING_REVIEW'
+      } else if (planResult.confidence >= 0.90 && planResult.classification !== 'UNKNOWN') {
+        planDecision = 'ACCEPTED'
+      } else if (planResult.confidence >= 0.60) {
         planDecision = 'PENDING_REVIEW'
       }
 
@@ -319,18 +337,31 @@ export async function syncAggregatorProvider(
         opDecision = 'PENDING_REVIEW'
       }
 
-      // --- Telecom Service Validation Gate (NEW) ---
+      // --- Catalog intelligence operator promotion (soft filtering) ---
       const allOperatorPlans = allPlansByOperatorId.get(operatorId) || []
-      const serviceValidation = validateRawOperatorPlans(allOperatorPlans)
-      
+      const promotionEval = catalogEngine.evaluateOperatorPromotion({
+        operatorName: data.op.providerOperatorName,
+        countryCode: data.op.countryCode,
+        rawPlans: allOperatorPlans.map((p) => p.raw ?? p),
+      })
+
       let finalOpDecision = opDecision
       let finalReasonCode = opResult.reasonCode
 
-      if (opDecision === 'ACCEPTED' && !serviceValidation.passed) {
+      if (promotionEval.shouldPromote) {
+        finalOpDecision = 'ACCEPTED'
+        finalReasonCode = promotionEval.reasons.join(',') || 'CATALOG_INTELLIGENCE_PROMOTE'
+      } else if (promotionEval.shouldDeactivate) {
         finalOpDecision = 'REJECTED'
-        finalReasonCode = serviceValidation.reason
+        finalReasonCode = promotionEval.reasons[0] || 'STRONG_NON_TELECOM'
+      } else if (finalOpDecision === 'ACCEPTED' && promotionEval.telecomPlanCount === 0 && !promotionEval.trustedOperator) {
+        finalOpDecision = 'PENDING_REVIEW'
+        finalReasonCode = 'UNCERTAIN_TELECOM_OPERATOR'
+      } else if (finalOpDecision === 'REJECTED' && promotionEval.telecomPlanCount > 0) {
+        finalOpDecision = 'PENDING_REVIEW'
+        finalReasonCode = 'SOFT_PROMOTE_UNCERTAIN'
       }
-      // ----------------------------------------------
+      // ----------------------------------------------------------------
 
       await aggInsertClassificationAudit({
         providerCode: config.code,
@@ -339,15 +370,16 @@ export async function syncAggregatorProvider(
         entityName: data.op.providerOperatorName,
         decision: finalOpDecision,
         classification: finalOpDecision === 'ACCEPTED' ? opResult.classification : 'UNKNOWN',
-        confidence: serviceValidation.telecomRatio,
+        confidence: promotionEval.confidenceScore,
         reasonCode: finalReasonCode || opResult.reasonCode || 'UNKNOWN',
         details: {
           countryCode: data.op.countryCode,
-          telecomPlanCount: serviceValidation.telecomPlanCount,
-          totalPlanCount: serviceValidation.totalPlanCount,
-          telecomRatio: serviceValidation.telecomRatio,
-          validationPassed: serviceValidation.passed,
-          validationReason: serviceValidation.reason,
+          telecomPlanCount: promotionEval.telecomPlanCount,
+          totalPlanCount: promotionEval.totalPlanCount,
+          telecomRatio: promotionEval.telecomRatio,
+          trustedOperator: promotionEval.trustedOperator,
+          promotionReasons: promotionEval.reasons,
+          confidenceLevel: promotionEval.confidenceLevel,
         }
       })
 
@@ -378,8 +410,8 @@ export async function syncAggregatorProvider(
         const warning = `Skipped operator "${data.op.providerOperatorName}" (${data.op.countryCode}) - Classification: ${opResult.classification}, Decision: ${finalOpDecision}, Reason: ${finalReasonCode}`
         syncWarnings.push(warning)
 
-        // Store details in agg_filtered_operators (Rule 8) if it failed validation
-        if (!serviceValidation.passed) {
+        // Store details in agg_filtered_operators only for strong non-telecom rejections
+        if (finalOpDecision === 'REJECTED' && promotionEval.shouldDeactivate) {
           try {
             const rawOperator = await aggUpsertRawOperator({
               serviceProviderId: providerId,
@@ -401,7 +433,7 @@ export async function syncAggregatorProvider(
                 rawOperatorId: rawOperator.id,
                 rawOperatorName: data.op.providerOperatorName,
                 filterReason: finalReasonCode,
-                classificationScore: serviceValidation.telecomRatio,
+                classificationScore: promotionEval.confidenceScore,
               })
             }
           } catch (err) {
@@ -497,6 +529,19 @@ export async function syncAggregatorProvider(
         diag.stages.operator_mapping.recordsMapped = mappedSystemOperatorIds.size
       }
 
+      const operatorPromotion = catalogEngine.evaluateOperatorPromotion({
+        operatorName: telecomOperatorName,
+        countryCode: op.countryCode,
+        rawPlans: plans.map((p) => p.raw ?? p),
+      })
+      await aggPatchSystemOperatorSyncHealth(systemOperatorId, {
+        lastValidSyncAt: new Date().toISOString(),
+        failedSyncCount: 0,
+        confidenceLevel: operatorPromotion.confidenceLevel,
+        isTrustedTelecom: operatorPromotion.trustedOperator,
+        status: 'ACTIVE',
+      }).catch(() => {})
+
       for (const plan of plans) {
         const planForInternal: NormalizedPlan = {
           ...plan,
@@ -509,6 +554,7 @@ export async function syncAggregatorProvider(
         if (internal.created) createdInternalPlans += 1
 
         const parts = extractPlanSignatureParts(plan)
+        const planIntel = catalogEngine.classifyNormalizedPlan(plan, telecomOperatorName, op.countryCode)
         const rawPlan = await aggUpsertRawPlan({
           providerId,
           providerPlanId: plan.providerPlanId,
@@ -526,9 +572,70 @@ export async function syncAggregatorProvider(
           benefitsJson: plan.benefits,
           rawJson: plan.raw,
           checksumHash: sha256(JSON.stringify(plan.raw)),
-          status: 'active',
+          status: planIntel.catalogStatus === 'ACTIVE' ? 'active' : planIntel.catalogStatus.toLowerCase(),
+          rawQualityScore: planIntel.rawQuality.rawQualityScore,
+          hasDescription: planIntel.rawQuality.hasDescription,
+          hasBenefits: planIntel.rawQuality.hasBenefits,
+          hasCategory: planIntel.rawQuality.hasCategory,
+          hasAmount: planIntel.rawQuality.hasAmount,
+          hasValidity: planIntel.rawQuality.hasValidity,
+          hasCurrency: planIntel.rawQuality.hasCurrency,
+          rawCompletenessPercent: planIntel.rawQuality.rawCompletenessPercent,
+          catalogStatus: planIntel.catalogStatus,
+          confidenceLevel: planIntel.confidenceLevel,
+          confidenceScore: planIntel.confidenceScore,
         })
         if (!rawPlan?.id) continue
+
+        await aggUpsertCatalogEnrichment({
+          providerPlanRawId: rawPlan.id,
+          normalizedTitle: planIntel.enrichment.normalizedTitle,
+          normalizedDescription: planIntel.enrichment.normalizedDescription,
+          inferredServiceType: planIntel.enrichment.inferredServiceType ?? null,
+          inferredSubservice: planIntel.enrichment.inferredSubservice ?? null,
+          inferredValidity: planIntel.enrichment.inferredValidity ?? null,
+          inferredDataMb: planIntel.enrichment.inferredDataMb ?? null,
+          inferredTalktime: planIntel.enrichment.inferredTalktime ?? null,
+          inferredSms: planIntel.enrichment.inferredSms ?? null,
+          confidenceScore: planIntel.enrichment.confidenceScore,
+          enrichmentSource: planIntel.enrichment.enrichmentSource,
+        }).catch(() => {})
+
+        await aggInsertPlanClassificationAudit({
+          providerCode: config.code,
+          providerPlanRawId: rawPlan.id,
+          providerOperatorId: operatorId,
+          providerPlanId: plan.providerPlanId,
+          classification: planIntel.confidenceLevel,
+          confidenceLevel: planIntel.confidenceLevel,
+          confidenceScore: planIntel.confidenceScore,
+          catalogStatus: planIntel.catalogStatus,
+          matchedKeywords: planIntel.matchedKeywords,
+          confidenceBreakdown: planIntel.layerScores,
+          rejectionReason: planIntel.rejectionReason ?? null,
+          syncRunId,
+        }).catch(() => {})
+
+        if (planIntel.shouldQuarantine) {
+          await aggInsertCatalogReviewQueue({
+            providerCode: config.code,
+            providerOperatorId: operatorId,
+            providerPlanId: plan.providerPlanId,
+            providerPlanRawId: rawPlan.id,
+            entityType: 'plan',
+            entityName: plan.name || plan.providerPlanId,
+            confidenceLevel: planIntel.confidenceLevel,
+            confidenceScore: planIntel.confidenceScore,
+            classification: planIntel.confidenceLevel,
+            catalogStatus: planIntel.catalogStatus,
+            rawPayload: plan.raw,
+            notes: planIntel.rejectionReason ?? null,
+          }).catch(() => {})
+        }
+
+        if (planIntel.catalogStatus === 'NON_TELECOM' && planIntel.confidenceLevel === 'CONFIRMED_NON_TELECOM') {
+          continue
+        }
 
         const candidates = await aggFindSystemPlanCandidates({
           systemOperatorId,
@@ -547,6 +654,15 @@ export async function syncAggregatorProvider(
           }),
         )
         if (systemPlan?.id) {
+          await supabaseRest(`system_plans?id=eq.${systemPlan.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              catalog_status: planIntel.catalogStatus,
+              confidence_level: planIntel.confidenceLevel,
+              confidence_score: planIntel.confidenceScore,
+              status: planIntel.catalogStatus === 'NON_TELECOM' ? 'INACTIVE' : 'ACTIVE',
+            }),
+          }).catch(() => {})
           systemPlans += 1
 
           const planMap = await aggUpsertPlanMapping({
@@ -723,6 +839,8 @@ export function rawPlanToNormalized(raw: any, systemOperatorId: string, telecomO
 
 export async function runLocalOperatorSync(providerId?: string) {
   console.log(`[Local Sync] Starting local operator sync...`)
+  const trustedOperators = await aggLoadTrustedOperators().catch(() => [])
+  const catalogEngine = new CatalogIntelligenceEngine(trustedOperators)
   const providers = await aggListProviders()
   const activeProviders = providerId && providerId !== 'ALL'
     ? providers.filter(p => p.id === providerId)
@@ -735,18 +853,22 @@ export async function runLocalOperatorSync(providerId?: string) {
     for (const rawOp of rawOps) {
       try {
         const rawPlans = await aggListRawPlans({ operatorRawId: rawOp.id, limit: 1000 })
-        const validation = validateRawOperatorPlans(rawPlans)
+        const validation = validateRawOperatorPlans(rawPlans, {
+          operatorName: rawOp.provider_operator_name,
+          countryCode: rawOp.country_code || rawOp.iso_code,
+          engine: catalogEngine,
+        })
 
-        if (!validation.passed) {
-          // Deactivate mapped system operator if exists
+        if (!validation.passed && validation.promotion?.shouldDeactivate) {
           const mappingRes = await supabaseRest(`operator_mappings?provider_operator_raw_id=eq.${rawOp.id}&select=system_operator_id`, { cache: 'no-store' })
           if (mappingRes.ok) {
             const mappings = await mappingRes.json()
             if (mappings && mappings.length > 0) {
               const sysOpId = mappings[0].system_operator_id
-              await supabaseRest(`system_operators?id=eq.${sysOpId}`, {
-                method: 'PATCH',
-                body: JSON.stringify({ status: 'INACTIVE' })
+              const failedSyncCount = Number((await supabaseRest(`system_operators?id=eq.${sysOpId}&select=failed_sync_count&limit=1`, { cache: 'no-store' }).then(r => r.json()).catch(() => [{}]))[0]?.failed_sync_count ?? 0) + 1
+              await aggPatchSystemOperatorSyncHealth(sysOpId, {
+                failedSyncCount,
+                status: failedSyncCount >= 3 ? 'INACTIVE' : undefined,
               })
             }
           }

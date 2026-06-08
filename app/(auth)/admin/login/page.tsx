@@ -68,7 +68,7 @@ export default function AdminLoginPage() {
         return
       }
       if (u && u.role === 'admin') {
-        setError('This account is not authorized here. Please use your dedicated login page.')
+        setError('This account is not authorized here. Please use /admin-user/login.')
         useAuthStore.getState().logout()
         return
       }

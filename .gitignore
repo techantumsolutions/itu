@@ -52,3 +52,5 @@ supabase-local/
 # Docker
 docker-data/
 volumes/
+
+package-lock.json
