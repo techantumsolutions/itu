@@ -41,7 +41,7 @@ import { getOrCreateCanonicalCountry } from '@/lib/aggregator/country-normalizer
 import { buildSystemOperatorInput } from '@/lib/aggregator/operator-normalizer'
 import { buildSystemPlanInput, scorePlanCandidate, isValidSystemPlan } from '@/lib/aggregator/plan-normalizer'
 import { validateOperatorTelecomService, validateRawOperatorPlans, extractRawPlanFields } from '@/lib/aggregator/telecom-validator'
-import { CatalogIntelligenceEngine } from '@/lib/aggregator/catalog-intelligence'
+import { CatalogIntelligenceEngine, isMobileTelecomDomain } from '@/lib/aggregator/catalog-intelligence'
 
 import { extractPlanSignatureParts, sha256 } from '@/lib/aggregator/signature'
 import type { AggregatorSyncResult } from '@/lib/aggregator/types'
@@ -68,7 +68,9 @@ import {
   aggUpdateSyncRun,
   aggInsertClassificationAudit,
   aggInsertClassificationReviewQueue,
-  aggLoadTrustedOperators,
+  aggLoadCatalogIntelligenceRegistries,
+  aggInsertOperatorDomainAudit,
+  aggPatchSystemOperatorDomain,
   aggInsertPlanClassificationAudit,
   aggInsertCatalogReviewQueue,
   aggUpsertCatalogEnrichment,
@@ -169,8 +171,12 @@ export async function syncAggregatorProvider(
   try {
     const diag = createSyncDiagnostics(providerId, config.code)
     const dynamicMode = await canUseDynamicClassification().catch(() => false)
-    const trustedOperators = await aggLoadTrustedOperators().catch(() => [])
-    const catalogEngine = new CatalogIntelligenceEngine(trustedOperators)
+    const { trustedOperators, domainRegistry, nonTelecomRegistry } = await aggLoadCatalogIntelligenceRegistries().catch(() => ({
+      trustedOperators: [],
+      domainRegistry: [],
+      nonTelecomRegistry: [],
+    }))
+    const catalogEngine = new CatalogIntelligenceEngine(trustedOperators, domainRegistry, nonTelecomRegistry)
     const connector = getConnector(config.adapterKey)
     const raw = await connector.fetchRawPlans(config, { countries: syncedCountries.length ? syncedCountries : undefined })
     diag.stages.ding_api_fetch.recordsReceived = raw.length
@@ -337,8 +343,28 @@ export async function syncAggregatorProvider(
         opDecision = 'PENDING_REVIEW'
       }
 
-      // --- Catalog intelligence operator promotion (soft filtering) ---
+      // --- Catalog intelligence operator promotion (soft filtering + domain gate) ---
       const allOperatorPlans = allPlansByOperatorId.get(operatorId) || []
+      const domainEval = catalogEngine.evaluateOperatorDomain({
+        operatorName: data.op.providerOperatorName,
+        countryCode: data.op.countryCode,
+        rawPlans: allOperatorPlans.map((p) => p.raw ?? p),
+      })
+
+      await aggInsertOperatorDomainAudit({
+        operatorId,
+        operatorName: data.op.providerOperatorName,
+        providerCode: config.code,
+        detectedDomain: domainEval.domain,
+        confidence: domainEval.confidence,
+        classificationSource: domainEval.classificationSource,
+        matchedRules: domainEval.matchedRules,
+        matchedKeywords: domainEval.matchedKeywords,
+        syncRunId,
+        rejectionReason: domainEval.rejectionReason ?? null,
+        domainBreakdown: domainEval.domainBreakdown,
+      }).catch(() => {})
+
       const promotionEval = catalogEngine.evaluateOperatorPromotion({
         operatorName: data.op.providerOperatorName,
         countryCode: data.op.countryCode,
@@ -348,9 +374,12 @@ export async function syncAggregatorProvider(
       let finalOpDecision = opDecision
       let finalReasonCode = opResult.reasonCode
 
-      if (promotionEval.shouldPromote) {
+      if (promotionEval.shouldPromote && isMobileTelecomDomain(promotionEval.operatorDomain)) {
         finalOpDecision = 'ACCEPTED'
         finalReasonCode = promotionEval.reasons.join(',') || 'CATALOG_INTELLIGENCE_PROMOTE'
+      } else if (domainEval.isBlockedFromTelecom || !isMobileTelecomDomain(domainEval.domain)) {
+        finalOpDecision = domainEval.domain === 'UNKNOWN' ? 'PENDING_REVIEW' : 'REJECTED'
+        finalReasonCode = domainEval.rejectionReason || `NON_MOBILE_DOMAIN:${domainEval.domain}`
       } else if (promotionEval.shouldDeactivate) {
         finalOpDecision = 'REJECTED'
         finalReasonCode = promotionEval.reasons[0] || 'STRONG_NON_TELECOM'
@@ -380,6 +409,9 @@ export async function syncAggregatorProvider(
           trustedOperator: promotionEval.trustedOperator,
           promotionReasons: promotionEval.reasons,
           confidenceLevel: promotionEval.confidenceLevel,
+          operatorDomain: promotionEval.operatorDomain,
+          operatorDomainConfidence: promotionEval.operatorDomainConfidence,
+          domainClassificationSource: promotionEval.domainClassificationSource,
         }
       })
 
@@ -411,7 +443,7 @@ export async function syncAggregatorProvider(
         syncWarnings.push(warning)
 
         // Store details in agg_filtered_operators only for strong non-telecom rejections
-        if (finalOpDecision === 'REJECTED' && promotionEval.shouldDeactivate) {
+        if (finalOpDecision === 'REJECTED' && (promotionEval.shouldDeactivate || domainEval.isBlockedFromTelecom)) {
           try {
             const rawOperator = await aggUpsertRawOperator({
               serviceProviderId: providerId,
@@ -477,6 +509,17 @@ export async function syncAggregatorProvider(
       diag.uniqueRawOperatorIds.add(operatorId)
       diag.stages.raw_operator_store.recordsStored = diag.uniqueRawOperatorIds.size
 
+      const operatorPromotion = catalogEngine.evaluateOperatorPromotion({
+        operatorName: telecomOperatorName,
+        countryCode: op.countryCode,
+        rawPlans: plans.map((p) => p.raw ?? p),
+      })
+      const domainEvalForOp = catalogEngine.evaluateOperatorDomain({
+        operatorName: telecomOperatorName,
+        countryCode: op.countryCode,
+        rawPlans: plans.map((p) => p.raw ?? p),
+      })
+
       let systemOperatorId: string | null = null
       
       // Look up operator alias first
@@ -495,6 +538,10 @@ export async function syncAggregatorProvider(
 
       if (!systemOperatorId) {
         const systemOperatorInput = buildSystemOperatorInput(plans[0], telecomOperatorName)
+        systemOperatorInput.operatorDomain = operatorPromotion.operatorDomain
+        systemOperatorInput.operatorDomainConfidence = operatorPromotion.operatorDomainConfidence
+        systemOperatorInput.domainClassificationSource =
+          operatorPromotion.domainClassificationSource ?? domainEvalForOp.classificationSource
         const systemOperator = await aggUpsertSystemOperator(systemOperatorInput)
         if (systemOperator?.id) {
           systemOperatorId = systemOperator.id
@@ -529,17 +576,18 @@ export async function syncAggregatorProvider(
         diag.stages.operator_mapping.recordsMapped = mappedSystemOperatorIds.size
       }
 
-      const operatorPromotion = catalogEngine.evaluateOperatorPromotion({
-        operatorName: telecomOperatorName,
-        countryCode: op.countryCode,
-        rawPlans: plans.map((p) => p.raw ?? p),
-      })
       await aggPatchSystemOperatorSyncHealth(systemOperatorId, {
         lastValidSyncAt: new Date().toISOString(),
         failedSyncCount: 0,
         confidenceLevel: operatorPromotion.confidenceLevel,
         isTrustedTelecom: operatorPromotion.trustedOperator,
         status: 'ACTIVE',
+      }).catch(() => {})
+      await aggPatchSystemOperatorDomain(systemOperatorId, {
+        operatorDomain: operatorPromotion.operatorDomain,
+        operatorDomainConfidence: operatorPromotion.operatorDomainConfidence,
+        domainClassificationSource:
+          operatorPromotion.domainClassificationSource ?? domainEvalForOp.classificationSource,
       }).catch(() => {})
 
       for (const plan of plans) {
@@ -839,8 +887,12 @@ export function rawPlanToNormalized(raw: any, systemOperatorId: string, telecomO
 
 export async function runLocalOperatorSync(providerId?: string) {
   console.log(`[Local Sync] Starting local operator sync...`)
-  const trustedOperators = await aggLoadTrustedOperators().catch(() => [])
-  const catalogEngine = new CatalogIntelligenceEngine(trustedOperators)
+  const { trustedOperators, domainRegistry, nonTelecomRegistry } = await aggLoadCatalogIntelligenceRegistries().catch(() => ({
+    trustedOperators: [],
+    domainRegistry: [],
+    nonTelecomRegistry: [],
+  }))
+  const catalogEngine = new CatalogIntelligenceEngine(trustedOperators, domainRegistry, nonTelecomRegistry)
   const providers = await aggListProviders()
   const activeProviders = providerId && providerId !== 'ALL'
     ? providers.filter(p => p.id === providerId)

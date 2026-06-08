@@ -100,6 +100,8 @@ export async function GET(request: Request) {
   const providerId = (searchParams.get('providerId') ?? '').trim()
   const q = (searchParams.get('q') ?? '').trim()
   const status = (searchParams.get('status') ?? '').trim().toUpperCase()
+  const operatorDomain = (searchParams.get('operatorDomain') ?? 'MOBILE').trim().toUpperCase()
+  const includeAllDomains = searchParams.get('includeAllDomains') === 'true'
 
   const [rawOperators, systemOperators, providers, mappingsRes, countriesRes] = await Promise.all([
     aggListRawOperators({
@@ -115,6 +117,8 @@ export async function GET(request: Request) {
       q: q || undefined,
       status: status || undefined,
       includeAllStatus: true,
+      operatorDomain: includeAllDomains ? undefined : operatorDomain || 'MOBILE',
+      mobileCatalogOnly: !includeAllDomains && !operatorDomain ? true : undefined,
     }),
     aggListProviders().catch(() => []),
     supabaseRest('operator_mappings?select=system_operator_id,service_provider_id&limit=10000', { cache: 'no-store' }).catch(

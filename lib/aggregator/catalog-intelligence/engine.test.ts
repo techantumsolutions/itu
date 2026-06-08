@@ -70,17 +70,64 @@ describe('CatalogIntelligenceEngine', () => {
     expect(matchTrustedOperator('JOI', 'IND')?.isVerifiedTelecom).toBe(true)
   })
 
-  it('soft-promotes mixed catalogs with at least one telecom plan', () => {
+  it('soft-promotes mixed catalogs for trusted mobile operators', () => {
     const result = engine.evaluateOperatorPromotion({
-      operatorName: 'Mixed Catalog Operator',
+      operatorName: 'Jio',
+      countryCode: 'IND',
       rawPlans: [
         { product_name: '10GB Data Pack', benefits: [{ type: 'DATA' }] },
+        { product_name: '10GB Data Pack 2', benefits: [{ type: 'DATA' }] },
+        { product_name: '10GB Data Pack 3', benefits: [{ type: 'DATA' }] },
         { product_name: 'Netflix 1 Month', description: 'streaming subscription' },
-        { product_name: 'Amazon Gift Card' },
       ],
     })
     expect(result.shouldPromote).toBe(true)
+    expect(result.operatorDomain).toBe('MOBILE')
     expect(result.telecomPlanCount).toBeGreaterThanOrEqual(1)
     expect(result.shouldDeactivate).toBe(false)
+  })
+
+  describe('evaluateOperatorDomain', () => {
+    it('classifies trusted telecom operators as MOBILE', () => {
+      const result = engine.evaluateOperatorDomain({
+        operatorName: 'Jio',
+        countryCode: 'IND',
+        rawPlans: [{ product_name: '199 recharge', benefits: [] }],
+      })
+      expect(result.domain).toBe('MOBILE')
+      expect(result.isBlockedFromTelecom).toBe(false)
+    })
+
+    it('blocks Cafe Coffee Day even when plans contain recharge keywords', () => {
+      const result = engine.evaluateOperatorDomain({
+        operatorName: 'Cafe Coffee Day',
+        rawPlans: [{ product_name: 'Cafe Coffee Day Recharge Voucher 500', benefits: [] }],
+      })
+      expect(result.domain).toBe('FOOD')
+      expect(result.isBlockedFromTelecom).toBe(true)
+    })
+
+    it('blocks Netflix, Steam, and Amazon from mobile catalog', () => {
+      for (const [name, domain] of [
+        ['Netflix', 'OTT'],
+        ['Steam', 'GAMING'],
+        ['Amazon', 'RETAIL'],
+        ['Hyatt Hotel', 'TRAVEL'],
+      ] as const) {
+        const result = engine.evaluateOperatorDomain({ operatorName: name, rawPlans: [{ product_name: `${name} voucher` }] })
+        expect(result.domain).toBe(domain)
+        expect(result.isBlockedFromTelecom).toBe(true)
+      }
+    })
+
+    it('does not promote non-mobile domains through evaluateOperatorPromotion', () => {
+      const result = engine.evaluateOperatorPromotion({
+        operatorName: 'Netflix',
+        rawPlans: [{ product_name: 'Netflix 1 Month Premium', description: 'streaming subscription' }],
+      })
+      expect(result.shouldPromote).toBe(false)
+      expect(result.operatorDomain).toBe('OTT')
+      expect(result.domainBlocked).toBe(true)
+    })
   })
 })
