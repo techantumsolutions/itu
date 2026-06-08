@@ -1,16 +1,17 @@
-import { isGenuineTelecomOperatorName } from '@/lib/aggregator/operator-classifier'
-import { isMobileTelecomDomain, matchNonTelecomOperator } from '@/lib/aggregator/catalog-intelligence'
+import { isMobileTelecomDomain } from '@/lib/aggregator/catalog-intelligence'
 
 export function isMobileCatalogOperator(row: {
-  system_operator_name?: string | null
-  operator_domain?: string | null
+  status?: string | null
   service_domain?: string | null
-  country_id?: string | null
 }): boolean {
-  const serviceDomain = String(row.service_domain ?? row.operator_domain ?? '').toUpperCase()
-  if (serviceDomain) return isMobileTelecomDomain(serviceDomain)
+  if (String(row.status ?? 'ACTIVE').toUpperCase() !== 'ACTIVE') return false
+  return isMobileTelecomDomain(row.service_domain)
+}
 
-  const name = String(row.system_operator_name ?? '')
-  if (matchNonTelecomOperator(name)) return false
-  return isGenuineTelecomOperatorName(name, row.country_id ?? undefined)
+export function isMobileCatalogPlan(row: {
+  status?: string | null
+  service_domain?: string | null
+}): boolean {
+  if (String(row.status ?? 'ACTIVE').toUpperCase() !== 'ACTIVE') return false
+  return isMobileTelecomDomain(row.service_domain)
 }

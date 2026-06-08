@@ -8,6 +8,7 @@ import {
 } from '@/lib/aggregator/telecom-validator'
 import { classifyPlan } from '@/lib/aggregator/plan-classifier'
 import { buildCombinedPlanText, computeRawQuality, enrichPlanFromRaw } from './enrichment'
+import { detectExplicitServiceDomain } from './brand-intelligence'
 import { matchNonTelecomOperator, matchOperatorDomainRegistry, isMobileTelecomDomain } from './domain-registries'
 import { classifyPlanDomain } from './plan-domain'
 import { matchTrustedOperator } from './trust-registry'
@@ -73,9 +74,35 @@ export class CatalogIntelligenceEngine {
     const matchedKeywords = [...enrichment.matchedKeywords]
     const reasons: string[] = []
 
-    const trusted = input.operatorName
-      ? matchTrustedOperator(input.operatorName, input.countryCode, this.trustedOperators)
-      : null
+    const explicitDomain = input.operatorName ? detectExplicitServiceDomain(input.operatorName) : null
+    const trusted =
+      input.operatorName && !explicitDomain
+        ? matchTrustedOperator(input.operatorName, input.countryCode, this.trustedOperators)
+        : null
+
+    if (explicitDomain && explicitDomain.domain !== 'MOBILE') {
+      return {
+        confidenceLevel: 'CONFIRMED_NON_TELECOM',
+        confidenceScore: 0.1,
+        serviceType: explicitDomain.domain.toLowerCase(),
+        reasons: [`operator_explicit_domain:${explicitDomain.domain}`, explicitDomain.keyword],
+        matchedKeywords: [explicitDomain.keyword],
+        layerScores: {
+          trustedOperator: 0,
+          titleIntelligence: enrichment.confidenceScore,
+          providerCategory: 0,
+          benefits: 0,
+          negativeSignals: 0.5,
+          pricePattern: 0,
+        },
+        enrichment,
+        catalogStatus: 'NON_TELECOM',
+        shouldPromote: false,
+        shouldQuarantine: true,
+        rejectionReason: `OPERATOR_DOMAIN:${explicitDomain.domain}`,
+        rawQuality,
+      }
+    }
 
     const layerScores: LayerScores = {
       trustedOperator: 0,
@@ -221,34 +248,24 @@ export class CatalogIntelligenceEngine {
     const domainBreakdown: Record<string, number> = {}
     const rawPlans = input.rawPlans ?? []
 
-    const trusted = matchTrustedOperator(input.operatorName, input.countryCode, this.trustedOperators)
-    if (trusted?.isVerifiedTelecom) {
+    // Layer 0 — explicit non-mobile keyword / subdomain override (highest precedence)
+    const explicit = detectExplicitServiceDomain(input.operatorName)
+    if (explicit) {
+      domainBreakdown[explicit.domain] = rawPlans.length || 1
       return {
-        domain: 'MOBILE',
+        domain: explicit.domain,
         confidence: 95,
-        reasons: [`trusted_telecom_registry:${trusted.displayName}`],
-        matchedKeywords: [trusted.normalizedName],
-        matchedRules: ['layer1_trusted_telecom_registry'],
-        classificationSource: 'trusted_telecom_registry',
-        isBlockedFromTelecom: false,
-        domainBreakdown: { MOBILE: rawPlans.length || 1 },
+        reasons: [`explicit_domain_override:${explicit.keyword}`],
+        matchedKeywords: [explicit.keyword],
+        matchedRules: ['layer0_explicit_domain_override'],
+        classificationSource: 'explicit_domain_override',
+        isBlockedFromTelecom: explicit.domain !== 'MOBILE',
+        domainBreakdown,
+        rejectionReason: explicit.domain !== 'MOBILE' ? `NON_MOBILE_DOMAIN:${explicit.domain}` : undefined,
       }
     }
 
-    const domainRegistryHit = matchOperatorDomainRegistry(input.operatorName, this.domainRegistry)
-    if (domainRegistryHit?.operatorDomain === 'MOBILE') {
-      return {
-        domain: 'MOBILE',
-        confidence: domainRegistryHit.confidence,
-        reasons: [`operator_domain_registry:${domainRegistryHit.operatorName}`],
-        matchedKeywords: [domainRegistryHit.normalizedName],
-        matchedRules: ['layer1_operator_domain_registry'],
-        classificationSource: 'operator_domain_registry',
-        isBlockedFromTelecom: false,
-        domainBreakdown: { MOBILE: rawPlans.length || 1 },
-      }
-    }
-
+    // Layer 1 — non-telecom operator registry (strict)
     const nonTelecomHit = matchNonTelecomOperator(input.operatorName, this.nonTelecomRegistry)
     if (nonTelecomHit) {
       domainBreakdown[nonTelecomHit.operatorDomain] = rawPlans.length || 1
@@ -257,7 +274,7 @@ export class CatalogIntelligenceEngine {
         confidence: nonTelecomHit.confidence,
         reasons: [`non_telecom_registry:${nonTelecomHit.operatorName}`],
         matchedKeywords: [nonTelecomHit.normalizedName],
-        matchedRules: ['layer2_non_telecom_registry'],
+        matchedRules: ['layer1_non_telecom_registry'],
         classificationSource: 'non_telecom_registry',
         isBlockedFromTelecom: true,
         domainBreakdown,
@@ -265,6 +282,7 @@ export class CatalogIntelligenceEngine {
       }
     }
 
+    // Layer 2 — plan pattern / brand subdomain analysis
     for (const raw of rawPlans) {
       const planDomain = classifyPlanDomain(raw, input.operatorName)
       domainBreakdown[planDomain.domain] = (domainBreakdown[planDomain.domain] ?? 0) + 1
@@ -282,23 +300,7 @@ export class CatalogIntelligenceEngine {
     }
 
     if (totalPlans > 0) {
-      const mobileCount = domainBreakdown.MOBILE ?? 0
-      const mobileRatio = mobileCount / totalPlans
-      matchedRules.push('layer3_plan_pattern_analysis')
-
-      if (mobileRatio >= 0.6 && mobileCount > 0) {
-        reasons.push(`dominant_mobile_plans:${Math.round(mobileRatio * 100)}%`)
-        return {
-          domain: 'MOBILE',
-          confidence: Math.round(mobileRatio * 100),
-          reasons,
-          matchedKeywords: [...new Set(matchedKeywords)],
-          matchedRules,
-          classificationSource: 'plan_pattern_analysis',
-          isBlockedFromTelecom: false,
-          domainBreakdown,
-        }
-      }
+      matchedRules.push('layer2_plan_pattern_analysis')
 
       if (dominantDomain !== 'UNKNOWN' && dominantDomain !== 'MOBILE') {
         const ratio = dominantCount / totalPlans
@@ -315,6 +317,51 @@ export class CatalogIntelligenceEngine {
           rejectionReason: `DOMINANT_NON_MOBILE:${dominantDomain}`,
         }
       }
+
+      const mobileCount = domainBreakdown.MOBILE ?? 0
+      const mobileRatio = mobileCount / totalPlans
+      if (mobileRatio >= 0.6 && mobileCount > 0) {
+        reasons.push(`dominant_mobile_plans:${Math.round(mobileRatio * 100)}%`)
+        return {
+          domain: 'MOBILE',
+          confidence: Math.round(mobileRatio * 100),
+          reasons,
+          matchedKeywords: [...new Set(matchedKeywords)],
+          matchedRules,
+          classificationSource: 'plan_pattern_analysis',
+          isBlockedFromTelecom: false,
+          domainBreakdown,
+        }
+      }
+    }
+
+    // Layer 3 — exact trusted mobile brand (ONLY when no explicit non-mobile signal)
+    const trusted = matchTrustedOperator(input.operatorName, input.countryCode, this.trustedOperators)
+    if (trusted?.isVerifiedTelecom) {
+      return {
+        domain: 'MOBILE',
+        confidence: 92,
+        reasons: [`exact_trusted_mobile_brand:${trusted.displayName}`],
+        matchedKeywords: [trusted.normalizedName],
+        matchedRules: ['layer3_exact_trusted_mobile_brand'],
+        classificationSource: 'trusted_telecom_registry',
+        isBlockedFromTelecom: false,
+        domainBreakdown: { MOBILE: rawPlans.length || 1 },
+      }
+    }
+
+    const domainRegistryHit = matchOperatorDomainRegistry(input.operatorName, this.domainRegistry)
+    if (domainRegistryHit?.operatorDomain === 'MOBILE') {
+      return {
+        domain: 'MOBILE',
+        confidence: domainRegistryHit.confidence,
+        reasons: [`exact_operator_domain_registry:${domainRegistryHit.operatorName}`],
+        matchedKeywords: [domainRegistryHit.normalizedName],
+        matchedRules: ['layer3_exact_operator_domain_registry'],
+        classificationSource: 'operator_domain_registry',
+        isBlockedFromTelecom: false,
+        domainBreakdown: { MOBILE: rawPlans.length || 1 },
+      }
     }
 
     return {
@@ -322,7 +369,7 @@ export class CatalogIntelligenceEngine {
       confidence: 40,
       reasons: totalPlans ? ['insufficient_mobile_dominance'] : ['no_plans_for_domain_analysis'],
       matchedKeywords: [...new Set(matchedKeywords)],
-      matchedRules: ['layer3_plan_pattern_analysis'],
+      matchedRules: totalPlans ? ['layer2_plan_pattern_analysis'] : ['layer4_unknown'],
       classificationSource: 'unknown',
       isBlockedFromTelecom: false,
       domainBreakdown,

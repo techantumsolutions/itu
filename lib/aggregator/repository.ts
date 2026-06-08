@@ -1,6 +1,7 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { isTelecomSystemPlan } from './telecom-validator'
 import { CatalogIntelligenceEngine } from './catalog-intelligence'
+import { isMobileTelecomDomain } from './catalog-intelligence/domain-registries'
 import { matchTrustedOperator } from './catalog-intelligence/trust-registry'
 import type {
   AggregatorProviderRow,
@@ -423,6 +424,7 @@ export async function aggListSystemOperators(params: {
   status?: string
   includeAllStatus?: boolean
   operatorDomain?: string
+  serviceDomain?: string
   mobileCatalogOnly?: boolean
 }) {
   const targetLimit = params.limit ?? 50
@@ -452,10 +454,12 @@ export async function aggListSystemOperators(params: {
     )
     if (params.country) filters.push(`country_id=eq.${enc(params.country)}`)
     if (params.q) filters.push(`system_operator_name=ilike.*${enc(params.q)}*`)
-    if (params.operatorDomain) {
-      filters.push(`operator_domain=eq.${enc(params.operatorDomain)}`)
+    if (params.serviceDomain) {
+      filters.push(`service_domain=eq.${enc(params.serviceDomain)}`)
     } else if (params.mobileCatalogOnly) {
-      filters.push('or=(service_domain.eq.MOBILE,operator_domain.eq.MOBILE)')
+      filters.push('service_domain=eq.MOBILE')
+    } else if (params.operatorDomain) {
+      filters.push(`operator_domain=eq.${enc(params.operatorDomain)}`)
     }
     const res = await supabaseRest(`system_operators?${filters.join('&')}`, { cache: 'no-store' })
     const rows = await jsonRowsOrEmpty(res)
@@ -486,7 +490,7 @@ export async function aggListSystemPlans(params: {
     'order=amount.asc',
   ]
   if (params.mobileCatalogOnly) {
-    filters.push('or=(service_domain.eq.MOBILE,service_domain.is.null)')
+    filters.push('service_domain=eq.MOBILE')
   } else if (params.serviceDomain) {
     filters.push(`service_domain=eq.${enc(params.serviceDomain)}`)
   }
@@ -598,7 +602,7 @@ export async function aggCleanupSystemOperatorsWithoutPlans(): Promise<number> {
 
   while (hasMore) {
     const res = await supabaseRest(
-      `system_operators?select=id,status,system_operator_name,country_id,failed_sync_count,last_valid_sync_at,is_trusted_telecom,updated_at&limit=1000&offset=${offset}`,
+      `system_operators?select=id,status,system_operator_name,country_id,failed_sync_count,last_valid_sync_at,is_trusted_telecom,updated_at,service_domain,operator_domain&limit=1000&offset=${offset}`,
       { cache: 'no-store' },
     )
     if (!res.ok) {
@@ -614,6 +618,8 @@ export async function aggCleanupSystemOperatorsWithoutPlans(): Promise<number> {
       last_valid_sync_at?: string | null
       is_trusted_telecom?: boolean
       updated_at?: string
+      service_domain?: string | null
+      operator_domain?: string | null
     }[]
     if (!rows || !rows.length) {
       hasMore = false
@@ -648,10 +654,49 @@ export async function aggCleanupSystemOperatorsWithoutPlans(): Promise<number> {
         failedSyncCount: row.failed_sync_count ?? 0,
         hasTelecomHistory: Boolean(row.last_valid_sync_at),
       })
+      const domainEval = promotionEval.domainEvaluation ?? engine.evaluateOperatorDomain({
+        operatorName: row.system_operator_name,
+        countryCode: row.country_id,
+        rawPlans: plans.map((plan) => ({
+          product_name: plan.system_plan_name,
+          description: plan.description,
+          type: plan.plan_type,
+          benefits: [],
+        })),
+      })
+
+      await aggPatchSystemOperatorDomain(row.id, {
+        operatorDomain: domainEval.domain,
+        operatorDomainConfidence: domainEval.confidence,
+        domainClassificationSource: domainEval.classificationSource,
+        serviceDomain: domainEval.domain,
+        serviceDomainConfidence: domainEval.confidence,
+        serviceDomainSource: domainEval.classificationSource,
+      })
+
+      const isMobileCatalogOperator =
+        isMobileTelecomDomain(domainEval.domain) && !domainEval.isBlockedFromTelecom
+
+      if (!isMobileCatalogOperator) {
+        if (row.status === 'ACTIVE') {
+          console.log(
+            `[Cleanup] Removing non-mobile operator '${row.system_operator_name}' (${row.id}) from catalog. Domain: ${domainEval.domain}`,
+          )
+          await supabaseRest(`system_operators?id=eq.${encodeURIComponent(row.id)}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              status: 'INACTIVE',
+              confidence_level: promotionEval.confidenceLevel,
+            }),
+          }).catch(() => {})
+          deactivatedCount++
+        }
+        continue
+      }
 
       const shouldKeepActive =
-        (trusted || promotionEval.shouldPromote) &&
-        (promotionEval.operatorDomain === 'MOBILE' || row.operator_domain === 'MOBILE')
+        (trusted || promotionEval.shouldPromote || telecomPlanCount >= 1) &&
+        isMobileTelecomDomain(promotionEval.operatorDomain)
       const shouldDeactivate = !shouldKeepActive && promotionEval.shouldDeactivate
 
       if (shouldKeepActive) {
@@ -1114,6 +1159,9 @@ export async function aggPatchSystemOperatorDomain(
     operatorDomain: string
     operatorDomainConfidence?: number
     domainClassificationSource?: string | null
+    serviceDomain?: string | null
+    serviceDomainConfidence?: number | null
+    serviceDomainSource?: string | null
   },
 ) {
   await supabaseRest(`system_operators?id=eq.${enc(systemOperatorId)}`, {
@@ -1122,6 +1170,9 @@ export async function aggPatchSystemOperatorDomain(
       operator_domain: patch.operatorDomain,
       operator_domain_confidence: patch.operatorDomainConfidence ?? null,
       domain_classification_source: patch.domainClassificationSource ?? null,
+      service_domain: patch.serviceDomain ?? patch.operatorDomain ?? null,
+      service_domain_confidence: patch.serviceDomainConfidence ?? patch.operatorDomainConfidence ?? null,
+      service_domain_source: patch.serviceDomainSource ?? patch.domainClassificationSource ?? null,
     }),
   }).catch(() => {})
 }

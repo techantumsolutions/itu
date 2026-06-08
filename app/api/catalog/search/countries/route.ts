@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { cacheGetJson, cacheSetJson } from '@/lib/cache/redis'
 import { rateLimit } from '@/lib/security/rate-limit'
 import { aggListSystemOperators } from '@/lib/aggregator/repository'
+import { isMobileCatalogOperator } from '@/lib/catalog/mobile-catalog-filter'
 
 export async function GET(request: Request) {
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anonymous'
@@ -14,9 +15,10 @@ export async function GET(request: Request) {
   const cached = await cacheGetJson(cacheKey)
   if (cached) return NextResponse.json(cached)
 
-  const rows = await aggListSystemOperators({ country: country || undefined, limit: 100, offset: 0 })
+  const rows = await aggListSystemOperators({ country: country || undefined, limit: 100, offset: 0, mobileCatalogOnly: true })
   const grouped = new Map<string, any[]>()
   for (const row of rows as any[]) {
+    if (!isMobileCatalogOperator(row)) continue
     const key = row.country_id
     if (!grouped.has(key)) grouped.set(key, [])
     grouped.get(key)?.push({

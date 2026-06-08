@@ -34,7 +34,7 @@ export async function GET(request: Request) {
       country: row.country_id,
       logo: row.logo,
       operatorType: row.operator_type,
-      operatorDomain: row.operator_domain ?? 'MOBILE',
+      serviceDomain: row.service_domain ?? null,
       status: row.status,
     })),
     pagination: {

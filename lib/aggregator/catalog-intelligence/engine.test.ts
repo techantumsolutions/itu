@@ -113,10 +113,12 @@ describe('CatalogIntelligenceEngine', () => {
         ['Steam', 'GAMING'],
         ['Amazon', 'RETAIL'],
         ['Hyatt Hotel', 'TRAVEL'],
+        ['Airtel DTH IND', 'DTH'],
       ] as const) {
         const result = engine.evaluateOperatorDomain({ operatorName: name, rawPlans: [{ product_name: `${name} voucher` }] })
         expect(result.domain).toBe(domain)
         expect(result.isBlockedFromTelecom).toBe(true)
+        expect(result.classificationSource).not.toBe('trusted_telecom_registry')
       }
     })
 

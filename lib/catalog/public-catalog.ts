@@ -138,7 +138,7 @@ async function listCountriesFromSystemOperators(): Promise<PublicCountry[]> {
   let hasMore = true
 
   while (hasMore) {
-    const rows = (await aggListSystemOperators({ limit: 1000, offset })) as Array<{
+    const rows = (await aggListSystemOperators({ limit: 1000, offset, mobileCatalogOnly: true })) as Array<{
       country_id: string
     }>
     if (!rows || !rows.length) {
@@ -218,7 +218,7 @@ async function listOperatorsFromInternalPlans(countryIso3: string): Promise<Publ
 export async function fetchPublicOperators(countryInput: string): Promise<PublicOperator[]> {
   const countryIso3 = normalizeCountryIso3(countryInput)
   if (!countryIso3) return []
-  console.log("fetchPublicOperators called")
+
   if (await isAggregatorSchemaReady()) {
     const rows = (await aggListSystemOperators({
       country: countryIso3,
@@ -231,30 +231,25 @@ export async function fetchPublicOperators(countryInput: string): Promise<Public
       country_id: string
       slug?: string
       logo?: string | null
-      operator_domain?: string | null
+      service_domain?: string | null
+      status?: string | null
     }>
-    const beforeFilter = rows.length
-    const filtered = rows.filter((row) => isMobileCatalogOperator(row))
-    console.log(
-      `[Public Catalog] fetchPublicOperators — Country: ${countryIso3} | DB rows: ${beforeFilter} | After filter: ${filtered.length}`,
-    )
-    if (filtered.length) {
-      return filtered.map((row) => ({
-          id: row.id,
-          code: row.id,
-          name: row.system_operator_name,
-          shortName: row.system_operator_name,
-          countryCode: toPublicCountryCode(row.country_id),
-          countryIso3: row.country_id,
-          logo: row.logo ?? null,
-        }))
-    }
+    return rows
+      .filter((row) => isMobileCatalogOperator(row))
+      .map((row) => ({
+        id: row.id,
+        code: row.id,
+        name: row.system_operator_name,
+        shortName: row.system_operator_name,
+        countryCode: toPublicCountryCode(row.country_id),
+        countryIso3: row.country_id,
+        logo: row.logo ?? null,
+      }))
   }
 
   try {
     const iso2 = toPublicCountryCode(countryIso3)
     const legacy = await dbFetchOperators(iso2.length === 2 ? iso2 : countryInput.toUpperCase())
-    console.log("legacy operators")
     return legacy.map((p) => ({
       id: p.code,
       code: p.code,
@@ -467,6 +462,20 @@ export async function fetchPublicPlans(input: {
 
   if (!operatorId && !operatorName) return []
 
+  const countryForOps = input.countryId ?? input.countryCode ?? ''
+  const mobileOperators = countryForOps ? await fetchPublicOperators(countryForOps) : []
+  const operatorAllowed =
+    !mobileOperators.length ||
+    mobileOperators.some(
+      (o) =>
+        (operatorId && (o.id === operatorId || o.code === operatorId)) ||
+        (operatorName && operatorNameMatches(o.name, operatorName)),
+    )
+
+  if ((await isAggregatorSchemaReady()) && mobileOperators.length > 0 && !operatorAllowed) {
+    return []
+  }
+
   let plans: PublicPlan[] = []
 
   if (operatorId && (await isAggregatorSchemaReady())) {
@@ -483,15 +492,15 @@ export async function fetchPublicPlans(input: {
     }
   }
 
-  if (!plans.length && countryIso3 && operatorId) {
+  if (!plans.length && countryIso3 && operatorId && !(await isAggregatorSchemaReady())) {
     plans = await listPlansFromInternalPlans(countryIso3, operatorId)
   }
 
-  if (!plans.length && countryIso3 && operatorName) {
+  if (!plans.length && countryIso3 && operatorName && !(await isAggregatorSchemaReady())) {
     plans = await listPlansFromInternalPlansByName(countryIso3, operatorName)
   }
 
-  if (!plans.length && operatorId) {
+  if (!plans.length && operatorId && !(await isAggregatorSchemaReady())) {
     try {
       const iso2 = countryIso3 ? toPublicCountryCode(countryIso3) : (input.countryCode ?? 'IN')
       const legacy = await dbFetchPlans(iso2, operatorId)
@@ -577,7 +586,7 @@ export async function fetchPublicOperatorCounts(): Promise<Record<string, number
   if (Object.keys(out).length) return out
 
   if (await isAggregatorSchemaReady()) {
-    const rows = (await aggListSystemOperators({ limit: 5000, offset: 0 })) as Array<{ country_id: string }>
+    const rows = (await aggListSystemOperators({ limit: 5000, offset: 0, mobileCatalogOnly: true })) as Array<{ country_id: string }>
     for (const row of rows) {
       const iso3 = (row.country_id ?? '').toUpperCase()
       const iso2 = toPublicCountryCode(iso3)

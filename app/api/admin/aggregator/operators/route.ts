@@ -100,8 +100,22 @@ export async function GET(request: Request) {
   const providerId = (searchParams.get('providerId') ?? '').trim()
   const q = (searchParams.get('q') ?? '').trim()
   const status = (searchParams.get('status') ?? '').trim().toUpperCase()
-  const operatorDomain = (searchParams.get('operatorDomain') ?? 'MOBILE').trim().toUpperCase()
+  const serviceDomain = (searchParams.get('serviceDomain') ?? searchParams.get('operatorDomain') ?? 'MOBILE').trim().toUpperCase()
   const includeAllDomains = searchParams.get('includeAllDomains') === 'true'
+
+  const listParams = {
+    limit: Number.isFinite(limit) ? limit : 5000,
+    offset: Number.isFinite(offset) ? offset : 0,
+    country: country || undefined,
+    q: q || undefined,
+    status: status || undefined,
+    includeAllStatus: true as const,
+    ...(includeAllDomains
+      ? {}
+      : serviceDomain === 'MOBILE'
+        ? { mobileCatalogOnly: true as const }
+        : { serviceDomain }),
+  }
 
   const [rawOperators, systemOperators, providers, mappingsRes, countriesRes] = await Promise.all([
     aggListRawOperators({
@@ -110,16 +124,7 @@ export async function GET(request: Request) {
       country: country || undefined,
       providerId: providerId || undefined,
     }),
-    aggListSystemOperators({
-      limit: Number.isFinite(limit) ? limit : 5000,
-      offset: Number.isFinite(offset) ? offset : 0,
-      country: country || undefined,
-      q: q || undefined,
-      status: status || undefined,
-      includeAllStatus: true,
-      operatorDomain: includeAllDomains ? undefined : operatorDomain || 'MOBILE',
-      mobileCatalogOnly: !includeAllDomains && !operatorDomain ? true : undefined,
-    }),
+    aggListSystemOperators(listParams),
     aggListProviders().catch(() => []),
     supabaseRest('operator_mappings?select=system_operator_id,service_provider_id&limit=10000', { cache: 'no-store' }).catch(
       () => null as Response | null,
@@ -182,14 +187,7 @@ export async function GET(request: Request) {
   if (mergedAny) {
     // Re-fetch system operators and mappings so returned data is updated
     const [reFetchedSystemOps, reFetchedMappings] = await Promise.all([
-      aggListSystemOperators({
-        limit: Number.isFinite(limit) ? limit : 5000,
-        offset: Number.isFinite(offset) ? offset : 0,
-        country: country || undefined,
-        q: q || undefined,
-        status: status || undefined,
-        includeAllStatus: true,
-      }),
+      aggListSystemOperators(listParams),
       supabaseRest('operator_mappings?select=system_operator_id,service_provider_id&limit=10000', { cache: 'no-store' }).catch(
         () => null as Response | null,
       ),

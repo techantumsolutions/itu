@@ -1,7 +1,11 @@
-import { normalizeOperatorForRegistry } from './trust-registry'
+import {
+  detectExplicitServiceDomain,
+  exactMobileBrandMatch,
+  normalizeOperatorForRegistry,
+} from './brand-intelligence'
 import type { NonTelecomOperatorMatch, OperatorDomain, OperatorDomainRegistryMatch } from './types'
 
-export { normalizeOperatorForRegistry }
+export { normalizeOperatorForRegistry } from './brand-intelligence'
 
 const BUILTIN_NON_TELECOM: NonTelecomOperatorMatch[] = [
   { normalizedName: 'CAFE COFFEE DAY', operatorName: 'Cafe Coffee Day', operatorDomain: 'FOOD', confidence: 98 },
@@ -26,6 +30,7 @@ const BUILTIN_NON_TELECOM: NonTelecomOperatorMatch[] = [
 
 const BUILTIN_DOMAIN_REGISTRY: OperatorDomainRegistryMatch[] = [
   { normalizedName: 'JIO', operatorName: 'Jio', operatorDomain: 'MOBILE', confidence: 99 },
+  { normalizedName: 'RELIANCE JIO', operatorName: 'Reliance Jio', operatorDomain: 'MOBILE', confidence: 99 },
   { normalizedName: 'JOI', operatorName: 'Joi', operatorDomain: 'MOBILE', confidence: 99 },
   { normalizedName: 'AIRTEL', operatorName: 'Airtel', operatorDomain: 'MOBILE', confidence: 99 },
   { normalizedName: 'VODAFONE', operatorName: 'Vodafone', operatorDomain: 'MOBILE', confidence: 99 },
@@ -41,49 +46,33 @@ const BUILTIN_DOMAIN_REGISTRY: OperatorDomainRegistryMatch[] = [
   { normalizedName: 'SAFARICOM', operatorName: 'Safaricom', operatorDomain: 'MOBILE', confidence: 98 },
 ]
 
-const OPERATOR_NAME_DOMAIN_PATTERNS: { regex: RegExp; domain: OperatorDomain; keyword: string }[] = [
-  { regex: /\b(cafe|coffee day|starbucks|dominos|kfc|mcdonalds|swiggy|zomato|food)\b/i, domain: 'FOOD', keyword: 'food_brand' },
-  { regex: /\b(hyatt|marriott|hotel|easemytrip|booking\.com|travel)\b/i, domain: 'TRAVEL', keyword: 'travel_brand' },
-  { regex: /\b(steam|xbox|playstation|nintendo|roblox|pubg|assassin|nikke|goddess of victory|game credits|gaming)\b/i, domain: 'GAMING', keyword: 'gaming_brand' },
-  { regex: /\b(netflix|spotify|crunchyroll|disney|hulu|prime video|youtube premium|ott)\b/i, domain: 'OTT', keyword: 'ott_brand' },
-  { regex: /\b(amazon|walmart|myntra|nykaa|bigbasket|retail|gift card|giftcard)\b/i, domain: 'RETAIL', keyword: 'retail_brand' },
-  { regex: /\b(uber|ola|cab|taxi)\b/i, domain: 'TRAVEL', keyword: 'ride_brand' },
-  { regex: /\b(dth|tatasky|airtel dth|dish tv)\b/i, domain: 'DTH', keyword: 'dth_brand' },
-  { regex: /\b(electricity|water bill|gas bill|utility)\b/i, domain: 'UTILITY', keyword: 'utility_brand' },
-]
-
-function namesMatch(candidate: string, target: string): boolean {
-  if (!candidate || !target) return false
-  if (candidate === target) return true
-  if (candidate.includes(target) || target.includes(candidate)) return true
-  const candidateTokens = candidate.split(' ').filter(Boolean)
-  const targetTokens = target.split(' ').filter(Boolean)
-  if (targetTokens.length === 1 && targetTokens[0]!.length >= 4) {
-    return candidateTokens.some((t) => t === targetTokens[0] || t.startsWith(targetTokens[0]!))
-  }
-  return targetTokens.every((t) => candidateTokens.includes(t))
+function exactRegistryMatch(candidate: string, entryNormalized: string): boolean {
+  if (!candidate || !entryNormalized) return false
+  if (candidate === entryNormalized) return true
+  return exactMobileBrandMatch(candidate, entryNormalized)
 }
 
 export function matchNonTelecomOperator(
   operatorName: string,
   dbMatches: NonTelecomOperatorMatch[] = [],
 ): NonTelecomOperatorMatch | null {
-  const normalized = normalizeOperatorForRegistry(operatorName)
-  if (!normalized) return null
-  for (const entry of [...dbMatches, ...BUILTIN_NON_TELECOM]) {
-    if (namesMatch(normalized, entry.normalizedName)) return entry
-  }
-  for (const pattern of OPERATOR_NAME_DOMAIN_PATTERNS) {
-    if (pattern.domain === 'MOBILE') continue
-    if (pattern.regex.test(operatorName)) {
-      return {
-        normalizedName: normalized,
-        operatorName,
-        operatorDomain: pattern.domain,
-        confidence: 90,
-      }
+  const explicit = detectExplicitServiceDomain(operatorName)
+  if (explicit && explicit.domain !== 'MOBILE') {
+    return {
+      normalizedName: explicit.profile.normalized,
+      operatorName,
+      operatorDomain: explicit.domain,
+      confidence: 95,
     }
   }
+
+  const normalized = normalizeOperatorForRegistry(operatorName)
+  if (!normalized) return null
+
+  for (const entry of [...dbMatches, ...BUILTIN_NON_TELECOM]) {
+    if (exactRegistryMatch(normalized, entry.normalizedName)) return entry
+  }
+
   return null
 }
 
@@ -91,10 +80,15 @@ export function matchOperatorDomainRegistry(
   operatorName: string,
   dbMatches: OperatorDomainRegistryMatch[] = [],
 ): OperatorDomainRegistryMatch | null {
+  const explicit = detectExplicitServiceDomain(operatorName)
+  if (explicit) return null
+
   const normalized = normalizeOperatorForRegistry(operatorName)
   if (!normalized) return null
+
   for (const entry of [...dbMatches, ...BUILTIN_DOMAIN_REGISTRY]) {
-    if (namesMatch(normalized, entry.normalizedName)) return entry
+    if (entry.operatorDomain !== 'MOBILE') continue
+    if (exactMobileBrandMatch(normalized, entry.normalizedName)) return entry
   }
   return null
 }

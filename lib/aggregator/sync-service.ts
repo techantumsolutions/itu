@@ -602,9 +602,9 @@ export async function syncAggregatorProvider(
         systemOperatorInput.operatorDomainConfidence = operatorPromotion.operatorDomainConfidence
         systemOperatorInput.domainClassificationSource =
           operatorPromotion.domainClassificationSource ?? domainEvalForOp.classificationSource
-        systemOperatorInput.serviceDomain = 'MOBILE'
-        systemOperatorInput.serviceDomainConfidence = operatorPromotion.operatorDomainConfidence
-        systemOperatorInput.serviceDomainSource = operatorPromotion.domainClassificationSource ?? domainEvalForOp.classificationSource
+        systemOperatorInput.serviceDomain = domainEvalForOp.domain
+        systemOperatorInput.serviceDomainConfidence = domainEvalForOp.confidence
+        systemOperatorInput.serviceDomainSource = domainEvalForOp.classificationSource
         const systemOperator = await aggUpsertSystemOperator(systemOperatorInput)
         if (systemOperator?.id) {
           systemOperatorId = systemOperator.id
@@ -651,6 +651,9 @@ export async function syncAggregatorProvider(
         operatorDomainConfidence: operatorPromotion.operatorDomainConfidence,
         domainClassificationSource:
           operatorPromotion.domainClassificationSource ?? domainEvalForOp.classificationSource,
+        serviceDomain: domainEvalForOp.domain,
+        serviceDomainConfidence: domainEvalForOp.confidence,
+        serviceDomainSource: domainEvalForOp.classificationSource,
       }).catch(() => {})
 
       for (const plan of plans) {

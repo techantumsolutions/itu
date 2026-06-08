@@ -1,6 +1,6 @@
-import { isGenuineTelecomOperatorName } from '@/lib/aggregator/operator-classifier'
-import { supabaseRest } from '@/lib/db/supabase-rest'
 import { aggListSystemOperators } from '@/lib/aggregator/repository'
+import { isMobileCatalogOperator } from '@/lib/catalog/mobile-catalog-filter'
+import { supabaseRest } from '@/lib/db/supabase-rest'
 import { countryDisplayName } from '@/lib/lcr/countries'
 import { ROUTING_PRODUCT_TYPE_OPTIONS } from '@/lib/routing/rule-form-options'
 
@@ -46,11 +46,9 @@ export async function fetchRoutingCountries(): Promise<{ iso3: string; label: st
 
 export async function fetchRoutingOperators(countryIso3: string) {
   const country = countryIso3.trim().toUpperCase()
-  const rows = (await aggListSystemOperators({ country, limit: 500, offset: 0 })) as Record<string, unknown>[]
+  const rows = (await aggListSystemOperators({ country, limit: 500, offset: 0, mobileCatalogOnly: true })) as Record<string, unknown>[]
   return rows
-    .filter((row) =>
-      isGenuineTelecomOperatorName(String(row.system_operator_name ?? ''), country),
-    )
+    .filter((row) => isMobileCatalogOperator(row))
     .map((row) => {
     const id = String(row.id ?? '')
     const name = String(row.system_operator_name ?? row.slug ?? id)

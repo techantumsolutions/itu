@@ -22,6 +22,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     q: q || undefined,
     limit: Number.isFinite(limit) ? limit : 50,
     offset: Number.isFinite(offset) ? offset : 0,
+    mobileCatalogOnly: true,
   })
   const payload = {
     plans: rows.map((row: any) => ({

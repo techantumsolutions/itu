@@ -536,8 +536,8 @@ export async function POST(request: Request) {
         let skippedNonMobile = 0
 
         for (const op of aggOps) {
-          const plansRes = await supabaseRest(`agg_plans?operator_id=eq.${op.id}&status=eq.active`, { cache: 'no-store' })
-          const aggPlans = await plansRes.json().catch(() => []) as any[]
+          const plansRes = await supabaseRest(`agg_plans?operator_id=eq.${op.id}&status=eq.active&service_domain=eq.MOBILE`, { cache: 'no-store' })
+          const aggPlans = (await plansRes.json().catch(() => [])) as any[]
 
           if (aggPlans.length === 0) {
             await supabaseRest(`agg_operators?id=eq.${op.id}`, {
@@ -595,6 +595,9 @@ export async function POST(request: Request) {
           systemOperatorInput.operatorDomain = domainEval.domain
           systemOperatorInput.operatorDomainConfidence = domainEval.confidence
           systemOperatorInput.domainClassificationSource = domainEval.classificationSource
+          systemOperatorInput.serviceDomain = 'MOBILE'
+          systemOperatorInput.serviceDomainConfidence = domainEval.confidence
+          systemOperatorInput.serviceDomainSource = domainEval.classificationSource
           const systemOperator = await aggUpsertSystemOperator(systemOperatorInput)
           if (!systemOperator?.id) continue
 
