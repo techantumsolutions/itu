@@ -41,7 +41,8 @@ import { getOrCreateCanonicalCountry } from '@/lib/aggregator/country-normalizer
 import { buildSystemOperatorInput } from '@/lib/aggregator/operator-normalizer'
 import { buildSystemPlanInput, scorePlanCandidate, isValidSystemPlan } from '@/lib/aggregator/plan-normalizer'
 import { validateOperatorTelecomService, validateRawOperatorPlans, extractRawPlanFields } from '@/lib/aggregator/telecom-validator'
-import { CatalogIntelligenceEngine, isMobileTelecomDomain } from '@/lib/aggregator/catalog-intelligence'
+import { CatalogIntelligenceEngine, isMobileTelecomDomain, segmentOperatorPlansAtIngestion } from '@/lib/aggregator/catalog-intelligence'
+import type { ServiceDomainSegment } from '@/lib/aggregator/catalog-intelligence/segmentation'
 
 import { extractPlanSignatureParts, sha256 } from '@/lib/aggregator/signature'
 import type { AggregatorSyncResult } from '@/lib/aggregator/types'
@@ -221,10 +222,65 @@ export async function syncAggregatorProvider(
 
     diag.stages.operator_classification.recordsReceived = normalized.length
 
-    // 1. Filter plans first based on validation rules and classifier outputs
-    const validPlans: NormalizedPlan[] = []
-    
+    // -------------------------------------------------------------------------
+    // STAGE 1 — Service domain segmentation (mandatory, before telecom pipeline)
+    // -------------------------------------------------------------------------
+    const allPlansByOperatorId = new Map<string, NormalizedPlan[]>()
     for (const plan of normalized) {
+      const op = rawOperatorFromPlan(plan)
+      if (!op.providerOperatorId) continue
+      if (!allPlansByOperatorId.has(op.providerOperatorId)) {
+        allPlansByOperatorId.set(op.providerOperatorId, [])
+      }
+      allPlansByOperatorId.get(op.providerOperatorId)!.push(plan)
+    }
+
+    const operatorSegmentCache = new Map<
+      string,
+      ReturnType<typeof segmentOperatorPlansAtIngestion>
+    >()
+    const planSegmentById = new Map<string, ServiceDomainSegment>()
+
+    for (const [operatorId, operatorPlans] of allPlansByOperatorId.entries()) {
+      const opMeta = rawOperatorFromPlan(operatorPlans[0]!)
+      const segmentation = segmentOperatorPlansAtIngestion(catalogEngine, {
+        operatorName: opMeta.providerOperatorName,
+        countryCode: opMeta.countryCode,
+        plans: operatorPlans.map((plan) => ({ raw: plan.raw ?? plan, plan })),
+      })
+      operatorSegmentCache.set(operatorId, segmentation)
+
+      await aggInsertOperatorDomainAudit({
+        operatorId,
+        operatorName: opMeta.providerOperatorName,
+        providerCode: config.code,
+        detectedDomain: segmentation.operatorEvaluation.domain,
+        confidence: segmentation.operatorEvaluation.confidence,
+        classificationSource: segmentation.operatorEvaluation.classificationSource,
+        matchedRules: segmentation.operatorEvaluation.matchedRules,
+        matchedKeywords: segmentation.operatorEvaluation.matchedKeywords,
+        syncRunId,
+        rejectionReason: segmentation.operatorEvaluation.rejectionReason ?? null,
+        domainBreakdown: segmentation.operatorEvaluation.domainBreakdown,
+      }).catch(() => {})
+
+      operatorPlans.forEach((plan, index) => {
+        const segment = segmentation.planSegments[index]
+        if (segment) planSegmentById.set(plan.providerPlanId, segment)
+      })
+    }
+
+    // -------------------------------------------------------------------------
+    // STAGE 2 — Mobile telecom intelligence (ONLY service_domain = MOBILE)
+    // -------------------------------------------------------------------------
+    const validPlans: NormalizedPlan[] = []
+
+    for (const plan of normalized) {
+      const segment = planSegmentById.get(plan.providerPlanId)
+      if (!segment?.entersMobileTelecomPipeline || segment.serviceDomain !== 'MOBILE') {
+        continue
+      }
+
       if (!isValidSystemPlan(plan)) {
         const planResult = classifyPlan(plan)
         await aggInsertClassificationAudit({
@@ -237,7 +293,12 @@ export async function syncAggregatorProvider(
           classification: planResult.classification,
           confidence: planResult.confidence,
           reasonCode: 'INVALID_SYSTEM_PLAN',
-          details: { reason: 'invalid_system_plan_format', retailAmount: plan.retailAmount, destinationAmount: plan.destinationAmount }
+          details: {
+            reason: 'invalid_system_plan_format',
+            serviceDomain: segment.serviceDomain,
+            retailAmount: plan.retailAmount,
+            destinationAmount: plan.destinationAmount,
+          },
         })
         continue
       }
@@ -267,7 +328,11 @@ export async function syncAggregatorProvider(
         classification: planResult.classification,
         confidence: planResult.confidence,
         reasonCode: planResult.reasonCode,
-        details: { retailAmount: plan.retailAmount, destinationAmount: plan.destinationAmount }
+        details: {
+          serviceDomain: segment.serviceDomain,
+          retailAmount: plan.retailAmount,
+          destinationAmount: plan.destinationAmount,
+        },
       })
 
       if (planDecision === 'ACCEPTED') {
@@ -288,18 +353,7 @@ export async function syncAggregatorProvider(
       }
     }
 
-    // Group ALL raw plans by operator for ratio and dominance analysis (Telecom Service Validation Gate)
-    const allPlansByOperatorId = new Map<string, NormalizedPlan[]>()
-    for (const plan of normalized) {
-      const op = rawOperatorFromPlan(plan)
-      if (!op.providerOperatorId) continue
-      if (!allPlansByOperatorId.has(op.providerOperatorId)) {
-        allPlansByOperatorId.set(op.providerOperatorId, [])
-      }
-      allPlansByOperatorId.get(op.providerOperatorId)!.push(plan)
-    }
-
-    // 2. Group valid plans by operator
+    // Group MOBILE-domain valid plans by operator for telecom promotion
     const plansByOperatorId = new Map<string, { op: ReturnType<typeof rawOperatorFromPlan>; plans: NormalizedPlan[] }>()
     for (const plan of validPlans) {
       const op = rawOperatorFromPlan(plan)
@@ -343,32 +397,38 @@ export async function syncAggregatorProvider(
         opDecision = 'PENDING_REVIEW'
       }
 
-      // --- Catalog intelligence operator promotion (soft filtering + domain gate) ---
-      const allOperatorPlans = allPlansByOperatorId.get(operatorId) || []
-      const domainEval = catalogEngine.evaluateOperatorDomain({
+      // --- Stage 3: Mobile catalog promotion gate ---
+      const operatorSegment = operatorSegmentCache.get(operatorId)
+      const domainEval = operatorSegment?.operatorEvaluation ?? catalogEngine.evaluateOperatorDomain({
         operatorName: data.op.providerOperatorName,
         countryCode: data.op.countryCode,
-        rawPlans: allOperatorPlans.map((p) => p.raw ?? p),
+        rawPlans: (allPlansByOperatorId.get(operatorId) || []).map((p) => p.raw ?? p),
       })
 
-      await aggInsertOperatorDomainAudit({
-        operatorId,
-        operatorName: data.op.providerOperatorName,
-        providerCode: config.code,
-        detectedDomain: domainEval.domain,
-        confidence: domainEval.confidence,
-        classificationSource: domainEval.classificationSource,
-        matchedRules: domainEval.matchedRules,
-        matchedKeywords: domainEval.matchedKeywords,
-        syncRunId,
-        rejectionReason: domainEval.rejectionReason ?? null,
-        domainBreakdown: domainEval.domainBreakdown,
-      }).catch(() => {})
+      if (!operatorSegment?.entersMobileTelecomPipeline) {
+        await aggInsertClassificationAudit({
+          providerCode: config.code,
+          providerOperatorId: operatorId,
+          entityType: 'operator',
+          entityName: data.op.providerOperatorName,
+          decision: 'REJECTED',
+          classification: 'NON_MOBILE_DOMAIN',
+          confidence: domainEval.confidence / 100,
+          reasonCode: domainEval.rejectionReason || `SERVICE_DOMAIN:${domainEval.domain}`,
+          details: {
+            serviceDomain: domainEval.domain,
+            mobilePlanCount: operatorSegment?.mobilePlanCount ?? 0,
+            entersMobileTelecomPipeline: false,
+          },
+        })
+        skippedOperators += 1
+        continue
+      }
 
       const promotionEval = catalogEngine.evaluateOperatorPromotion({
         operatorName: data.op.providerOperatorName,
         countryCode: data.op.countryCode,
-        rawPlans: allOperatorPlans.map((p) => p.raw ?? p),
+        rawPlans: (allPlansByOperatorId.get(operatorId) || []).map((p) => p.raw ?? p),
       })
 
       let finalOpDecision = opDecision
@@ -542,6 +602,9 @@ export async function syncAggregatorProvider(
         systemOperatorInput.operatorDomainConfidence = operatorPromotion.operatorDomainConfidence
         systemOperatorInput.domainClassificationSource =
           operatorPromotion.domainClassificationSource ?? domainEvalForOp.classificationSource
+        systemOperatorInput.serviceDomain = 'MOBILE'
+        systemOperatorInput.serviceDomainConfidence = operatorPromotion.operatorDomainConfidence
+        systemOperatorInput.serviceDomainSource = operatorPromotion.domainClassificationSource ?? domainEvalForOp.classificationSource
         const systemOperator = await aggUpsertSystemOperator(systemOperatorInput)
         if (systemOperator?.id) {
           systemOperatorId = systemOperator.id
@@ -603,6 +666,7 @@ export async function syncAggregatorProvider(
 
         const parts = extractPlanSignatureParts(plan)
         const planIntel = catalogEngine.classifyNormalizedPlan(plan, telecomOperatorName, op.countryCode)
+        const planSegment = planSegmentById.get(plan.providerPlanId)
         const rawPlan = await aggUpsertRawPlan({
           providerId,
           providerPlanId: plan.providerPlanId,
@@ -632,6 +696,9 @@ export async function syncAggregatorProvider(
           catalogStatus: planIntel.catalogStatus,
           confidenceLevel: planIntel.confidenceLevel,
           confidenceScore: planIntel.confidenceScore,
+          serviceDomain: planSegment?.serviceDomain ?? 'MOBILE',
+          serviceDomainConfidence: planSegment?.confidence ?? null,
+          serviceDomainSource: planSegment?.source ?? null,
         })
         if (!rawPlan?.id) continue
 
@@ -708,6 +775,9 @@ export async function syncAggregatorProvider(
               catalog_status: planIntel.catalogStatus,
               confidence_level: planIntel.confidenceLevel,
               confidence_score: planIntel.confidenceScore,
+              service_domain: planSegment?.serviceDomain ?? 'MOBILE',
+              service_domain_confidence: planSegment?.confidence ?? null,
+              service_domain_source: planSegment?.source ?? null,
               status: planIntel.catalogStatus === 'NON_TELECOM' ? 'INACTIVE' : 'ACTIVE',
             }),
           }).catch(() => {})

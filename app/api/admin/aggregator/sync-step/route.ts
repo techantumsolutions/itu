@@ -16,6 +16,8 @@ import {
   aggInsertOperatorDomainAudit,
 } from '@/lib/aggregator/repository'
 import { CatalogIntelligenceEngine, isMobileTelecomDomain } from '@/lib/aggregator/catalog-intelligence'
+import { classifyPlanDomain } from '@/lib/aggregator/catalog-intelligence/plan-domain'
+import { resolvePlanServiceDomain } from '@/lib/aggregator/catalog-intelligence/segmentation'
 import { getConnector } from '@/lib/providers/registry'
 import { rowToProviderConfig } from '@/lib/lcr-v2/provider-credentials'
 import { getOrCreateCanonicalCountry } from '@/lib/aggregator/country-normalizer'
@@ -215,6 +217,13 @@ export async function POST(request: Request) {
       }
 
       case 'step4_normalize': {
+        const { trustedOperators, domainRegistry, nonTelecomRegistry } = await aggLoadCatalogIntelligenceRegistries().catch(() => ({
+          trustedOperators: [],
+          domainRegistry: [],
+          nonTelecomRegistry: [],
+        }))
+        const catalogEngine = new CatalogIntelligenceEngine(trustedOperators, domainRegistry, nonTelecomRegistry)
+
         // Clear previous staging catalog tables for this provider code
         await supabaseRest(`agg_plans?provider=eq.${config.code}`, { method: 'DELETE' })
         await supabaseRest(`agg_operators?provider=eq.${config.code}`, { method: 'DELETE' })
@@ -249,15 +258,39 @@ export async function POST(request: Request) {
         }
 
         const validCountries = new Set(countryMap.keys())
+        const operatorDomainByAggId = new Map<number, ReturnType<typeof catalogEngine.evaluateOperatorDomain>>()
+        const operatorPlansByAggId = new Map<number, unknown[]>()
+
+        for (const rp of rawPlans) {
+          const rawOp = rawOps.find((o) => o.id === rp.provider_operator_raw_id)
+          if (!rawOp) continue
+          const aggOpId = stringToBigInt(rawOp.provider_operator_id)
+          if (!operatorPlansByAggId.has(aggOpId)) operatorPlansByAggId.set(aggOpId, [])
+          operatorPlansByAggId.get(aggOpId)!.push(rp.raw_json || {})
+        }
+
         const opsInput = rawOps.map((op) => {
           const iso3 = String(op.iso_code || op.country_code || 'UNK').toUpperCase()
+          const aggOpId = stringToBigInt(op.provider_operator_id)
+          const domainEval = catalogEngine.evaluateOperatorDomain({
+            operatorName: op.provider_operator_name,
+            countryCode: iso3.length === 3 ? iso3 : countries.alpha2ToAlpha3(iso3) || iso3,
+            rawPlans: operatorPlansByAggId.get(aggOpId) || [],
+          })
+          operatorDomainByAggId.set(aggOpId, domainEval)
           return {
             provider: config.code as any,
-            aggregator_operator_id: stringToBigInt(op.provider_operator_id),
+            aggregator_operator_id: aggOpId,
             country_iso3: iso3.length === 3 ? iso3 : countries.alpha2ToAlpha3(iso3) || 'UNK',
             name: op.provider_operator_name,
             regions: [],
             raw_response: op.raw_response_json,
+            service_domain: domainEval.domain,
+            service_domain_confidence: domainEval.confidence,
+            service_domain_source: domainEval.classificationSource,
+            operator_domain: domainEval.domain,
+            operator_domain_confidence: domainEval.confidence,
+            domain_classification_source: domainEval.classificationSource,
           }
         }).filter((o) => validCountries.has(o.country_iso3))
 
@@ -276,6 +309,11 @@ export async function POST(request: Request) {
           const aggOpId = stringToBigInt(rawOp.provider_operator_id)
           const dbOpUuid = opIdMap.get(aggOpId)
           if (!dbOpUuid) return null
+          const domainEval = operatorDomainByAggId.get(aggOpId)
+          const planDomainEval = classifyPlanDomain(rp.raw_json || {}, rawOp.provider_operator_name)
+          const segment = domainEval
+            ? resolvePlanServiceDomain({ operatorEvaluation: domainEval, planEvaluation: planDomainEval })
+            : null
 
           return {
             provider: config.code as any,
@@ -287,6 +325,9 @@ export async function POST(request: Request) {
             retail_amount: rp.amount ? Number(rp.amount) : null,
             currency_unit: rp.currency,
             raw_response: rp.raw_json,
+            service_domain: segment?.serviceDomain ?? domainEval?.domain ?? 'UNKNOWN',
+            service_domain_confidence: segment?.confidence ?? domainEval?.confidence ?? 0,
+            service_domain_source: segment?.source ?? domainEval?.classificationSource ?? 'unknown',
           }
         }).filter(Boolean) as any[]
 

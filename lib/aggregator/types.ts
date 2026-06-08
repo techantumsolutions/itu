@@ -64,6 +64,9 @@ export type RawPlanInput = {
   catalogStatus?: string | null
   confidenceLevel?: string | null
   confidenceScore?: number | null
+  serviceDomain?: string | null
+  serviceDomainConfidence?: number | null
+  serviceDomainSource?: string | null
 }
 
 export type SystemOperatorInput = {
@@ -76,6 +79,9 @@ export type SystemOperatorInput = {
   operatorDomain?: string | null
   operatorDomainConfidence?: number | null
   domainClassificationSource?: string | null
+  serviceDomain?: string | null
+  serviceDomainConfidence?: number | null
+  serviceDomainSource?: string | null
 }
 
 export type SystemPlanInput = {
@@ -96,6 +102,9 @@ export type SystemPlanInput = {
   catalogStatus?: string | null
   confidenceLevel?: string | null
   confidenceScore?: number | null
+  serviceDomain?: string | null
+  serviceDomainConfidence?: number | null
+  serviceDomainSource?: string | null
 }
 
 export type DuplicateCandidate = {

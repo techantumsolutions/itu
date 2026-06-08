@@ -4,10 +4,11 @@ import { isMobileTelecomDomain, matchNonTelecomOperator } from '@/lib/aggregator
 export function isMobileCatalogOperator(row: {
   system_operator_name?: string | null
   operator_domain?: string | null
+  service_domain?: string | null
   country_id?: string | null
 }): boolean {
-  const domain = String(row.operator_domain ?? '').toUpperCase()
-  if (domain) return isMobileTelecomDomain(domain)
+  const serviceDomain = String(row.service_domain ?? row.operator_domain ?? '').toUpperCase()
+  if (serviceDomain) return isMobileTelecomDomain(serviceDomain)
 
   const name = String(row.system_operator_name ?? '')
   if (matchNonTelecomOperator(name)) return false
