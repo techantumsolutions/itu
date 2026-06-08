@@ -61,6 +61,12 @@ export async function dbUpsertAggOperators(
     name: string
     regions?: unknown
     raw_response?: unknown
+    service_domain?: string | null
+    service_domain_confidence?: number | null
+    service_domain_source?: string | null
+    operator_domain?: string | null
+    operator_domain_confidence?: number | null
+    domain_classification_source?: string | null
   }>
 ) {
   if (!rows.length) return
@@ -87,6 +93,12 @@ export async function dbUpsertAggOperators(
         regions: r.regions ?? [],
         raw_response: r.raw_response ?? {},
         status: 'active',
+        service_domain: r.service_domain ?? null,
+        service_domain_confidence: r.service_domain_confidence ?? null,
+        service_domain_source: r.service_domain_source ?? null,
+        operator_domain: r.operator_domain ?? r.service_domain ?? null,
+        operator_domain_confidence: r.operator_domain_confidence ?? r.service_domain_confidence ?? null,
+        domain_classification_source: r.domain_classification_source ?? r.service_domain_source ?? null,
       }))
     ),
   })
@@ -179,6 +191,12 @@ export async function dbUpsertAggPlans(
     validity_unit?: string | null
     tags?: string[]
     raw_response?: unknown
+    service_domain?: string | null
+    service_domain_confidence?: number | null
+    service_domain_source?: string | null
+    operator_domain?: string | null
+    operator_domain_confidence?: number | null
+    domain_classification_source?: string | null
   }>
 ) {
   if (!rows.length) return
@@ -223,6 +241,9 @@ export async function dbUpsertAggPlans(
         tags: r.tags ?? [],
         raw_response: r.raw_response ?? {},
         status: 'active',
+        service_domain: r.service_domain ?? null,
+        service_domain_confidence: r.service_domain_confidence ?? null,
+        service_domain_source: r.service_domain_source ?? null,
       }))
     ),
   })

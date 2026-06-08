@@ -477,6 +477,7 @@ export async function fetchPublicPlans(input: {
         q: input.search,
         limit,
         offset: 0,
+        mobileCatalogOnly: true,
       })) as Record<string, unknown>[]
       if (rows.length) plans = rows.map((r) => systemPlanToPublic(r, operatorId))
     }

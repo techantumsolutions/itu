@@ -9,7 +9,11 @@ export type OperatorDomain =
   | 'TRAVEL'
   | 'FOOD'
   | 'BANKING'
+  | 'WALLET'
   | 'UNKNOWN'
+
+/** Canonical service-domain label used at ingestion and in catalog streams. */
+export type ServiceDomain = OperatorDomain
 
 export type PlanDomainClassification = {
   domain: OperatorDomain
