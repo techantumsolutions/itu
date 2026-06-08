@@ -129,6 +129,7 @@ function renderCell(row: Record<string, unknown>, column: IntegrationColumn) {
   }
 
   const text = formatPlain(primaryRaw)
+  if (column.key === 'confidence_level') return <ConfidenceBadge value={text} />
   if (column.badge) return <StatusBadge value={text} />
   return text
 }
@@ -162,11 +163,13 @@ export function IntegrationDataPage({
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [countryFilter, setCountryFilter] = useState('ALL')
+  const [confidenceFilter, setConfidenceFilter] = useState('ALL')
 
   const statusKey = filtersConfig?.statusKey ?? columns.find((c) => c.key === 'status')?.key
   const countryKey =
     filtersConfig?.countryKey ??
     columns.find((c) => ['country_id', 'iso_code', 'country_iso3'].includes(c.key))?.key
+  const confidenceKey = columns.find((c) => c.key === 'confidence_level')?.key
 
   const showActions = Boolean(renderRowActions)
   const colSpan = columns.length + (showActions ? 1 : 0)
@@ -223,9 +226,12 @@ export function IntegrationDataPage({
       if (countryKey && countryFilter !== 'ALL') {
         if (formatPlain(rawValue(row, countryKey)).toUpperCase() !== countryFilter.toUpperCase()) return false
       }
+      if (confidenceKey && confidenceFilter !== 'ALL') {
+        if (formatPlain(rawValue(row, confidenceKey)).toUpperCase() !== confidenceFilter.toUpperCase()) return false
+      }
       return true
     })
-  }, [rows, search, statusFilter, countryFilter, statusKey, countryKey, columns])
+  }, [rows, search, statusFilter, countryFilter, statusKey, countryKey, confidenceKey, confidenceFilter, columns])
 
   async function syncProvider(providerId: string) {
     setSyncingId(providerId)
@@ -342,6 +348,22 @@ export function IntegrationDataPage({
                 </SelectContent>
               </Select>
             ) : null}
+            {confidenceKey ? (
+              <Select value={confidenceFilter} onValueChange={setConfidenceFilter}>
+                <SelectTrigger className="w-[180px] bg-background border-border/80">
+                  <SelectValue placeholder="Confidence" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All confidence</SelectItem>
+                  <SelectItem value="HIGH_CONFIDENCE_TELECOM">High Telecom</SelectItem>
+                  <SelectItem value="MEDIUM_CONFIDENCE_TELECOM">Medium Telecom</SelectItem>
+                  <SelectItem value="LOW_CONFIDENCE_TELECOM">Low Telecom</SelectItem>
+                  <SelectItem value="UNKNOWN">Unknown</SelectItem>
+                  <SelectItem value="SUSPICIOUS_NON_TELECOM">Suspicious Non-Telecom</SelectItem>
+                  <SelectItem value="CONFIRMED_NON_TELECOM">Confirmed Non-Telecom</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : null}
             {!loading ? (
               <span className="text-xs text-muted-foreground">
                 {filteredRows.length} of {rows.length}
@@ -401,6 +423,35 @@ export function StatusBadge({ value }: { value: unknown }) {
   const label = String(value ?? 'unknown')
   const active = ['ACTIVE', 'active', 'online', 'SUCCESS', 'true', 'completed'].includes(label)
   return <Badge variant={active ? 'default' : 'secondary'}>{label}</Badge>
+}
+
+export function ConfidenceBadge({ value }: { value: unknown }) {
+  const label = String(value ?? 'UNKNOWN').trim().toUpperCase()
+  
+  let variantClass = 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20 font-semibold'
+  if (label.includes('HIGH')) {
+    variantClass = 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 font-semibold'
+  } else if (label.includes('MEDIUM')) {
+    variantClass = 'bg-blue-500/10 text-blue-500 border-blue-500/20 font-semibold'
+  } else if (label.includes('LOW')) {
+    variantClass = 'bg-amber-500/10 text-amber-500 border-amber-500/20 font-semibold'
+  } else if (label.includes('SUSPICIOUS')) {
+    variantClass = 'bg-orange-500/10 text-orange-500 border-orange-500/20 font-semibold'
+  } else if (label.includes('CONFIRMED_NON')) {
+    variantClass = 'bg-red-500/10 text-red-500 border-red-500/20 font-semibold'
+  }
+
+  const displayLabel = label
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+
+  return (
+    <Badge variant="outline" className={`whitespace-nowrap ${variantClass}`}>
+      {displayLabel}
+    </Badge>
+  )
 }
 
 export function IntegrationRowActions({ children }: { children: ReactNode }) {

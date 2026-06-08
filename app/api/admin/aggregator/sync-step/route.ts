@@ -14,6 +14,7 @@ import {
   aggInsertPlanClassificationAudit,
   aggInsertCatalogReviewQueue,
   aggInsertOperatorDomainAudit,
+  aggMergeDuplicateSystemOperators,
 } from '@/lib/aggregator/repository'
 import { CatalogIntelligenceEngine, isMobileTelecomDomain } from '@/lib/aggregator/catalog-intelligence'
 import { classifyPlanDomain } from '@/lib/aggregator/catalog-intelligence/plan-domain'
@@ -382,7 +383,46 @@ export async function POST(request: Request) {
           const plansRes = await supabaseRest(`agg_plans?operator_id=eq.${op.id}`, { cache: 'no-store' })
           const aggPlans = await plansRes.json().catch(() => []) as any[]
 
-          const validatorPlans = aggPlans.map((p) => ({
+          // Filter out digital product plans in telecom check
+          const digitalProductPlans: any[] = []
+          const telecomPlans = aggPlans.filter((p) => {
+            const raw = p.raw_response || {}
+            const rawBenefits = raw.Benefits || raw.benefits || raw.BenefitsJson || []
+            let isDigital = false
+            if (Array.isArray(rawBenefits)) {
+              isDigital = rawBenefits.some(b => 
+                b === 'DigitalProduct' || 
+                (typeof b === 'object' && b !== null && (b.type === 'DigitalProduct' || b.Type === 'DigitalProduct'))
+              )
+            }
+            if (isDigital) {
+              digitalProductPlans.push(p)
+              return false
+            }
+            return true
+          })
+
+          for (const dpPlan of digitalProductPlans) {
+            await supabaseRest(`agg_plans?id=eq.${dpPlan.id}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ status: 'inactive' }),
+            }).catch(() => {})
+          }
+
+          if (telecomPlans.length === 0) {
+            await supabaseRest(`agg_operators?id=eq.${op.id}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ status: 'inactive' }),
+            })
+            await supabaseRest(`agg_plans?operator_id=eq.${op.id}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ status: 'inactive' }),
+            })
+            inactiveCount++
+            continue
+          }
+
+          const validatorPlans = telecomPlans.map((p) => ({
             raw: p.raw_response || {},
             benefits: Array.isArray(p.raw_response?.benefits || p.raw_response?.Benefits)
               ? (p.raw_response?.benefits || p.raw_response?.Benefits)
@@ -539,18 +579,75 @@ export async function POST(request: Request) {
           const plansRes = await supabaseRest(`agg_plans?operator_id=eq.${op.id}&status=eq.active&service_domain=eq.MOBILE`, { cache: 'no-store' })
           const aggPlans = (await plansRes.json().catch(() => [])) as any[]
 
-          if (aggPlans.length === 0) {
+          // Filter out plans having benefits array containing "DigitalProduct"
+          const digitalProductPlans: any[] = []
+          const telecomPlans = aggPlans.filter((plan) => {
+            const raw = plan.raw_response || {}
+            const rawBenefits = raw.Benefits || raw.benefits || raw.BenefitsJson || []
+            let isDigital = false
+            if (Array.isArray(rawBenefits)) {
+              isDigital = rawBenefits.some(b => 
+                b === 'DigitalProduct' || 
+                (typeof b === 'object' && b !== null && (b.type === 'DigitalProduct' || b.Type === 'DigitalProduct'))
+              )
+            }
+            if (isDigital) {
+              digitalProductPlans.push(plan)
+              return false
+            }
+            return true
+          })
+
+          // Mark digital product plans as inactive in agg_plans and system_plans
+          for (const dpPlan of digitalProductPlans) {
+            await supabaseRest(`agg_plans?id=eq.${dpPlan.id}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ status: 'inactive' }),
+            }).catch(() => {})
+
+            const mapRes = await supabaseRest(`plan_mappings?service_provider_id=eq.${providerId}&provider_plan_id=eq.${dpPlan.aggregator_plan_id}&limit=1`, { cache: 'no-store' })
+            const mapRows = await mapRes.json().catch(() => []) as any[]
+            if (mapRows[0]?.system_plan_id) {
+              await supabaseRest(`system_plans?id=eq.${mapRows[0].system_plan_id}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ status: 'INACTIVE' })
+              }).catch(() => {})
+            }
+          }
+
+          if (telecomPlans.length === 0) {
             await supabaseRest(`agg_operators?id=eq.${op.id}`, {
               method: 'PATCH',
               body: JSON.stringify({ status: 'inactive' }),
             })
+
+            // If we have an existing mapping to a system operator, set it to INACTIVE as well as its plans
+            const rawOpRes = await supabaseRest(`provider_operator_raw?service_provider_id=eq.${providerId}&provider_operator_name=eq.${encodeURIComponent(op.name)}&limit=1`, { cache: 'no-store' })
+            const rawOpRows = await rawOpRes.json().catch(() => []) as any[]
+            const rawOpId = rawOpRows[0]?.id
+            if (rawOpId) {
+              const opMapRes = await supabaseRest(`operator_mappings?service_provider_id=eq.${providerId}&provider_operator_raw_id=eq.${rawOpId}&limit=1`, { cache: 'no-store' })
+              const opMapRows = await opMapRes.json().catch(() => []) as any[]
+              if (opMapRows[0]?.system_operator_id) {
+                const sysOpId = opMapRows[0].system_operator_id
+                await supabaseRest(`system_operators?id=eq.${sysOpId}`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({ status: 'INACTIVE' })
+                }).catch(() => {})
+
+                await supabaseRest(`system_plans?system_operator_id=eq.${sysOpId}`, {
+                  method: 'PATCH',
+                  body: JSON.stringify({ status: 'INACTIVE' })
+                }).catch(() => {})
+              }
+            }
             continue
           }
 
           const domainEval = catalogEngine.evaluateOperatorDomain({
             operatorName: op.name,
             countryCode: op.country_iso3,
-            rawPlans: aggPlans.map((p) => p.raw_response || {}),
+            rawPlans: telecomPlans.map((p) => p.raw_response || {}),
           })
 
           if (!isMobileTelecomDomain(domainEval.domain)) {
@@ -563,6 +660,11 @@ export async function POST(request: Request) {
                 operator_domain_confidence: domainEval.confidence,
                 domain_classification_source: domainEval.classificationSource,
               }),
+            }).catch(() => {})
+            // Also deactivate the remaining plans
+            await supabaseRest(`agg_plans?operator_id=eq.${op.id}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ status: 'inactive' }),
             }).catch(() => {})
             await aggInsertOperatorDomainAudit({
               operatorId: String(op.id),
@@ -586,7 +688,7 @@ export async function POST(request: Request) {
             countryIso3: op.country_iso3,
             operatorName: op.name,
             operatorRef: `system_promote:${op.id}`,
-            service: aggPlans[0].type || 'Mobile',
+            service: telecomPlans[0].type || 'Mobile',
             raw: op.raw_response,
           } as any
 
@@ -620,7 +722,7 @@ export async function POST(request: Request) {
             })
           }
 
-          for (const plan of aggPlans) {
+          for (const plan of telecomPlans) {
             // Promoting plans
             const fields = extractRawPlanFields(plan.raw_response)
             const serviceStr = fields.serviceName || (plan.type === 'DATA' || String(plan.type).toUpperCase().includes('DATA') ? 'Data' : 'Mobile')
@@ -680,9 +782,17 @@ export async function POST(request: Request) {
           }
         }
 
+        // Merge duplicate system operators
+        let mergedCount = 0
+        try {
+          mergedCount = await aggMergeDuplicateSystemOperators('system-sync')
+        } catch (mergeErr) {
+          console.error('Failed to merge duplicate system operators:', mergeErr)
+        }
+
         return NextResponse.json({
           success: true,
-          message: `Staging promotion complete. Promoted ${promotedOps} MOBILE operators and ${promotedPlans} system plans. Skipped ${skippedNonMobile} non-mobile domain operators.`,
+          message: `Staging promotion complete. Promoted ${promotedOps} MOBILE operators and ${promotedPlans} system plans. Skipped ${skippedNonMobile} non-mobile domain operators. Merged ${mergedCount} duplicate operators.`,
         })
       }
 
@@ -706,18 +816,24 @@ export async function POST(request: Request) {
 
           if (!rawPlan) continue
 
-          const planIntel = catalogEngine.classifyRawPlan({
-            raw: rawPlan.raw_json || rawPlan,
-            providerCategory: rawPlan.plan_type,
-          })
+          // Check if it has DigitalProduct benefit
+          const raw = rawPlan.raw_json || rawPlan
+          const rawBenefits = raw.Benefits || raw.benefits || raw.BenefitsJson || []
+          let isDigital = false
+          if (Array.isArray(rawBenefits)) {
+            isDigital = rawBenefits.some(b => 
+              b === 'DigitalProduct' || 
+              (typeof b === 'object' && b !== null && (b.type === 'DigitalProduct' || b.Type === 'DigitalProduct'))
+            )
+          }
 
           await supabaseRest(`provider_plans_raw?id=eq.${rawPlanId}`, {
             method: 'PATCH',
             body: JSON.stringify({
-              catalog_status: planIntel.catalogStatus,
-              confidence_level: planIntel.confidenceLevel,
-              confidence_score: planIntel.confidenceScore,
-              status: planIntel.catalogStatus === 'ACTIVE' ? 'active' : planIntel.catalogStatus.toLowerCase(),
+              catalog_status: isDigital ? 'NON_TELECOM' : planIntel.catalogStatus,
+              confidence_level: isDigital ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
+              confidence_score: isDigital ? 0.1 : planIntel.confidenceScore,
+              status: isDigital || planIntel.catalogStatus === 'NON_TELECOM' ? 'non_telecom' : planIntel.catalogStatus.toLowerCase(),
             }),
           }).catch(() => {})
 
@@ -725,41 +841,41 @@ export async function POST(request: Request) {
             providerCode: config.code,
             providerPlanRawId: rawPlanId,
             providerPlanId: rawPlan.provider_plan_id,
-            classification: planIntel.confidenceLevel,
-            confidenceLevel: planIntel.confidenceLevel,
-            confidenceScore: planIntel.confidenceScore,
-            catalogStatus: planIntel.catalogStatus,
-            matchedKeywords: planIntel.matchedKeywords,
-            confidenceBreakdown: planIntel.layerScores,
-            rejectionReason: planIntel.rejectionReason ?? null,
+            classification: isDigital ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
+            confidenceLevel: isDigital ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
+            confidenceScore: isDigital ? 0.1 : planIntel.confidenceScore,
+            catalogStatus: isDigital ? 'NON_TELECOM' : planIntel.catalogStatus,
+            matchedKeywords: isDigital ? ['DigitalProduct'] : planIntel.matchedKeywords,
+            confidenceBreakdown: isDigital ? {} : planIntel.layerScores,
+            rejectionReason: isDigital ? 'DIGITAL_PRODUCT_BENEFIT' : (planIntel.rejectionReason ?? null),
           }).catch(() => {})
 
           const systemPatch = {
-            catalog_status: planIntel.catalogStatus,
-            confidence_level: planIntel.confidenceLevel,
-            confidence_score: planIntel.confidenceScore,
-            status: planIntel.catalogStatus === 'NON_TELECOM' ? 'INACTIVE' : 'ACTIVE',
+            catalog_status: isDigital ? 'NON_TELECOM' : planIntel.catalogStatus,
+            confidence_level: isDigital ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
+            confidence_score: isDigital ? 0.1 : planIntel.confidenceScore,
+            status: isDigital || planIntel.catalogStatus === 'NON_TELECOM' ? 'INACTIVE' : 'ACTIVE',
           }
           await supabaseRest(`system_plans?id=eq.${sysPlanId}`, {
             method: 'PATCH',
             body: JSON.stringify(systemPatch),
           }).catch(() => {})
 
-          if (planIntel.catalogStatus === 'NON_TELECOM' || planIntel.catalogStatus === 'QUARANTINED') {
+          if (isDigital || planIntel.catalogStatus === 'NON_TELECOM' || planIntel.catalogStatus === 'QUARANTINED') {
             quarantinedPlans++
-            if (planIntel.shouldQuarantine) {
+            if (isDigital || planIntel.shouldQuarantine) {
               await aggInsertCatalogReviewQueue({
                 providerCode: config.code,
                 providerPlanRawId: rawPlanId,
                 providerPlanId: rawPlan.provider_plan_id,
                 entityType: 'plan',
                 entityName: rawPlan.provider_plan_name || rawPlan.provider_plan_id,
-                confidenceLevel: planIntel.confidenceLevel,
-                confidenceScore: planIntel.confidenceScore,
-                classification: planIntel.confidenceLevel,
-                catalogStatus: planIntel.catalogStatus,
+                confidenceLevel: isDigital ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
+                confidenceScore: isDigital ? 0.1 : planIntel.confidenceScore,
+                classification: isDigital ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
+                catalogStatus: isDigital ? 'NON_TELECOM' : planIntel.catalogStatus,
                 rawPayload: rawPlan.raw_json,
-                notes: planIntel.rejectionReason ?? null,
+                notes: isDigital ? 'DIGITAL_PRODUCT_BENEFIT' : (planIntel.rejectionReason ?? null),
               }).catch(() => {})
             }
           } else if (planIntel.catalogStatus === 'REVIEW') {

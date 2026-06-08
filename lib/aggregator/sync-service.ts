@@ -65,6 +65,7 @@ import {
   aggUpsertSystemPlan,
   aggUpsertFilteredOperator,
   aggCleanupSystemOperatorsWithoutPlans,
+  aggMergeDuplicateSystemOperators,
   aggStartSyncRun,
   aggUpdateSyncRun,
   aggInsertClassificationAudit,
@@ -840,6 +841,13 @@ export async function syncAggregatorProvider(
       await aggCleanupSystemOperatorsWithoutPlans()
     } catch (cleanupErr) {
       console.error('Failed to cleanup operators without plans:', cleanupErr)
+    }
+
+    // Merge duplicate system operators
+    try {
+      await aggMergeDuplicateSystemOperators('system-sync')
+    } catch (mergeErr) {
+      console.error('Failed to merge duplicate system operators:', mergeErr)
     }
 
     const durationMs = Date.now() - started

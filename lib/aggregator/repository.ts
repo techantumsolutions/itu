@@ -1,5 +1,6 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { isTelecomSystemPlan } from './telecom-validator'
+import { ISO3_TO_ISO2 } from '@/lib/lcr/countries'
 import { CatalogIntelligenceEngine } from './catalog-intelligence'
 import { isMobileTelecomDomain } from './catalog-intelligence/domain-registries'
 import { matchTrustedOperator } from './catalog-intelligence/trust-registry'
@@ -426,6 +427,7 @@ export async function aggListSystemOperators(params: {
   operatorDomain?: string
   serviceDomain?: string
   mobileCatalogOnly?: boolean
+  confidenceLevel?: string
 }) {
   const targetLimit = params.limit ?? 50
   const startOffset = params.offset ?? 0
@@ -453,6 +455,7 @@ export async function aggListSystemOperators(params: {
       'order=system_operator_name.asc',
     )
     if (params.country) filters.push(`country_id=eq.${enc(params.country)}`)
+    if (params.confidenceLevel) filters.push(`confidence_level=eq.${enc(params.confidenceLevel)}`)
     if (params.q) filters.push(`system_operator_name=ilike.*${enc(params.q)}*`)
     if (params.serviceDomain) {
       filters.push(`service_domain=eq.${enc(params.serviceDomain)}`)
@@ -481,6 +484,7 @@ export async function aggListSystemPlans(params: {
   offset?: number
   mobileCatalogOnly?: boolean
   serviceDomain?: string
+  confidenceLevel?: string
 }) {
   const filters = [
     'select=*',
@@ -495,6 +499,7 @@ export async function aggListSystemPlans(params: {
     filters.push(`service_domain=eq.${enc(params.serviceDomain)}`)
   }
   if (params.systemOperatorId) filters.push(`system_operator_id=eq.${enc(params.systemOperatorId)}`)
+  if (params.confidenceLevel) filters.push(`confidence_level=eq.${enc(params.confidenceLevel)}`)
   if (params.q) filters.push(`system_plan_name=ilike.*${enc(params.q)}*`)
   const res = await supabaseRest(`system_plans?${filters.join('&')}`, { cache: 'no-store' })
   return jsonRowsOrEmpty(res)
@@ -1002,6 +1007,214 @@ export async function aggMergeSystemOperators(targetOperatorId: string, sourceOp
   }).catch(() => {})
 
   return { success: true, logs }
+}
+
+export function getNormalizedBaseName(name: string, countryName: string, iso2: string, iso3: string): string {
+  let normalized = name.toLowerCase();
+
+  // Remove full country name
+  if (countryName) {
+    const escapedCountryName = countryName.toLowerCase().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    normalized = normalized.replace(new RegExp(`\\b${escapedCountryName}\\b`, 'gi'), '');
+    
+    // Clean country name to get base name (e.g. "Republic of The Gambia" -> "gambia")
+    let cleaned = countryName.toLowerCase();
+    if (cleaned.includes('united kingdom')) {
+      cleaned = 'united kingdom';
+    } else if (cleaned.includes('united states')) {
+      cleaned = 'united states';
+    } else if (cleaned.includes('russian federation') || cleaned.includes('russia')) {
+      cleaned = 'russia';
+    } else {
+      cleaned = cleaned
+        .replace(/\b(republic of|republic|the|independent state of|state of|kingdom of|union of|democratic republic of|federative republic of|islamic republic of|people's democratic republic of|sultanate of|cooperative republic of|pluralistic state of|principality of|grand duchy of|commonwealth of|socialist state of|federation)\b/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+      
+    if (cleaned && cleaned !== countryName.toLowerCase()) {
+      const escapedCleaned = cleaned.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+      normalized = normalized.replace(new RegExp(`\\b${escapedCleaned}\\b`, 'gi'), '');
+    }
+  }
+
+  // Remove iso3 code
+  if (iso3) {
+    normalized = normalized.replace(new RegExp(`\\b${iso3.toLowerCase()}\\b`, 'gi'), '');
+  }
+
+  // Remove iso2 code
+  if (iso2) {
+    normalized = normalized.replace(new RegExp(`\\b${iso2.toLowerCase()}\\b`, 'gi'), '');
+  }
+
+  // Custom aliases for specific countries
+  if (iso3 === 'ARE') {
+    normalized = normalized.replace(/\buae\b/gi, '');
+  }
+  if (iso3 === 'GBR') {
+    normalized = normalized.replace(/\buk\b/gi, '');
+  }
+
+  // Remove common generic prefixes/suffixes and plan details from operator names
+  normalized = normalized.replace(/\b(topup|top-up|prepaid|postpaid|data|bundle|bundles|internet|telecom|mobile|plan|plans|recharge|refill|load|airtime|credit|minutes|minute|min|days|day|gb|mb|kb|tb)\b/gi, '');
+
+  // Remove currency codes (3-letter codes)
+  normalized = normalized.replace(/\b(dzd|gmd|usd|eur|inr|egp|yer|sar|qar|omr|kwd|bhd|mad|jod|lyd|sdg|tnd|iqd|aed|gbp|cad|aud|cny|jpy|rub|try|brl|mxn|php|pkb|lkr|npr|bra|cop|zar|efy|idr|myr|sgd|thb|vnd|xaf|xof|rwf|mga|mwk|szl|lsl|nad|bwp|szl|mur|scr|kmf|djf|sos|etb|ssp|sdg|ern)\b/gi, '');
+
+  // Remove digit patterns (e.g. 400, 2000, 10gb, 3gb)
+  normalized = normalized.replace(/\b\d+(gb|mb|kb|min|days|day|d)?\b/gi, '');
+
+  // Normalize whitespace
+  normalized = normalized.replace(/\s+/g, ' ').trim();
+
+  // Telecom Alias Consolidation
+  const compact = normalized.replace(/[^a-z0-9]/g, '');
+  if (compact === 'reliancejio' || compact === 'jioindia' || compact === 'jio') {
+    return 'jio';
+  }
+  if (compact === 'vodafoneidea' || compact === 'vi' || compact === 'vodafoneideaindia') {
+    return 'vi';
+  }
+  if (compact === 'vodafoneindia' || compact === 'vodafone') {
+    return 'vodafone';
+  }
+  if (compact === 'bsnlindia' || compact === 'bsnl') {
+    return 'bsnl';
+  }
+  if (compact === 'airtelindia' || compact === 'airtel') {
+    return 'airtel';
+  }
+  if (compact === 'mtnlindia' || compact === 'mtnl') {
+    return 'mtnl';
+  }
+
+  return normalized;
+}
+
+export async function aggMergeDuplicateSystemOperators(actorEmail: string = 'system-automerge'): Promise<number> {
+  console.log(`[Auto-Merge] Starting database system operators merge check...`)
+  
+  // 1. Fetch all system operators
+  let offset = 0
+  let hasMore = true
+  const systemOperators: any[] = []
+
+  while (hasMore) {
+    const res = await supabaseRest(
+      `system_operators?select=id,system_operator_name,country_id,status,confidence_level,is_trusted_telecom,failed_sync_count,last_valid_sync_at,operator_domain,service_domain&limit=1000&offset=${offset}`,
+      { cache: 'no-store' }
+    )
+    if (!res.ok) {
+      hasMore = false
+      break
+    }
+    const rows = (await res.json()) as any[]
+    if (!rows || !rows.length) {
+      hasMore = false
+      break
+    }
+    systemOperators.push(...rows)
+    if (rows.length < 1000) {
+      hasMore = false
+    } else {
+      offset += 1000
+    }
+  }
+
+  if (systemOperators.length === 0) return 0
+
+  // 2. Fetch countries
+  const countriesRes = await supabaseRest('countries?select=id,name,iso2,iso3&limit=500', { cache: 'no-store' }).catch(() => null)
+  const countries = countriesRes?.ok ? (await countriesRes.json() as any[]) : []
+  const countryMap = new Map(countries.map(c => [c.id.toUpperCase(), c]))
+
+  const confidenceRank: Record<string, number> = {
+    'HIGH_CONFIDENCE_TELECOM': 4,
+    'MEDIUM_CONFIDENCE_TELECOM': 3,
+    'LOW_CONFIDENCE_TELECOM': 2,
+    'UNKNOWN': 1,
+    'SUSPICIOUS_NON_TELECOM': 0,
+    'CONFIRMED_NON_TELECOM': -1
+  }
+
+  // 3. Group operators by country and normalized base name
+  const groups = new Map<string, any[]>()
+  for (const op of systemOperators) {
+    const countryData = countryMap.get(op.country_id.toUpperCase())
+    if (!countryData) continue
+
+    const normalized = getNormalizedBaseName(op.system_operator_name, countryData.name, countryData.iso2, countryData.iso3)
+    if (!normalized) continue
+
+    const key = `${op.country_id.toUpperCase()}:${normalized}`
+    if (!groups.has(key)) {
+      groups.set(key, [])
+    }
+    groups.get(key)?.push(op)
+  }
+
+  let mergedCount = 0
+
+  for (const [key, ops] of groups.entries()) {
+    if (ops.length >= 2) {
+      // Find canonical target operator
+      const sorted = [...ops].sort((a, b) => {
+        if (Boolean(a.is_trusted_telecom) !== Boolean(b.is_trusted_telecom)) {
+          return a.is_trusted_telecom ? -1 : 1
+        }
+        if (a.status === 'ACTIVE' && b.status !== 'ACTIVE') return -1
+        if (a.status !== 'ACTIVE' && b.status === 'ACTIVE') return 1
+
+        const rankA = confidenceRank[a.confidence_level] ?? 1
+        const rankB = confidenceRank[b.confidence_level] ?? 1
+        if (rankA !== rankB) return rankB - rankA
+
+        if (a.system_operator_name.length !== b.system_operator_name.length) {
+          return a.system_operator_name.length - b.system_operator_name.length
+        }
+
+        return a.id.localeCompare(b.id)
+      })
+
+      const target = sorted[0]
+      const sources = sorted.slice(1)
+
+      // Find the maximum confidence level among all merged operators
+      let maxConfidenceLevel = target.confidence_level || 'UNKNOWN'
+      let maxRank = confidenceRank[maxConfidenceLevel] ?? 1
+      for (const op of ops) {
+        const rank = confidenceRank[op.confidence_level] ?? 1
+        if (rank > maxRank) {
+          maxRank = rank
+          maxConfidenceLevel = op.confidence_level
+        }
+      }
+
+      try {
+        console.log(`[Auto-Merge] Merging duplicate operators for group ${key}: target is '${target.system_operator_name}' (${target.id}), sources are:`, sources.map(s => `'${s.system_operator_name}' (${s.id})`))
+        const mergeResult = await aggMergeSystemOperators(target.id, sources.map(s => s.id), actorEmail)
+        if (mergeResult.success) {
+          // Update the target operator status to 'ACTIVE' and confidence level to maxConfidenceLevel
+          await supabaseRest(`system_operators?id=eq.${target.id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({
+              status: 'ACTIVE',
+              confidence_level: maxConfidenceLevel,
+              updated_at: new Date().toISOString()
+            })
+          }).catch((err) => {
+            console.error(`[Auto-Merge] Failed to patch target operator ${target.id}:`, err)
+          })
+          mergedCount += sources.length
+        }
+      } catch (err) {
+        console.error(`[Auto-Merge] Failed to merge group ${key}:`, err)
+      }
+    }
+  }
+
+  return mergedCount
 }
 
 export async function aggLoadTrustedOperators(): Promise<

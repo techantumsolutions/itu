@@ -28,6 +28,7 @@ export default function ProviderPlansPage() {
         { key: 'system_plan_name', label: 'Plan', secondaryKey: 'slug' },
         { key: 'amount', label: 'Price', secondaryKey: 'currency' },
         { key: 'validity', label: 'Validity' },
+        { key: 'confidence_level', label: 'Confidence' },
         { key: 'status', label: 'Status', badge: true },
       ]
     : [
