@@ -1,6 +1,6 @@
 import type { OperatorDomain } from './types'
 
-const COUNTRY_TOKENS = new Set([
+export let COUNTRY_TOKENS = new Set([
   'IND',
   'INDIA',
   'UAE',
@@ -28,7 +28,7 @@ const COUNTRY_TOKENS = new Set([
 ])
 
 /** Tokens that disqualify mobile-trust inheritance from a root brand. */
-const MOBILE_SUBDOMAIN_BLOCKERS = new Set([
+export let MOBILE_SUBDOMAIN_BLOCKERS = new Set([
   'DTH',
   'TV',
   'SATELLITE',
@@ -77,6 +77,52 @@ const MOBILE_SUBDOMAIN_BLOCKERS = new Set([
   'BILL',
   'BROADBAND',
 ])
+
+export async function loadCatalogIntelligenceCache() {
+  const { supabaseRest } = await import('@/lib/db/supabase-rest')
+  
+  // Load country tokens
+  try {
+    const res = await supabaseRest('countries?select=iso2,iso3,name&limit=500', { cache: 'no-store' })
+    if (res.ok) {
+      const countries = await res.json() as any[]
+      const tokens = new Set<string>()
+      for (const c of countries) {
+        if (c.iso2) tokens.add(c.iso2.trim().toUpperCase())
+        if (c.iso3) tokens.add(c.iso3.trim().toUpperCase())
+        if (c.name) {
+          c.name.trim().toUpperCase().split(/[\s-]+/).forEach((part: string) => {
+            if (part && part.length > 1) tokens.add(part)
+          })
+        }
+      }
+      if (tokens.size > 0) {
+        COUNTRY_TOKENS = tokens
+        console.log(`[Cache] Loaded ${COUNTRY_TOKENS.size} country tokens from database.`)
+      }
+    }
+  } catch (err) {
+    console.error(`[Cache] Failed to load country tokens:`, err)
+  }
+
+  // Load blocker keywords
+  try {
+    const res = await supabaseRest('operator_block_keywords?is_active=eq.true&select=keyword&limit=1000', { cache: 'no-store' })
+    if (res.ok) {
+      const blockers = await res.json() as any[]
+      const tokens = new Set<string>()
+      for (const b of blockers) {
+        if (b.keyword) tokens.add(b.keyword.trim().toUpperCase())
+      }
+      if (tokens.size > 0) {
+        MOBILE_SUBDOMAIN_BLOCKERS = tokens
+        console.log(`[Cache] Loaded ${MOBILE_SUBDOMAIN_BLOCKERS.size} blocker keywords from database.`)
+      }
+    }
+  } catch (err) {
+    console.error(`[Cache] Failed to load blocker keywords:`, err)
+  }
+}
 
 export type OperatorBrandProfile = {
   normalized: string

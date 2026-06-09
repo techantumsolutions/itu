@@ -3,6 +3,7 @@ import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { aggAudit } from '@/lib/aggregator/repository'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
+import { slugify } from '@/lib/aggregator/signature'
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!(await adminCanUseFeature(request, 'integrations', { allowLegacyHeader: true }))) {
@@ -11,9 +12,9 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 
   const { id } = await ctx.params
   const body = await request.json().catch(() => ({}))
-  const { status } = body
+  const { status, system_operator_name } = body
 
-  if (status !== 'ACTIVE' && status !== 'INACTIVE') {
+  if (status && status !== 'ACTIVE' && status !== 'INACTIVE') {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
   }
 
@@ -22,10 +23,21 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   const beforeRows = beforeRes.ok ? await beforeRes.json() : []
   const before = beforeRows[0] ?? null
 
+  const patchData: Record<string, any> = {}
+  if (status) patchData.status = status
+  if (system_operator_name) {
+    patchData.system_operator_name = system_operator_name
+    patchData.slug = slugify(system_operator_name)
+  }
+
+  if (Object.keys(patchData).length === 0) {
+    return NextResponse.json({ error: 'Nothing to patch' }, { status: 400 })
+  }
+
   const res = await supabaseRest(`system_operators?id=eq.${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=representation' },
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(patchData),
   })
 
   if (!res.ok) {
@@ -38,12 +50,12 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   const actor = getRequestUser(request)
   await aggAudit({
     actor: actor?.email ?? 'admin',
-    action: 'operator.status_toggle',
+    action: 'operator.patch',
     entityType: 'system_operator',
     entityId: id,
     before,
     after,
-    details: { status },
+    details: patchData,
   }).catch(() => {})
 
   return NextResponse.json({ success: true, operator: after })

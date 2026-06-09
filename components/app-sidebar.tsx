@@ -24,6 +24,7 @@ import {
   FileSpreadsheet,
   ChartNoAxesCombined,
   PlugZap,
+  Cog,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -80,21 +81,26 @@ const mainMenuItems: {
       feature: 'integrations',
     },
     {
-      title: 'Routing',
-      url: '/admin/routing/lcr-engine',
-      icon: Route,
-      feature: 'routing',
-      children: [
-        { title: 'LCR Engine', url: '/admin/routing/lcr-engine' },
-        { title: 'Routing Rules', url: '/admin/routing/rules' },
-        { title: 'Routing Logs', url: '/admin/routing/logs' },
-      ],
-    },
-    {
-      title: 'Products',
+      title: 'Plans',
       url: '/admin/products',
       icon: Package,
       feature: 'products',
+    },
+    {
+      title: 'LCR Engine',
+      url: '/admin/routing/lcr-engine',
+      icon: Cog,
+      feature: 'routing',
+    },
+    {
+      title: 'Routing',
+      url: '/admin/routing/rules',
+      icon: Route,
+      feature: 'routing',
+      children: [
+        { title: 'Routing Rules', url: '/admin/routing/rules' },
+        { title: 'Routing Logs', url: '/admin/routing/logs' },
+      ],
     },
     {
       title: 'Website CMS',

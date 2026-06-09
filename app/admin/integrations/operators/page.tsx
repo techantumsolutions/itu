@@ -26,6 +26,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Pencil,
+  Power,
+  PowerOff
+} from 'lucide-react'
 
 export function CompactDateTime({ value }: { value: unknown }) {
   const d = new Date(String(value ?? ''))
@@ -59,6 +64,35 @@ export function StatusBadge({ value }: { value: unknown }) {
   )
 }
 
+export function ConfidenceBadge({ value }: { value: unknown }) {
+  const label = String(value ?? 'UNKNOWN').trim().toUpperCase()
+
+  let variantClass = 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20 font-semibold'
+  if (label.includes('HIGH')) {
+    variantClass = 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 font-semibold'
+  } else if (label.includes('MEDIUM')) {
+    variantClass = 'bg-blue-500/10 text-blue-500 border-blue-500/20 font-semibold'
+  } else if (label.includes('LOW')) {
+    variantClass = 'bg-amber-500/10 text-amber-500 border-amber-500/20 font-semibold'
+  } else if (label.includes('SUSPICIOUS')) {
+    variantClass = 'bg-orange-500/10 text-orange-500 border-orange-500/20 font-semibold'
+  } else if (label.includes('CONFIRMED_NON')) {
+    variantClass = 'bg-red-500/10 text-red-500 border-red-500/20 font-semibold'
+  }
+
+  const displayLabel = label
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+
+  return (
+    <Badge variant="outline" className={`whitespace-nowrap ${variantClass}`}>
+      {displayLabel}
+    </Badge>
+  )
+}
+
 export default function OperatorsPage() {
   const [rawOperators, setRawOperators] = useState<any[]>([])
   const [systemOperators, setSystemOperators] = useState<any[]>([])
@@ -68,13 +102,29 @@ export default function OperatorsPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
+  // Status toggle confirmation states
+  const [statusConfirmOpen, setStatusConfirmOpen] = useState(false)
+  const [statusTargetId, setStatusTargetId] = useState('')
+  const [statusTargetName, setStatusTargetName] = useState('')
+  const [statusTargetCurrentStatus, setStatusTargetCurrentStatus] = useState('')
+
+  // Edit name states
+  const [editNameOpen, setEditNameOpen] = useState(false)
+  const [editTargetId, setEditTargetId] = useState('')
+  const [editTargetName, setEditTargetName] = useState('')
+  const [newOperatorName, setNewOperatorName] = useState('')
+  const [savingName, setSavingName] = useState(false)
+
   // Filters state
   const [dataType, setDataType] = useState<'system' | 'provider'>('system')
   const [providerFilter, setProviderFilter] = useState('ALL')
   const [countryFilter, setCountryFilter] = useState('ALL')
   const [search, setSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState('ALL')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ACTIVE')
+
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
 
   // Multi-select & Merge states
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -237,7 +287,9 @@ export default function OperatorsPage() {
     if (country !== 'ALL') params.set('country', country)
     if (provider !== 'ALL') params.set('providerId', provider)
     if (queryText.trim()) params.set('q', queryText.trim())
-    if (currentDataType === 'system' && status !== 'ALL') params.set('status', status)
+    if (currentDataType === 'system') {
+      if (status !== 'ALL') params.set('status', status)
+    }
 
     const queryStr = params.toString()
     const url = queryStr ? `${endpoint}?${queryStr}` : endpoint
@@ -334,11 +386,45 @@ export default function OperatorsPage() {
     }
   }
 
+  const confirmToggleStatus = async () => {
+    setStatusConfirmOpen(false)
+    if (statusTargetId) {
+      await toggleSystemOperatorStatus(statusTargetId, statusTargetCurrentStatus)
+    }
+  }
+
+  const handleSaveName = async () => {
+    if (!newOperatorName.trim()) {
+      toast.error('Name cannot be empty')
+      return
+    }
+    setSavingName(true)
+    try {
+      const res = await fetch(`/api/admin/aggregator/operators/${editTargetId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ system_operator_name: newOperatorName.trim() }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? 'Failed to update name')
+
+      // Update local state directly
+      setSystemOperators((prev) =>
+        prev.map((op) => (op.id === editTargetId ? { ...op, system_operator_name: newOperatorName.trim() } : op))
+      )
+      toast.success('Operator name updated successfully')
+      setEditNameOpen(false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to update name')
+    } finally {
+      setSavingName(false)
+    }
+  }
+
   // Reset provider and country filter if they are not available in current tab data
   useEffect(() => {
     setProviderFilter('ALL')
     setCountryFilter('ALL')
-    setTypeFilter('ALL')
     setStatusFilter('ACTIVE')
     setSelectedIds([])
   }, [dataType])
@@ -346,16 +432,6 @@ export default function OperatorsPage() {
   // Map backend operators to normalized rows for local rendering (backend does the filtering)
   const renderedRows = useMemo(() => {
     let list = dataType === 'system' ? systemOperators : rawOperators
-
-    if (typeFilter !== 'ALL') {
-      list = list.filter((op) => {
-        const typeStr = String(op.operator_type || '').trim().toUpperCase()
-        if (typeFilter === 'TELECOM') {
-          return typeStr === 'TELECOM' || typeStr === 'MOBILE_OPERATOR'
-        }
-        return typeStr === typeFilter.toUpperCase()
-      })
-    }
 
     if (dataType === 'system' && statusFilter !== 'ALL') {
       list = list.filter((op) => {
@@ -378,6 +454,7 @@ export default function OperatorsPage() {
         status: op.status,
         dateValue: op.updated_at || op.created_at,
         isSystem: true,
+        confidenceLevel: op.confidence_level || 'UNKNOWN',
       }))
     } else {
       mapped = list.map((op) => ({
@@ -408,7 +485,17 @@ export default function OperatorsPage() {
 
       return nameA.localeCompare(nameB, undefined, { sensitivity: 'base' })
     })
-  }, [systemOperators, rawOperators, dataType, typeFilter, statusFilter, countryNameMap])
+  }, [systemOperators, rawOperators, dataType, statusFilter, countryNameMap])
+
+  const paginatedRows = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize
+    return renderedRows.slice(startIndex, startIndex + pageSize)
+  }, [renderedRows, currentPage, pageSize])
+
+  // Reset page to 1 when search or filters change
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [countryFilter, providerFilter, search, statusFilter, dataType, pageSize])
 
   const selectedOperators = useMemo(() => {
     return systemOperators.filter((op) => selectedIds.includes(op.id))
@@ -476,6 +563,7 @@ export default function OperatorsPage() {
         </div>
       </div>
 
+      {/* 
       <Card className="border-border/60 shadow-sm bg-gradient-to-br from-zinc-900/50 to-zinc-950/80 mb-6">
         <CardHeader className="pb-3 border-b border-border/40">
           <CardTitle className="flex items-center gap-2 text-xl font-bold tracking-tight">
@@ -556,6 +644,7 @@ export default function OperatorsPage() {
           </div>
         </CardContent>
       </Card>
+      */}
 
       <Card className="border-border/60 shadow-sm">
         {/* <CardHeader className="pb-3">
@@ -569,10 +658,10 @@ export default function OperatorsPage() {
         <CardContent className="space-y-4">
 
           {/* Filters Bar */}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 items-center gap-3">
 
             {/* Search Input */}
-            <div className="relative min-w-[240px] flex-1 sm:max-w-xs">
+            <div className="relative col-span-1 md:col-span-2 lg:col-span-2 xl:col-span-1">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Search operator, ID, provider…"
@@ -585,7 +674,7 @@ export default function OperatorsPage() {
             {/* Operator Data Type Filter */}
             <div className="flex flex-col gap-1">
               <Select value={dataType} onValueChange={(val: any) => setDataType(val)}>
-                <SelectTrigger className="w-[180px] bg-background border-border/80 font-medium">
+                <SelectTrigger className="w-full bg-background border-border/80 font-medium">
                   <SelectValue placeholder="Data Type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -595,32 +684,13 @@ export default function OperatorsPage() {
               </Select>
             </div>
 
-            {/* Operator Type Filter */}
-            <div className="flex flex-col gap-1">
-              <Select value={typeFilter} onValueChange={setTypeFilter}>
-                <SelectTrigger className="w-[180px] bg-background border-border/80">
-                  <SelectValue placeholder="Operator Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All Types</SelectItem>
-                  <SelectItem value="TELECOM">Telecom</SelectItem>
-                  <SelectItem value="DTH">DTH</SelectItem>
-                  <SelectItem value="GIFT_CARD">Gift Card</SelectItem>
-                  <SelectItem value="DIGITAL_VOUCHER">Digital Voucher</SelectItem>
-                  <SelectItem value="UTILITY">Utility</SelectItem>
-                  <SelectItem value="DATA_BUNDLE">Data Bundle</SelectItem>
-                  <SelectItem value="COMBO_BUNDLE">Combo Bundle</SelectItem>
-                  <SelectItem value="MOBILE_PLAN">Mobile Plan</SelectItem>
-                  <SelectItem value="AIRTIME">Airtime</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+
 
             {/* Provider Filter - Only show for Provider Operator */}
             {dataType === 'provider' && (
               <div className="flex flex-col gap-1">
                 <Select value={providerFilter} onValueChange={setProviderFilter}>
-                  <SelectTrigger className="w-[180px] bg-background border-border/80">
+                  <SelectTrigger className="w-[180px] bg-background border-border/80 w-full">
                     <SelectValue placeholder="Provider" />
                   </SelectTrigger>
                   <SelectContent>
@@ -639,7 +709,7 @@ export default function OperatorsPage() {
             {dataType === 'system' && (
               <div className="flex flex-col gap-1">
                 <Select value={statusFilter} onValueChange={(val: any) => setStatusFilter(val)}>
-                  <SelectTrigger className="w-[180px] bg-background border-border/80">
+                  <SelectTrigger className="w-[180px] bg-background border-border/80 w-full">
                     <SelectValue placeholder="Status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -651,10 +721,12 @@ export default function OperatorsPage() {
               </div>
             )}
 
+
+
             {/* Country Filter */}
             <div className="flex flex-col gap-1">
               <Select value={countryFilter} onValueChange={setCountryFilter}>
-                <SelectTrigger className="w-[180px] bg-background border-border/80">
+                <SelectTrigger className="w-[180px] bg-background border-border/80 w-full">
                   <SelectValue placeholder="Country" />
                 </SelectTrigger>
                 <SelectContent>
@@ -667,8 +739,9 @@ export default function OperatorsPage() {
                 </SelectContent>
               </Select>
             </div>
-
-            {/* Counts info / Merge Operators action */}
+          </div>
+          {/* Counts info / Merge Operators action */}
+          <div className='w-full flex justify-end'>
             {selectedIds.length >= 2 && dataType === 'system' ? (
               <Button
                 variant="default"
@@ -688,7 +761,6 @@ export default function OperatorsPage() {
               </span>
             ) : null}
           </div>
-
           {/* Table Container */}
           <div className="relative min-w-0 overflow-x-auto rounded-md border border-border/60">
             <Table>
@@ -698,14 +770,16 @@ export default function OperatorsPage() {
                     <TableHead className="w-[50px]">
                       <Checkbox
                         checked={
-                          renderedRows.length > 0 &&
-                          renderedRows.every((row) => selectedIds.includes(row.id))
+                          paginatedRows.length > 0 &&
+                          paginatedRows.every((row) => selectedIds.includes(row.id))
                         }
                         onCheckedChange={(checked) => {
                           if (checked) {
-                            setSelectedIds(renderedRows.map((r) => r.id))
+                            const paginatedIds = paginatedRows.map((r) => r.id)
+                            setSelectedIds((prev) => Array.from(new Set([...prev, ...paginatedIds])))
                           } else {
-                            setSelectedIds([])
+                            const paginatedIds = paginatedRows.map((r) => r.id)
+                            setSelectedIds((prev) => prev.filter((id) => !paginatedIds.includes(id)))
                           }
                         }}
                       />
@@ -713,7 +787,6 @@ export default function OperatorsPage() {
                   ) : null}
                   <TableHead className="font-semibold text-muted-foreground">Operator</TableHead>
                   <TableHead className="font-semibold text-muted-foreground">Country</TableHead>
-                  <TableHead className="font-semibold text-muted-foreground">Type</TableHead>
                   <TableHead className="font-semibold text-muted-foreground">Status</TableHead>
                   <TableHead className="font-semibold text-muted-foreground">
                     {dataType === 'system' ? 'Updated' : 'Fetched'}
@@ -724,21 +797,21 @@ export default function OperatorsPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={dataType === 'system' ? 7 : 6} className="py-12 text-center text-muted-foreground">
+                    <TableCell colSpan={dataType === 'system' ? 6 : 5} className="py-12 text-center text-muted-foreground">
                       <div className="flex items-center justify-center gap-2">
                         <Loader2 className="h-5 w-5 animate-spin text-primary" />
                         <span>Loading operators data...</span>
                       </div>
                     </TableCell>
                   </TableRow>
-                ) : renderedRows.length === 0 ? (
+                ) : paginatedRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={dataType === 'system' ? 7 : 6} className="py-12 text-center text-muted-foreground font-medium">
+                    <TableCell colSpan={dataType === 'system' ? 6 : 5} className="py-12 text-center text-muted-foreground font-medium">
                       No records found.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  renderedRows.map((row) => {
+                  paginatedRows.map((row) => {
                     return (
                       <TableRow key={row.id} className="hover:bg-muted/30 transition-colors">
                         {dataType === 'system' ? (
@@ -780,10 +853,7 @@ export default function OperatorsPage() {
                           </div>
                         </TableCell>
 
-                        {/* Type Column */}
-                        <TableCell className="text-sm font-medium text-muted-foreground capitalize">
-                          {String(row.operatorType).toLowerCase()}
-                        </TableCell>
+
 
                         {/* Status Column */}
                         <TableCell>
@@ -798,6 +868,50 @@ export default function OperatorsPage() {
                         {/* Actions Column */}
                         <TableCell className="text-right w-[240px] min-w-[240px]">
                           <div className="flex justify-end items-center gap-2 flex-row whitespace-nowrap">
+                            {dataType === 'system' && (
+                              <>
+                                {/* Edit Name Button */}
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  title="Edit Operator Name"
+                                  className="h-8 w-8 text-blue-500 hover:bg-blue-500/10"
+                                  onClick={() => {
+                                    setEditTargetId(row.id)
+                                    setEditTargetName(row.mainName)
+                                    setNewOperatorName(row.mainName)
+                                    setEditNameOpen(true)
+                                  }}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                {/* Status Toggle Button */}
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  title={row.status === 'ACTIVE' ? 'Deactivate Operator' : 'Activate Operator'}
+                                  className={`h-8 w-8 ${row.status === 'ACTIVE'
+                                    ? 'text-emerald-500 hover:bg-emerald-500/10'
+                                    : 'text-slate-500 hover:bg-slate-500/10'
+                                    }`}
+                                  onClick={() => {
+                                    setStatusTargetId(row.id)
+                                    setStatusTargetName(row.mainName)
+                                    setStatusTargetCurrentStatus(row.status)
+                                    setStatusConfirmOpen(true)
+                                  }}
+                                  disabled={togglingId === row.id}
+                                >
+                                  {togglingId === row.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : row.status === 'ACTIVE' ? (
+                                    <Power className="h-4 w-4" />
+                                  ) : (
+                                    <PowerOff className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </>
+                            )}
                             {/* Plans view button */}
                             <Button size="sm" variant="outline" className="h-8 text-xs font-medium" asChild>
                               <Link
@@ -810,25 +924,7 @@ export default function OperatorsPage() {
                                 Plans
                               </Link>
                             </Button>
-
-                            {/* Active/Inactive Toggle Button (Only for System Operators) */}
-                            {/* {row.isSystem ? (
-                              <Button
-                                size="sm"
-                                variant={row.status === 'ACTIVE' ? 'destructive-outline' : 'emerald-outline'}
-                                className={`h-8 text-xs font-semibold w-24 flex items-center justify-center ${row.status === 'ACTIVE'
-                                    ? 'border-red-500/30 text-red-500 hover:bg-red-500/10'
-                                    : 'border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10'
-                                  }`}
-                                onClick={() => void toggleSystemOperatorStatus(row.id, row.status)}
-                                disabled={togglingId === row.id}
-                              >
-                                {togglingId === row.id ? (
-                                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                ) : null}
-                                {row.status === 'ACTIVE' ? 'Deactivate' : 'Activate'}
-                              </Button>
-                            ) : (
+                            {/*                    {dataType === 'provider' && (
                               // Map action button for provider raw operators
                               <Button size="sm" variant="ghost" className="h-8 text-xs font-medium text-primary" asChild>
                                 <Link href="/admin/integrations/operator-mapping">Map</Link>
@@ -843,6 +939,70 @@ export default function OperatorsPage() {
               </TableBody>
             </Table>
           </div>
+
+          {/* Pagination Controls */}
+          {renderedRows.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-border/40 mt-4">
+              {/* Info text */}
+              <div className="text-xs text-muted-foreground font-medium">
+                Showing {Math.min((currentPage - 1) * pageSize + 1, renderedRows.length)} to{' '}
+                {Math.min(currentPage * pageSize, renderedRows.length)} of {renderedRows.length} operators
+              </div>
+
+              {/* Navigation buttons & Rows selector */}
+              <div className="flex flex-wrap items-center gap-4">
+                {/* Page Navigation */}
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs font-semibold"
+                    onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                    disabled={currentPage === 1}
+                  >
+                    Previous
+                  </Button>
+                  
+                  {/* Page indicator */}
+                  <span className="text-xs font-semibold px-2">
+                    Page {currentPage} of {Math.ceil(renderedRows.length / pageSize) || 1}
+                  </span>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs font-semibold"
+                    onClick={() => setCurrentPage((p) => Math.min(p + 1, Math.ceil(renderedRows.length / pageSize)))}
+                    disabled={currentPage === Math.ceil(renderedRows.length / pageSize) || Math.ceil(renderedRows.length / pageSize) === 0}
+                  >
+                    Next
+                  </Button>
+                </div>
+
+                {/* Rows per page selector */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-muted-foreground">Rows per page:</span>
+                  <Select
+                    value={String(pageSize)}
+                    onValueChange={(val) => {
+                      setPageSize(Number(val))
+                      setCurrentPage(1)
+                    }}
+                  >
+                    <SelectTrigger className="h-8 w-[70px] bg-background border-border/80 text-xs font-semibold">
+                      <SelectValue placeholder={String(pageSize)} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="25">25</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          )}
 
         </CardContent>
       </Card>
@@ -904,6 +1064,67 @@ export default function OperatorsPage() {
                 </>
               ) : (
                 'Merge'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Status Toggle Confirmation Dialog */}
+      <Dialog open={statusConfirmOpen} onOpenChange={setStatusConfirmOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Confirm Status Change</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to {statusTargetCurrentStatus === 'ACTIVE' ? 'deactivate' : 'activate'} the operator <strong>{statusTargetName}</strong>?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setStatusConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant={statusTargetCurrentStatus === 'ACTIVE' ? 'destructive' : 'default'}
+              onClick={() => void confirmToggleStatus()}
+            >
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Operator Name Dialog */}
+      <Dialog open={editNameOpen} onOpenChange={setEditNameOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Operator Name</DialogTitle>
+            <DialogDescription>
+              Update the display name of <strong>{editTargetName}</strong>. This changes the name in the system operators catalog.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="operator-name" className="text-sm font-semibold">Operator Name</Label>
+              <Input
+                id="operator-name"
+                value={newOperatorName}
+                onChange={(e) => setNewOperatorName(e.target.value)}
+                className="bg-background border-border/80 focus-visible:ring-primary"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditNameOpen(false)} disabled={savingName}>
+              Cancel
+            </Button>
+            <Button onClick={() => void handleSaveName()} disabled={savingName || !newOperatorName.trim()}>
+              {savingName ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save'
               )}
             </Button>
           </DialogFooter>

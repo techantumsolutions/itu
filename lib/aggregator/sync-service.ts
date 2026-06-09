@@ -65,6 +65,7 @@ import {
   aggUpsertSystemPlan,
   aggUpsertFilteredOperator,
   aggCleanupSystemOperatorsWithoutPlans,
+  aggMergeDuplicateSystemOperators,
   aggStartSyncRun,
   aggUpdateSyncRun,
   aggInsertClassificationAudit,
@@ -80,6 +81,7 @@ import {
 import { classifyOperatorByPlans, classifyOperator } from '@/lib/aggregator/telecom-classifier'
 import { classifyPlan } from '@/lib/aggregator/plan-classifier'
 import { supabaseRest } from '@/lib/db/supabase-rest'
+import { OperatorTrustEngine } from '@/lib/aggregator/catalog-intelligence/trust-engine'
 
 function safeString(v: unknown): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
@@ -830,6 +832,20 @@ export async function syncAggregatorProvider(
           enabled: true,
         })
       }
+
+      // Learn from promotion in trust engine
+      if (systemOperatorId) {
+        await OperatorTrustEngine.learnFromPromotion(
+          systemOperatorId,
+          telecomOperatorName,
+          op.countryCode || '*',
+          providerId,
+          plans.length,
+          plans.length
+        ).catch((err) => {
+          console.error('[SyncService] Failed OperatorTrustEngine learning:', err)
+        })
+      }
     }
 
     diag.stages.plan_mapping.recordsMapped = mappedPlans
@@ -840,6 +856,13 @@ export async function syncAggregatorProvider(
       await aggCleanupSystemOperatorsWithoutPlans()
     } catch (cleanupErr) {
       console.error('Failed to cleanup operators without plans:', cleanupErr)
+    }
+
+    // Merge duplicate system operators
+    try {
+      await aggMergeDuplicateSystemOperators('system-sync')
+    } catch (mergeErr) {
+      console.error('Failed to merge duplicate system operators:', mergeErr)
     }
 
     const durationMs = Date.now() - started

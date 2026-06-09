@@ -58,7 +58,7 @@ export class CatalogIntelligenceEngine {
     private trustedOperators: TrustedOperatorMatch[] = [],
     private domainRegistry: OperatorDomainRegistryMatch[] = [],
     private nonTelecomRegistry: NonTelecomOperatorMatch[] = [],
-  ) {}
+  ) { }
 
   classifyRawPlan(input: {
     raw: unknown
@@ -282,7 +282,36 @@ export class CatalogIntelligenceEngine {
       }
     }
 
-    // Layer 2 — plan pattern / brand subdomain analysis
+    // Layer 2 — exact trusted mobile brand (ONLY when no explicit non-mobile signal)
+    const trusted = matchTrustedOperator(input.operatorName, input.countryCode, this.trustedOperators)
+    if (trusted?.isVerifiedTelecom) {
+      return {
+        domain: 'MOBILE',
+        confidence: 92,
+        reasons: [`exact_trusted_mobile_brand:${trusted.displayName}`],
+        matchedKeywords: [trusted.normalizedName],
+        matchedRules: ['layer2_exact_trusted_mobile_brand'],
+        classificationSource: 'trusted_telecom_registry',
+        isBlockedFromTelecom: false,
+        domainBreakdown: { MOBILE: rawPlans.length || 1 },
+      }
+    }
+
+    const domainRegistryHit = matchOperatorDomainRegistry(input.operatorName, this.domainRegistry)
+    if (domainRegistryHit?.operatorDomain === 'MOBILE') {
+      return {
+        domain: 'MOBILE',
+        confidence: domainRegistryHit.confidence,
+        reasons: [`exact_operator_domain_registry:${domainRegistryHit.operatorName}`],
+        matchedKeywords: [domainRegistryHit.normalizedName],
+        matchedRules: ['layer2_exact_operator_domain_registry'],
+        classificationSource: 'operator_domain_registry',
+        isBlockedFromTelecom: false,
+        domainBreakdown: { MOBILE: rawPlans.length || 1 },
+      }
+    }
+
+    // Layer 3 — plan pattern / brand subdomain analysis
     for (const raw of rawPlans) {
       const planDomain = classifyPlanDomain(raw, input.operatorName)
       domainBreakdown[planDomain.domain] = (domainBreakdown[planDomain.domain] ?? 0) + 1
@@ -300,7 +329,7 @@ export class CatalogIntelligenceEngine {
     }
 
     if (totalPlans > 0) {
-      matchedRules.push('layer2_plan_pattern_analysis')
+      matchedRules.push('layer3_plan_pattern_analysis')
 
       if (dominantDomain !== 'UNKNOWN' && dominantDomain !== 'MOBILE') {
         const ratio = dominantCount / totalPlans
@@ -332,35 +361,6 @@ export class CatalogIntelligenceEngine {
           isBlockedFromTelecom: false,
           domainBreakdown,
         }
-      }
-    }
-
-    // Layer 3 — exact trusted mobile brand (ONLY when no explicit non-mobile signal)
-    const trusted = matchTrustedOperator(input.operatorName, input.countryCode, this.trustedOperators)
-    if (trusted?.isVerifiedTelecom) {
-      return {
-        domain: 'MOBILE',
-        confidence: 92,
-        reasons: [`exact_trusted_mobile_brand:${trusted.displayName}`],
-        matchedKeywords: [trusted.normalizedName],
-        matchedRules: ['layer3_exact_trusted_mobile_brand'],
-        classificationSource: 'trusted_telecom_registry',
-        isBlockedFromTelecom: false,
-        domainBreakdown: { MOBILE: rawPlans.length || 1 },
-      }
-    }
-
-    const domainRegistryHit = matchOperatorDomainRegistry(input.operatorName, this.domainRegistry)
-    if (domainRegistryHit?.operatorDomain === 'MOBILE') {
-      return {
-        domain: 'MOBILE',
-        confidence: domainRegistryHit.confidence,
-        reasons: [`exact_operator_domain_registry:${domainRegistryHit.operatorName}`],
-        matchedKeywords: [domainRegistryHit.normalizedName],
-        matchedRules: ['layer3_exact_operator_domain_registry'],
-        classificationSource: 'operator_domain_registry',
-        isBlockedFromTelecom: false,
-        domainBreakdown: { MOBILE: rawPlans.length || 1 },
       }
     }
 

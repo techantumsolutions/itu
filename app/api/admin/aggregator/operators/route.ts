@@ -1,91 +1,10 @@
 import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-rest'
-import { aggListRawOperators, aggListSystemOperators, aggListProviders, aggMergeSystemOperators } from '@/lib/aggregator/repository'
+import { aggListRawOperators, aggListSystemOperators, aggListProviders, aggMergeSystemOperators, aggMergeDuplicateSystemOperators } from '@/lib/aggregator/repository'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
 
-function getNormalizedBaseName(name: string, countryName: string, iso2: string, iso3: string): string {
-  let normalized = name.toLowerCase();
-
-  // Remove full country name
-  if (countryName) {
-    const escapedCountryName = countryName.toLowerCase().replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-    normalized = normalized.replace(new RegExp(`\\b${escapedCountryName}\\b`, 'gi'), '');
-    
-    // Clean country name to get base name (e.g. "Republic of The Gambia" -> "gambia")
-    let cleaned = countryName.toLowerCase();
-    if (cleaned.includes('united kingdom')) {
-      cleaned = 'united kingdom';
-    } else if (cleaned.includes('united states')) {
-      cleaned = 'united states';
-    } else if (cleaned.includes('russian federation') || cleaned.includes('russia')) {
-      cleaned = 'russia';
-    } else {
-      cleaned = cleaned
-        .replace(/\b(republic of|republic|the|independent state of|state of|kingdom of|union of|democratic republic of|federative republic of|islamic republic of|people's democratic republic of|sultanate of|cooperative republic of|pluralistic state of|principality of|grand duchy of|commonwealth of|socialist state of|federation)\b/gi, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-    }
-      
-    if (cleaned && cleaned !== countryName.toLowerCase()) {
-      const escapedCleaned = cleaned.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
-      normalized = normalized.replace(new RegExp(`\\b${escapedCleaned}\\b`, 'gi'), '');
-    }
-  }
-
-  // Remove iso3 code
-  if (iso3) {
-    normalized = normalized.replace(new RegExp(`\\b${iso3.toLowerCase()}\\b`, 'gi'), '');
-  }
-
-  // Remove iso2 code
-  if (iso2) {
-    normalized = normalized.replace(new RegExp(`\\b${iso2.toLowerCase()}\\b`, 'gi'), '');
-  }
-
-  // Custom aliases for specific countries
-  if (iso3 === 'ARE') {
-    normalized = normalized.replace(/\buae\b/gi, '');
-  }
-  if (iso3 === 'GBR') {
-    normalized = normalized.replace(/\buk\b/gi, '');
-  }
-
-  // Remove common generic prefixes/suffixes and plan details from operator names
-  normalized = normalized.replace(/\b(topup|top-up|prepaid|postpaid|data|bundle|bundles|internet|telecom|mobile|plan|plans|recharge|refill|load|airtime|credit|minutes|minute|min|days|day|gb|mb|kb|tb)\b/gi, '');
-
-  // Remove currency codes (3-letter codes)
-  normalized = normalized.replace(/\b(dzd|gmd|usd|eur|inr|egp|yer|sar|qar|omr|kwd|bhd|mad|jod|lyd|sdg|tnd|iqd|aed|gbp|cad|aud|cny|jpy|rub|try|brl|mxn|php|pkb|lkr|npr|bra|cop|zar|efy|idr|myr|sgd|thb|vnd|xaf|xof|rwf|mga|mwk|szl|lsl|nad|bwp|szl|mur|scr|kmf|djf|sos|etb|ssp|sdg|ern)\b/gi, '');
-
-  // Remove digit patterns (e.g. 400, 2000, 10gb, 3gb)
-  normalized = normalized.replace(/\b\d+(gb|mb|kb|min|days|day|d)?\b/gi, '');
-
-  // Normalize whitespace
-  normalized = normalized.replace(/\s+/g, ' ').trim();
-
-  // Telecom Alias Consolidation (Rule 7)
-  const compact = normalized.replace(/[^a-z0-9]/g, '');
-  if (compact === 'reliancejio' || compact === 'jioindia' || compact === 'jio') {
-    return 'jio';
-  }
-  if (compact === 'vodafoneidea' || compact === 'vi' || compact === 'vodafoneideaindia') {
-    return 'vi';
-  }
-  if (compact === 'vodafoneindia' || compact === 'vodafone') {
-    return 'vodafone';
-  }
-  if (compact === 'bsnlindia' || compact === 'bsnl') {
-    return 'bsnl';
-  }
-  if (compact === 'airtelindia' || compact === 'airtel') {
-    return 'airtel';
-  }
-  if (compact === 'mtnlindia' || compact === 'mtnl') {
-    return 'mtnl';
-  }
-
-  return normalized;
-}
+// getNormalizedBaseName has been moved to lib/aggregator/repository.ts
 
 export async function GET(request: Request) {
   if (!(await adminCanUseFeature(request, 'integrations', { allowLegacyHeader: true }))) {
@@ -100,6 +19,7 @@ export async function GET(request: Request) {
   const providerId = (searchParams.get('providerId') ?? '').trim()
   const q = (searchParams.get('q') ?? '').trim()
   const status = (searchParams.get('status') ?? '').trim().toUpperCase()
+  const confidenceLevel = (searchParams.get('confidenceLevel') ?? '').trim().toUpperCase()
   const serviceDomain = (searchParams.get('serviceDomain') ?? searchParams.get('operatorDomain') ?? 'MOBILE').trim().toUpperCase()
   const includeAllDomains = searchParams.get('includeAllDomains') === 'true'
 
@@ -109,6 +29,7 @@ export async function GET(request: Request) {
     country: country || undefined,
     q: q || undefined,
     status: status || undefined,
+    confidenceLevel: confidenceLevel || undefined,
     includeAllStatus: true as const,
     ...(includeAllDomains
       ? {}
@@ -147,38 +68,14 @@ export async function GET(request: Request) {
 
   // Auto-merge duplicate system operators
   let mergedAny = false
-  const groups = new Map<string, any[]>()
-
-  for (const op of systemOperators) {
-    const countryData = countryMap.get(op.country_id.toUpperCase())
-    if (!countryData) continue
-
-    const normalized = getNormalizedBaseName(op.system_operator_name, countryData.name, countryData.iso2, countryData.iso3)
-    if (!normalized) continue
-
-    const key = `${op.country_id.toUpperCase()}:${normalized}`
-    if (!groups.has(key)) {
-      groups.set(key, [])
+  try {
+    const actor = getRequestUser(request)
+    const mergedCount = await aggMergeDuplicateSystemOperators(actor?.email ?? 'system-automerge')
+    if (mergedCount > 0) {
+      mergedAny = true
     }
-    groups.get(key)?.push(op)
-  }
-
-  for (const [key, ops] of groups.entries()) {
-    if (ops.length >= 2) {
-      // Sort by system_operator_name length ascending so the shortest name is the target
-      ops.sort((a, b) => a.system_operator_name.length - b.system_operator_name.length)
-      const target = ops[0]
-      const sources = ops.slice(1)
-
-      try {
-        console.log(`[Auto-Merge] Merging duplicate operators for group ${key}: target is '${target.system_operator_name}' (${target.id}), sources are:`, sources.map(s => `'${s.system_operator_name}' (${s.id})`))
-        const actor = getRequestUser(request)
-        await aggMergeSystemOperators(target.id, sources.map(s => s.id), actor?.email ?? 'system-automerge')
-        mergedAny = true
-      } catch (err) {
-        console.error(`[Auto-Merge] Failed to merge group ${key}:`, err)
-      }
-    }
+  } catch (err) {
+    console.error(`[Auto-Merge] Failed to merge duplicate system operators:`, err)
   }
 
   let finalSystemOperators = systemOperators

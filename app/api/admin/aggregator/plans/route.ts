@@ -34,6 +34,7 @@ export async function GET(request: Request) {
   const operatorRawId = (searchParams.get('operatorRawId') ?? '').trim()
   const systemOperatorId = (searchParams.get('systemOperatorId') ?? '').trim()
   const q = (searchParams.get('q') ?? '').trim()
+  const confidenceLevel = (searchParams.get('confidenceLevel') ?? '').trim().toUpperCase()
 
   let rawPlans: any[] = []
   let systemPlans: any[] = []
@@ -51,6 +52,7 @@ export async function GET(request: Request) {
         offset: Number.isFinite(offset) ? offset : 0,
         systemOperatorId: systemOperatorId || undefined,
         q: q || undefined,
+        confidenceLevel: confidenceLevel || undefined,
       }),
       supabaseRest('plan_mappings?select=system_plan_id,service_provider_id&limit=10000', { cache: 'no-store' }).catch(
         () => null as Response | null,

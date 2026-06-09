@@ -129,6 +129,7 @@ function renderCell(row: Record<string, unknown>, column: IntegrationColumn) {
   }
 
   const text = formatPlain(primaryRaw)
+  if (column.key === 'confidence_level') return <ConfidenceBadge value={text} />
   if (column.badge) return <StatusBadge value={text} />
   return text
 }
@@ -342,6 +343,7 @@ export function IntegrationDataPage({
                 </SelectContent>
               </Select>
             ) : null}
+
             {!loading ? (
               <span className="text-xs text-muted-foreground">
                 {filteredRows.length} of {rows.length}
@@ -401,6 +403,35 @@ export function StatusBadge({ value }: { value: unknown }) {
   const label = String(value ?? 'unknown')
   const active = ['ACTIVE', 'active', 'online', 'SUCCESS', 'true', 'completed'].includes(label)
   return <Badge variant={active ? 'default' : 'secondary'}>{label}</Badge>
+}
+
+export function ConfidenceBadge({ value }: { value: unknown }) {
+  const label = String(value ?? 'UNKNOWN').trim().toUpperCase()
+  
+  let variantClass = 'bg-zinc-500/10 text-zinc-500 border-zinc-500/20 font-semibold'
+  if (label.includes('HIGH')) {
+    variantClass = 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20 font-semibold'
+  } else if (label.includes('MEDIUM')) {
+    variantClass = 'bg-blue-500/10 text-blue-500 border-blue-500/20 font-semibold'
+  } else if (label.includes('LOW')) {
+    variantClass = 'bg-amber-500/10 text-amber-500 border-amber-500/20 font-semibold'
+  } else if (label.includes('SUSPICIOUS')) {
+    variantClass = 'bg-orange-500/10 text-orange-500 border-orange-500/20 font-semibold'
+  } else if (label.includes('CONFIRMED_NON')) {
+    variantClass = 'bg-red-500/10 text-red-500 border-red-500/20 font-semibold'
+  }
+
+  const displayLabel = label
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+
+  return (
+    <Badge variant="outline" className={`whitespace-nowrap ${variantClass}`}>
+      {displayLabel}
+    </Badge>
+  )
 }
 
 export function IntegrationRowActions({ children }: { children: ReactNode }) {
