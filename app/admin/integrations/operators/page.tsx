@@ -104,7 +104,6 @@ export default function OperatorsPage() {
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('ALL')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ACTIVE')
-  const [confidenceFilter, setConfidenceFilter] = useState<string>('ALL')
 
   // Multi-select & Merge states
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -258,8 +257,7 @@ export default function OperatorsPage() {
     provider = providerFilter,
     queryText = search,
     status = statusFilter,
-    currentDataType = dataType,
-    confidence = confidenceFilter
+    currentDataType = dataType
   ) => {
     if (isRefresh) setRefreshing(true)
     else setLoading(true)
@@ -270,7 +268,6 @@ export default function OperatorsPage() {
     if (queryText.trim()) params.set('q', queryText.trim())
     if (currentDataType === 'system') {
       if (status !== 'ALL') params.set('status', status)
-      if (confidence !== 'ALL') params.set('confidenceLevel', confidence)
     }
 
     const queryStr = params.toString()
@@ -294,11 +291,11 @@ export default function OperatorsPage() {
   // Trigger debounced load on filters or search input changes (resolves PostgREST row limits)
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
-      void load(false, countryFilter, providerFilter, search, statusFilter, dataType, confidenceFilter)
+      void load(false, countryFilter, providerFilter, search, statusFilter, dataType)
     }, 300)
 
     return () => clearTimeout(delayDebounceFn)
-  }, [countryFilter, providerFilter, search, statusFilter, dataType, confidenceFilter])
+  }, [countryFilter, providerFilter, search, statusFilter, dataType])
 
   // Sync All Providers
   const triggerSyncAll = async () => {
@@ -374,7 +371,6 @@ export default function OperatorsPage() {
     setCountryFilter('ALL')
     setTypeFilter('ALL')
     setStatusFilter('ACTIVE')
-    setConfidenceFilter('ALL')
     setSelectedIds([])
   }, [dataType])
 
@@ -687,25 +683,7 @@ export default function OperatorsPage() {
               </div>
             )}
 
-            {/* Confidence Filter - Only show for System Operator */}
-            {dataType === 'system' && (
-              <div className="flex flex-col gap-1">
-                <Select value={confidenceFilter} onValueChange={setConfidenceFilter}>
-                  <SelectTrigger className="w-[180px] bg-background border-border/80">
-                    <SelectValue placeholder="Confidence Level" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All Confidence Levels</SelectItem>
-                    <SelectItem value="HIGH_CONFIDENCE_TELECOM">High Telecom</SelectItem>
-                    <SelectItem value="MEDIUM_CONFIDENCE_TELECOM">Medium Telecom</SelectItem>
-                    <SelectItem value="LOW_CONFIDENCE_TELECOM">Low Telecom</SelectItem>
-                    <SelectItem value="UNKNOWN">Unknown</SelectItem>
-                    <SelectItem value="SUSPICIOUS_NON_TELECOM">Suspicious Non-Telecom</SelectItem>
-                    <SelectItem value="CONFIRMED_NON_TELECOM">Confirmed Non-Telecom</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+
 
             {/* Country Filter */}
             <div className="flex flex-col gap-1">
@@ -770,9 +748,6 @@ export default function OperatorsPage() {
                   <TableHead className="font-semibold text-muted-foreground">Operator</TableHead>
                   <TableHead className="font-semibold text-muted-foreground">Country</TableHead>
                   <TableHead className="font-semibold text-muted-foreground">Type</TableHead>
-                  {dataType === 'system' && (
-                    <TableHead className="font-semibold text-muted-foreground">Confidence</TableHead>
-                  )}
                   <TableHead className="font-semibold text-muted-foreground">Status</TableHead>
                   <TableHead className="font-semibold text-muted-foreground">
                     {dataType === 'system' ? 'Updated' : 'Fetched'}
@@ -783,7 +758,7 @@ export default function OperatorsPage() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={dataType === 'system' ? 8 : 6} className="py-12 text-center text-muted-foreground">
+                    <TableCell colSpan={dataType === 'system' ? 7 : 6} className="py-12 text-center text-muted-foreground">
                       <div className="flex items-center justify-center gap-2">
                         <Loader2 className="h-5 w-5 animate-spin text-primary" />
                         <span>Loading operators data...</span>
@@ -792,7 +767,7 @@ export default function OperatorsPage() {
                   </TableRow>
                 ) : renderedRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={dataType === 'system' ? 8 : 6} className="py-12 text-center text-muted-foreground font-medium">
+                    <TableCell colSpan={dataType === 'system' ? 7 : 6} className="py-12 text-center text-muted-foreground font-medium">
                       No records found.
                     </TableCell>
                   </TableRow>
@@ -843,13 +818,6 @@ export default function OperatorsPage() {
                         <TableCell className="text-sm font-medium text-muted-foreground capitalize">
                           {String(row.operatorType).toLowerCase()}
                         </TableCell>
-
-                        {/* Confidence Column */}
-                        {dataType === 'system' && (
-                          <TableCell>
-                            <ConfidenceBadge value={row.confidenceLevel} />
-                          </TableCell>
-                        )}
 
                         {/* Status Column */}
                         <TableCell>

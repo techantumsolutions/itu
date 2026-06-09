@@ -163,13 +163,11 @@ export function IntegrationDataPage({
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [countryFilter, setCountryFilter] = useState('ALL')
-  const [confidenceFilter, setConfidenceFilter] = useState('ALL')
 
   const statusKey = filtersConfig?.statusKey ?? columns.find((c) => c.key === 'status')?.key
   const countryKey =
     filtersConfig?.countryKey ??
     columns.find((c) => ['country_id', 'iso_code', 'country_iso3'].includes(c.key))?.key
-  const confidenceKey = columns.find((c) => c.key === 'confidence_level')?.key
 
   const showActions = Boolean(renderRowActions)
   const colSpan = columns.length + (showActions ? 1 : 0)
@@ -226,12 +224,9 @@ export function IntegrationDataPage({
       if (countryKey && countryFilter !== 'ALL') {
         if (formatPlain(rawValue(row, countryKey)).toUpperCase() !== countryFilter.toUpperCase()) return false
       }
-      if (confidenceKey && confidenceFilter !== 'ALL') {
-        if (formatPlain(rawValue(row, confidenceKey)).toUpperCase() !== confidenceFilter.toUpperCase()) return false
-      }
       return true
     })
-  }, [rows, search, statusFilter, countryFilter, statusKey, countryKey, confidenceKey, confidenceFilter, columns])
+  }, [rows, search, statusFilter, countryFilter, statusKey, countryKey, columns])
 
   async function syncProvider(providerId: string) {
     setSyncingId(providerId)
@@ -348,22 +343,7 @@ export function IntegrationDataPage({
                 </SelectContent>
               </Select>
             ) : null}
-            {confidenceKey ? (
-              <Select value={confidenceFilter} onValueChange={setConfidenceFilter}>
-                <SelectTrigger className="w-[180px] bg-background border-border/80">
-                  <SelectValue placeholder="Confidence" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All confidence</SelectItem>
-                  <SelectItem value="HIGH_CONFIDENCE_TELECOM">High Telecom</SelectItem>
-                  <SelectItem value="MEDIUM_CONFIDENCE_TELECOM">Medium Telecom</SelectItem>
-                  <SelectItem value="LOW_CONFIDENCE_TELECOM">Low Telecom</SelectItem>
-                  <SelectItem value="UNKNOWN">Unknown</SelectItem>
-                  <SelectItem value="SUSPICIOUS_NON_TELECOM">Suspicious Non-Telecom</SelectItem>
-                  <SelectItem value="CONFIRMED_NON_TELECOM">Confirmed Non-Telecom</SelectItem>
-                </SelectContent>
-              </Select>
-            ) : null}
+
             {!loading ? (
               <span className="text-xs text-muted-foreground">
                 {filteredRows.length} of {rows.length}

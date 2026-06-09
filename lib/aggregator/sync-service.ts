@@ -81,6 +81,7 @@ import {
 import { classifyOperatorByPlans, classifyOperator } from '@/lib/aggregator/telecom-classifier'
 import { classifyPlan } from '@/lib/aggregator/plan-classifier'
 import { supabaseRest } from '@/lib/db/supabase-rest'
+import { OperatorTrustEngine } from '@/lib/aggregator/catalog-intelligence/trust-engine'
 
 function safeString(v: unknown): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v)
@@ -829,6 +830,20 @@ export async function syncAggregatorProvider(
           providerPriority: config.priority,
           margin: 0,
           enabled: true,
+        })
+      }
+
+      // Learn from promotion in trust engine
+      if (systemOperatorId) {
+        await OperatorTrustEngine.learnFromPromotion(
+          systemOperatorId,
+          telecomOperatorName,
+          op.countryCode || '*',
+          providerId,
+          plans.length,
+          plans.length
+        ).catch((err) => {
+          console.error('[SyncService] Failed OperatorTrustEngine learning:', err)
         })
       }
     }

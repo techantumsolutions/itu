@@ -3,7 +3,9 @@ import { isTelecomSystemPlan } from './telecom-validator'
 import { ISO3_TO_ISO2 } from '@/lib/lcr/countries'
 import { CatalogIntelligenceEngine } from './catalog-intelligence'
 import { isMobileTelecomDomain } from './catalog-intelligence/domain-registries'
+import { loadCatalogIntelligenceCache } from './catalog-intelligence/brand-intelligence'
 import { matchTrustedOperator } from './catalog-intelligence/trust-registry'
+import { OperatorTrustEngine } from './catalog-intelligence/trust-engine'
 import type {
   AggregatorProviderRow,
   RawOperatorInput,
@@ -984,6 +986,16 @@ export async function aggMergeSystemOperators(targetOperatorId: string, sourceOp
       console.warn(`Failed to update internal plans for source operator ${sourceId}:`, err)
     }
 
+    // Register the source operator's name as an alias for the target operator
+    await OperatorTrustEngine.learnFromAliasMapping(
+      targetOperatorId,
+      sourceOperator.system_operator_name,
+      targetOperator.country_id || '*',
+      'ADMIN_MERGE'
+    ).catch(err => {
+      console.error('[Merge] Failed to record alias learning for source operator:', err)
+    })
+
     // Delete the source operator
     await supabaseRest(`system_operators?id=eq.${encodeURIComponent(sourceId)}`, {
       method: 'DELETE',
@@ -991,6 +1003,16 @@ export async function aggMergeSystemOperators(targetOperatorId: string, sourceOp
 
     logs.push(`Merged system operator '${sourceOperator.system_operator_name}' (${sourceId}) into '${targetOperator.system_operator_name}' (${targetOperatorId})`)
   }
+
+  // Verify and boost the trust score of the target operator
+  await OperatorTrustEngine.learnFromAdminApproval(
+    targetOperatorId,
+    targetOperator.system_operator_name,
+    targetOperator.country_id || '*',
+    actorEmail
+  ).catch(err => {
+    console.error('[Merge] Failed target operator admin approval learning:', err)
+  })
 
   // Audit Log
   await aggAudit({
@@ -1224,21 +1246,51 @@ export async function aggLoadTrustedOperators(): Promise<
     countryCode: string
     trustLevel: string
     isVerifiedTelecom: boolean
+    trustScore?: number
+    canonicalOperatorId?: string | null
+    source?: string
   }>
 > {
-  const res = await supabaseRest(
-    'operator_trust_registry?is_verified_telecom=eq.true&select=normalized_name,display_name,country_code,trust_level,is_verified_telecom',
-    { cache: 'no-store' },
-  ).catch(() => null)
-  if (!res?.ok) return []
-  const rows = (await res.json().catch(() => [])) as Array<Record<string, unknown>>
-  return rows.map((row) => ({
-    normalizedName: String(row.normalized_name ?? ''),
-    displayName: String(row.display_name ?? row.normalized_name ?? ''),
-    countryCode: String(row.country_code ?? '*'),
-    trustLevel: String(row.trust_level ?? 'HIGH'),
-    isVerifiedTelecom: Boolean(row.is_verified_telecom),
-  }))
+  const [registryRes, aliasesRes] = await Promise.all([
+    supabaseRest('operator_trust_registry?or=(is_verified.eq.true,trust_score.gte.70)&select=*', { cache: 'no-store' }),
+    supabaseRest('operator_aliases?confidence_score.gte.70&select=*', { cache: 'no-store' })
+  ]).catch(() => [null, null])
+
+  const pool: any[] = []
+  
+  if (registryRes?.ok) {
+    const rows = await registryRes.json() as any[]
+    for (const r of rows) {
+      pool.push({
+        normalizedName: r.normalized_name,
+        displayName: r.display_name || r.normalized_name,
+        countryCode: r.country_code || '*',
+        trustLevel: r.trust_level || (r.trust_score >= 90 ? 'VERIFIED' : 'TRUSTED'),
+        isVerifiedTelecom: r.is_verified || r.trust_score >= 90,
+        trustScore: Number(r.trust_score || 0),
+        canonicalOperatorId: r.canonical_operator_id,
+        source: r.source || 'TRUST_REGISTRY'
+      })
+    }
+  }
+
+  if (aliasesRes?.ok) {
+    const rows = await aliasesRes.json() as any[]
+    for (const r of rows) {
+      pool.push({
+        normalizedName: r.normalized_alias || r.alias_name.toUpperCase(),
+        displayName: r.alias_name,
+        countryCode: r.country_code || '*',
+        trustLevel: r.confidence_score >= 90 ? 'VERIFIED' : 'TRUSTED',
+        isVerifiedTelecom: r.confidence_score >= 70,
+        trustScore: Number(r.confidence_score || 0),
+        canonicalOperatorId: r.canonical_operator_id,
+        source: 'ALIAS_MATCH'
+      })
+    }
+  }
+
+  return pool
 }
 
 export async function aggInsertPlanClassificationAudit(input: {
@@ -1456,6 +1508,10 @@ export async function aggInsertOperatorDomainAudit(input: {
 }
 
 export async function aggLoadCatalogIntelligenceRegistries() {
+  await loadCatalogIntelligenceCache().catch(err => {
+    console.error(`[Cache] Failed to load catalog intelligence cache:`, err)
+  })
+
   const [trustedOperators, domainRegistry, nonTelecomRegistry] = await Promise.all([
     aggLoadTrustedOperators(),
     aggLoadOperatorDomainRegistry(),

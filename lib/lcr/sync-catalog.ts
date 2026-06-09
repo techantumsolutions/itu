@@ -1,18 +1,15 @@
 import { aggGetProvider, isAggregatorSchemaReady } from '@/lib/aggregator/repository'
-import { syncAggregatorProvider } from '@/lib/aggregator/sync-service'
-import { rowToProviderConfig } from '@/lib/lcr-v2/provider-credentials'
+import { runFullSyncPipeline } from '@/lib/aggregator/pipeline/stage-executor'
 import type { SyncCatalogOptions } from '@/lib/lcr/sync-options'
-import { ingestProviderPlans } from '@/lib/uti/ingestion'
 
-/** Sync provider catalog using the full aggregator pipeline when available, otherwise legacy LCR ingestion. */
+/** Sync provider catalog using the full 8-step aggregator staging pipeline. */
 export async function syncProviderCatalog(providerId: string, options?: SyncCatalogOptions) {
   const providerRow = await aggGetProvider(providerId)
   if (!providerRow) throw new Error('provider_not_found')
 
-  const config = rowToProviderConfig(providerRow as Record<string, unknown>)
   if (!(await isAggregatorSchemaReady())) {
-    return ingestProviderPlans(config, options)
+    throw new Error('Aggregator staging schema not initialized')
   }
 
-  return syncAggregatorProvider(providerId, options)
+  return runFullSyncPipeline(providerId)
 }
