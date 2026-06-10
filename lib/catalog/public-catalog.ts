@@ -104,10 +104,56 @@ export type PublicPlan = {
   currency?: string
 }
 
-function mapPlanType(raw: string | null | undefined): 'topup' | 'unlimited' | 'data' {
-  const t = (raw ?? 'topup').toLowerCase()
+function mapPlanType(
+  raw: string | null | undefined,
+  planName?: string,
+  benefits?: string
+): 'topup' | 'unlimited' | 'data' {
+  const name = (planName ?? '').toLowerCase()
+  const desc = (benefits ?? '').toLowerCase()
+  const text = `${name} ${desc}`
+
+  // 1. Unlimited Pack (unlimited calls/voice or combo packs)
+  const hasUnlimitedCalls =
+    /unlimited\s+(?:local|calls?|voice|minutes|mins|talk)/i.test(text) ||
+    /llamadas?\s+(?:locales?\s+)?ilimitadas?/i.test(text) ||
+    /minutos\s+(?:de\s+voz\s+)?ilimitados?/i.test(text) ||
+    /ilimitad[ao]\s+llamadas?/i.test(text) ||
+    /ilimitados?\s+minutos?/i.test(text) ||
+    /\bul\s+calls?\b/i.test(text) ||
+    /\bul\s+voice\b/i.test(text) ||
+    /\bcombo\b/i.test(text) ||
+    /std\s+(?:and|y)\s+roaming/i.test(text) ||
+    /roaming\s+ilimitado/i.test(text) ||
+    /llamadas\s+y\s+sms\s+ilimitados/i.test(text) ||
+    /minutos\s+ilimitados/i.test(text) ||
+    /habla\s+ilimitado/i.test(text)
+
+  if (hasUnlimitedCalls) return 'unlimited'
+
+  // 2. Data Pack (internet, data, GB, MB, etc. but without unlimited voice)
+  const hasData =
+    /\b\d+(?:\.\d+)?\s*(?:gb|mb)\b/i.test(text) ||
+    /\bdatos\b/i.test(text) ||
+    /\bdata\b/i.test(text) ||
+    /\binternet\b/i.test(text) ||
+    /\bnavegar\b/i.test(text) ||
+    /\bnavegaci[oó]n\b/i.test(text) ||
+    /\bdatos\s+ilimitados\b/i.test(text) ||
+    /\bunlimited\s+data\b/i.test(text) ||
+    /\bwhatsapp\b/i.test(text) ||
+    /\bfacebook\b/i.test(text) ||
+    /\binstagram\b/i.test(text) ||
+    /\btiktok\b/i.test(text) ||
+    /\bredes\s+sociales\b/i.test(text)
+
+  if (hasData) return 'data'
+
+  // 3. Fallback to database/catalog type if it is specific
+  const t = (raw ?? '').toLowerCase()
   if (t.includes('data')) return 'data'
   if (t.includes('voice') || t.includes('unlimited') || t.includes('combo')) return 'unlimited'
+
   return 'topup'
 }
 
@@ -355,7 +401,11 @@ function systemPlanToPublic(row: Record<string, unknown>, operatorId: string): P
     data: row.data_volume != null ? String(row.data_volume) : undefined,
     benefits: String(row.description ?? row.system_plan_name ?? ''),
     tag: 'none',
-    type: mapPlanType(String(row.plan_type ?? row.category ?? 'topup')),
+    type: mapPlanType(
+      String(row.plan_type ?? row.category ?? 'topup'),
+      String(row.system_plan_name ?? 'Plan'),
+      String(row.description ?? row.system_plan_name ?? '')
+    ),
     planName: String(row.system_plan_name ?? 'Plan'),
     currency,
   }
@@ -423,7 +473,11 @@ async function listPlansFromInternalPlansByName(countryIso3: string, operatorNam
       validity: row.subservice ?? '',
       benefits: row.uti_description ?? displayPlanName(row),
       tag: idx < 3 ? 'popular' : 'none',
-      type: mapPlanType(row.category),
+      type: mapPlanType(
+        row.category,
+        displayPlanName(row),
+        row.uti_description ?? displayPlanName(row)
+      ),
       planName: displayPlanName(row),
       currency,
     }
@@ -442,7 +496,7 @@ function applyPlanFilters(
     } else if (category === 'voice' || category === 'sms' || category === 'bundles') {
       rows = rows.filter((p) => p.type === 'unlimited' || p.type === 'topup')
     } else {
-      rows = rows.filter((p) => p.type === category || mapPlanType(p.type) === category)
+      rows = rows.filter((p) => p.type === category || mapPlanType(p.type, p.planName, p.benefits) === category)
     }
   }
   const search = (filters.search ?? '').trim().toLowerCase()
@@ -480,7 +534,11 @@ async function listPlansFromInternalPlans(countryIso3: string, operatorRef: stri
       validity: row.subservice ?? '',
       benefits: row.uti_description ?? displayPlanName(row),
       tag: idx < 3 ? 'popular' : 'none',
-      type: mapPlanType(row.category),
+      type: mapPlanType(
+        row.category,
+        displayPlanName(row),
+        row.uti_description ?? displayPlanName(row)
+      ),
       planName: displayPlanName(row),
       currency,
     }
@@ -561,7 +619,7 @@ export async function fetchPublicPlans(input: {
         data: p.data_label ?? undefined,
         benefits: p.benefits ?? '',
         tag: p.tag === 'popular' ? ('popular' as const) : ('none' as const),
-        type: mapPlanType(p.plan_type),
+        type: mapPlanType(p.plan_type, p.plan_name ?? p.sku_code, p.benefits ?? ''),
         planName: p.plan_name ?? p.sku_code,
       }))
     } catch {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -20,66 +20,121 @@ import { countriesList, getFlagEmoji } from '@/lib/country-codes'
 function cleanOperatorName(name: string): string {
   let val = (name ?? '').trim()
   if (!val) return ''
-  // Strip country suffixes like " India", " Mexico", " Jamaica", " Puerto Rico", " IND", " MX", " JM", " PR"
-  const suffixPattern = /\s+(India|Mexico|Jamaica|Puerto\s+Rico|IND|MX|JM|PR|NGA|GHA|KEN|PHL|IDN|BGD|USA|GBR|ESP|FRA|DEU|ITA)$/i
+  const suffixPattern = /\s+(India|Mexico|Jamaica|Puerto\s+Rico|IND|MX|JM|PR|NGA|GHA|KEN|PHL|IDN|BGD|USA|GBR|ESP|FRA|DEU|ITA|AFG|GTM|GTM)$/i
   return val.replace(suffixPattern, '').trim()
 }
 
-function translateBenefits(text: string | null | undefined, lang: string): string {
-  let val = (text ?? '').trim()
-  if (!val) return ''
+/**
+ * Parses free-text plan name + benefits to extract structured specs.
+ * Handles multilingual text (EN/ES) from DT One / internal catalog.
+ */
+function parsePlanSpecs(planName: string, benefits: string): {
+  data: string | null
+  calls: string | null
+  sms: string | null
+  validity: string | null
+} {
+  const text = `${planName} ${benefits}`.toLowerCase()
 
-  const currentLang = (lang ?? 'en').toLowerCase().split('-')[0] ?? 'en'
-
-  const dict: Record<string, Record<string, string>> = {
-    en: {
-      "tiempo de conversación de": "Talktime of",
-      "se requiere un plan de validez activo para comprar este producto": "An active validity plan is required to purchase this product",
-      "datos ilimitados; después de usar 20gb por día, la velocidad de datos será de hasta 64kbps; válido por 1 día": "Unlimited data; after using 20GB/day, speed will throttled to 64Kbps; valid for 1 day",
-      "se requiere un plan de validez activo para comprar este producto. datos ilimitados; después de usar 20gb por día, la velocidad de datos será de hasta 64kbps; válido por 1 día.": "An active validity plan is required to purchase this product. Unlimited data; after using 20GB/day, speed will throttled to 64Kbps; valid for 1 day.",
-      "obtén llamadas locales, std y en roaming ilimitadas": "Get unlimited local, STD and roaming calls",
-      "de datos": "data",
-      "sms/día": "SMS/day",
-      "días": "days",
-      "la primera red de lucha contra el spam de la india": "India's first anti-spam network",
-      "solo compatible con clientes seleccionados": "Only compatible with selected customers",
-    },
-    fr: {
-      "tiempo de conversación de": "Temps de conversation de",
-      "se requiere un plan de validez activo para comprar este producto": "Un forfait de validité actif est requis pour acheter ce produit",
-      "datos ilimitados; después de usar 20gb por día, la velocidad de datos será de hasta 64kbps; válido por 1 día": "Données illimitées; après 20 Go/jour, vitesse réduite à 64 Kbps; valide 1 jour",
-      "se requiere un plan de validez activo para comprar este producto. datos ilimitados; después de usar 20gb por día, la velocidad de datos será de hasta 64kbps; válido por 1 día.": "Un forfait de validité actif est requis pour acheter ce produit. Données illimitées; après 20 Go/jour, vitesse réduite à 64 Kbps; valide 1 jour.",
-      "obtén llamadas locales, std y en roaming ilimitadas": "Appels locaux, STD et itinérance illimités",
-      "de datos": "de données",
-      "sms/día": "SMS/jour",
-      "días": "jours",
-      "la primera red de lucha contra el spam de la india": "Le premier réseau anti-spam d'Inde",
-      "solo compatible con clientes seleccionados": "Uniquement compatible avec certains clients",
-    },
-    es: {
-      "talktime of": "Tiempo de conversación de",
-      "an active validity plan is required to purchase this product": "Se requiere un plan de validez activo para comprar este producto",
-      "unlimited data; after using 20gb/day, speed will throttled to 64kbps; valid for 1 day": "Datos ilimitados; después de usar 20GB/día, la velocidad será de 64Kbps; válido por 1 día",
-      "get unlimited local, std and roaming calls": "Obtén llamadas locales, STD y en roaming ilimitadas",
-      "data": "de datos",
-      "sms/day": "SMS/día",
-      "days": "días",
-      "india's first anti-spam network": "La primera red de lucha contra el spam de la India",
-      "only compatible with selected customers": "Solo compatible con clientes seleccionados",
-    }
+  // ---- DATA ----
+  // Matches: "3 GB", "1.5GB", "2GB/Day", "1 GB/day", "datos ilimitados", "unlimited data"
+  let data: string | null = null
+  if (/\bdatos?\s+ilimitados?|unlimited\s+data/i.test(text)) {
+    // Check throttle hint e.g. "after 20GB speed throttled"
+    const throttleM = text.match(/(?:after\s+using\s+|después de usar\s*)([\d.]+\s*gb)/i)
+    data = throttleM ? `Unlimited (${throttleM[1].toUpperCase()} FUP)` : 'Unlimited'
+  } else {
+    const dataM = text.match(/(\d+(?:\.\d+)?\s*(?:gb|mb)(?:\/day|\/día)?)/i)
+    if (dataM) data = dataM[1].toUpperCase().replace('DíA', 'Day').replace('DIA', 'Day')
   }
 
-  const translations = dict[currentLang]
-  if (!translations) return val
-
-  let result = val
-  for (const [key, replacement] of Object.entries(translations)) {
-    const regex = new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
-    result = result.replace(regex, replacement)
+  // ---- CALLS ----
+  let calls: string | null = null
+  if (/\bul\s+calls?|unlimited\s+(?:local|calls?|voice)|llamadas?\s+(locales?|ilimitadas?)|ilimitad[ao]\s+llamadas?/i.test(text)) {
+    calls = 'Unlimited'
+  } else if (/std\s+(?:and|y)\s+roaming/i.test(text)) {
+    calls = 'Unlimited'
+  } else {
+    // talktime amount e.g. "Talktime of INR 7.47" or "tiempo de conversación de INR 7.47"
+    const ttM = text.match(/(?:talktime\s+of|tiempo\s+de\s+conversaci[oó]n\s+de)\s+(?:inr|rs\.?)\s*([\d.]+)/i)
+    if (ttM) calls = `₹${ttM[1]} talktime`
   }
 
-  return result
+  // ---- SMS ----
+  let sms: string | null = null
+  const smsM = text.match(/(\d+)\s*sms\s*(?:\/day|\/día|per day)?/i)
+  if (smsM) sms = `${smsM[1]} SMS`
+  else if (/unlimited\s+sms|sms\s+ilimitados?/i.test(text)) sms = 'Unlimited'
+
+  // ---- VALIDITY ----
+  let validity: string | null = null
+  // "28 Días", "28 days", "1 Day", "válido por 1 día"
+  const dayM = text.match(/(\d+)\s*d[íi]as?\b|(\d+)\s*days?\b|v[aá]lid(?:o|ez)\s+por\s+(\d+)\s*d[íi]as?/i)
+  if (dayM) {
+    const days = parseInt(dayM[1] ?? dayM[2] ?? dayM[3] ?? '0', 10)
+    validity = days === 1 ? '1 Day' : `${days} Days`
+  }
+
+  return { data, calls, sms, validity }
 }
+
+/**
+ * Classifies a plan into topup, unlimited, or data pack based on its name and benefits.
+ */
+function classifyPlanType(planName: string, benefits: string, dbType?: string): 'topup' | 'unlimited' | 'data' {
+  const name = (planName ?? '').toLowerCase()
+  const desc = (benefits ?? '').toLowerCase()
+  const text = `${name} ${desc}`
+
+  // 1. Unlimited Pack (unlimited calls/voice or combo packs)
+  const hasUnlimitedCalls =
+    /unlimited\s+(?:local|calls?|voice|minutes|mins|talk)/i.test(text) ||
+    /llamadas?\s+(?:locales?\s+)?ilimitadas?/i.test(text) ||
+    /minutos\s+(?:de\s+voz\s+)?ilimitados?/i.test(text) ||
+    /ilimitad[ao]\s+llamadas?/i.test(text) ||
+    /ilimitados?\s+minutos?/i.test(text) ||
+    /\bul\s+calls?\b/i.test(text) ||
+    /\bul\s+voice\b/i.test(text) ||
+    /\bcombo\b/i.test(text) ||
+    /std\s+(?:and|y)\s+roaming/i.test(text) ||
+    /roaming\s+ilimitado/i.test(text) ||
+    /llamadas\s+y\s+sms\s+ilimitados/i.test(text) ||
+    /minutos\s+ilimitados/i.test(text) ||
+    /habla\s+ilimitado/i.test(text)
+
+  if (hasUnlimitedCalls) {
+    return 'unlimited'
+  }
+
+  // 2. Data Pack (internet, data, GB, MB, etc. but without unlimited voice)
+  const hasData =
+    /\b\d+(?:\.\d+)?\s*(?:gb|mb)\b/i.test(text) ||
+    /\bdatos\b/i.test(text) ||
+    /\bdata\b/i.test(text) ||
+    /\binternet\b/i.test(text) ||
+    /\bnavegar\b/i.test(text) ||
+    /\bnavegaci[oó]n\b/i.test(text) ||
+    /\bdatos\s+ilimitados\b/i.test(text) ||
+    /\bunlimited\s+data\b/i.test(text) ||
+    /\bwhatsapp\b/i.test(text) ||
+    /\bfacebook\b/i.test(text) ||
+    /\binstagram\b/i.test(text) ||
+    /\btiktok\b/i.test(text) ||
+    /\bredes\s+sociales\b/i.test(text)
+
+  if (hasData) {
+    return 'data'
+  }
+
+  // 3. Fallback to database/catalog type if it is specific
+  if (dbType === 'unlimited' || dbType === 'data') {
+    return dbType
+  }
+
+  // 4. Default / Top-up
+  return 'topup'
+}
+
 
 type OperatorDetectResponse = { operator: string; country: string; providerCode?: string; source?: string }
 type DbProvider = { code: string; name: string; shortName: string }
@@ -112,7 +167,7 @@ export default function TopupPlanSelectionPage() {
   const [plans, setPlans] = useState<TopupPlan[]>([])
   const [resolvedProviderCode, setResolvedProviderCode] = useState<string | undefined>()
   const [tab, setTab] = useState<(typeof tabs)[number]['id']>('all')
-  const [sort, setSort] = useState<'popular' | 'price' | 'validity'>('popular')
+  const [sort, setSort] = useState<'popular' | 'price-asc' | 'price-desc'>('popular')
 
   const [operatorDialogOpen, setOperatorDialogOpen] = useState(false)
   const [providersLoading, setProvidersLoading] = useState(false)
@@ -246,7 +301,6 @@ export default function TopupPlanSelectionPage() {
         })
         if (effectiveOperatorId) params.set('operatorId', effectiveOperatorId)
         else if (operator && operator.toLowerCase() !== 'unknown') params.set('operatorName', operator)
-        if (tab !== 'all') params.set('category', tab)
 
         const res = await fetch(`/api/plans?${params}`, { credentials: 'include', cache: 'no-store' })
         const json = (await res.json().catch(() => ({}))) as { plans?: DbPlan[]; error?: string }
@@ -259,25 +313,34 @@ export default function TopupPlanSelectionPage() {
         // Normalize -1 validity to a human-readable label
         const normalized = valid.map((p) => {
           const vNum = parseInt(p.validity, 10)
-          if (Number.isFinite(vNum) && vNum <= 0) {
-            return { ...p, validity: 'No Expiry' }
+          const validityVal = (Number.isFinite(vNum) && vNum <= 0) ? 'No Expiry' : p.validity
+          const resolvedType = classifyPlanType(p.planName ?? '', p.benefits ?? '', p.type)
+          return {
+            ...p,
+            validity: validityVal,
+            type: resolvedType
           }
-          return p
         })
         setPlans(normalized)
+      } catch (err) {
+        // Suppress or handle error
       } finally {
         setLoadingPlans(false)
       }
     }
     void load()
-  }, [showPlans, operator, countryCode, effectiveOperatorId, tab])
+  }, [showPlans, operator, countryCode, effectiveOperatorId])
 
   const visiblePlans = useMemo(() => {
     let rows = [...plans]
     if (tab !== 'all') rows = rows.filter((p) => p.type === tab)
-    if (sort === 'popular') rows = rows.sort((a, b) => (b.tag === 'popular' ? 1 : 0) - (a.tag === 'popular' ? 1 : 0))
-    if (sort === 'price') rows = rows.sort((a, b) => a.price_eur - b.price_eur)
-    if (sort === 'validity') rows = rows.sort((a, b) => a.validity.localeCompare(b.validity))
+    if (sort === 'popular') {
+      rows = rows.sort((a, b) => (b.tag === 'popular' ? 1 : 0) - (a.tag === 'popular' ? 1 : 0))
+    } else if (sort === 'price-asc') {
+      rows = rows.sort((a, b) => a.price_eur - b.price_eur)
+    } else if (sort === 'price-desc') {
+      rows = rows.sort((a, b) => b.price_eur - a.price_eur)
+    }
     return rows
   }, [plans, tab, sort])
 
@@ -438,13 +501,13 @@ export default function TopupPlanSelectionPage() {
               <div className="flex w-full items-center justify-end gap-3 md:w-auto">
                 <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Filter by:</span>
                 <Select value={sort} onValueChange={(v) => setSort(v as any)}>
-                  <SelectTrigger className="h-11 w-[190px] rounded-full bg-[#f8f6f7] shadow-none ring-1 ring-black/10">
-                    <SelectValue placeholder="Popular" />
+                  <SelectTrigger className="h-11 w-[200px] rounded-full bg-[#f8f6f7] shadow-none ring-1 ring-black/10">
+                    <SelectValue placeholder="Sort by" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="popular">Popular</SelectItem>
-                    <SelectItem value="price">Price Low-High</SelectItem>
-                    <SelectItem value="validity">Validity</SelectItem>
+                    <SelectItem value="popular">Popularity</SelectItem>
+                    <SelectItem value="price-asc">Price: Low → High</SelectItem>
+                    <SelectItem value="price-desc">Price: High → Low</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -466,85 +529,94 @@ export default function TopupPlanSelectionPage() {
                   </p>
                 </div>
               ) : (
-                visiblePlans.map((plan) => (
-                  <div
-                    key={plan.id}
-                    className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-[0_18px_44px_-34px_rgba(15,23,42,0.35)]"
-                  >
-                    <div className="grid items-stretch gap-0 md:grid-cols-[180px_1fr_150px_150px]">
-                      <div className="relative flex items-center justify-center bg-white p-4 md:p-5">
-                        <div className="w-full rounded-xl border border-neutral-300 bg-white px-4 py-5 text-center">
-                          {plan.tag === 'popular' ? (
-                            <div className="pointer-events-none absolute right-4 top-4 overflow-hidden rounded-tr-xl">
-                              <div className="absolute right-[-36px] top-[6px] rotate-45 bg-[var(--hero-cta-orange)] px-10 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-white">
-                                Popular
+                visiblePlans.map((plan) => {
+                  const specs = parsePlanSpecs(plan.planName ?? '', plan.benefits ?? '')
+                  // Use DB validity first, fallback to parsed
+                  const displayValidity = (plan.validity && plan.validity !== 'No Expiry' && plan.validity.trim())
+                    ? plan.validity
+                    : specs.validity
+
+                  const specItems: { icon: React.ReactNode; label: string; value: string }[] = []
+                  if (specs.calls) specItems.push({ icon: <PhoneCall className="h-4 w-4 text-neutral-700" />, label: 'Calls', value: specs.calls })
+                  if (plan.data || specs.data) specItems.push({ icon: <Wifi className="h-4 w-4 text-neutral-700" />, label: 'Data', value: plan.data ?? specs.data ?? '' })
+                  if (specs.sms) specItems.push({ icon: <MessageSquareText className="h-4 w-4 text-neutral-700" />, label: 'SMS', value: specs.sms })
+
+                  return (
+                    <div
+                      key={plan.id}
+                      className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-[0_18px_44px_-34px_rgba(15,23,42,0.35)]"
+                    >
+                      <div className="grid items-stretch gap-0 md:grid-cols-[180px_1fr_150px_150px]">
+                        {/* Price column */}
+                        <div className="relative flex items-center justify-center bg-white p-4 md:p-5">
+                          <div className="w-full rounded-xl border border-neutral-300 bg-white px-4 py-5 text-center">
+                            {plan.tag === 'popular' ? (
+                              <div className="pointer-events-none absolute right-4 top-4 overflow-hidden rounded-tr-xl">
+                                <div className="absolute right-[-36px] top-[6px] rotate-45 bg-[var(--hero-cta-orange)] px-10 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-white">
+                                  Popular
+                                </div>
                               </div>
+                            ) : null}
+                            <p className="text-2xl font-extrabold text-neutral-900">INR {plan.price_inr}</p>
+                            <p className="mt-1 text-[11px] font-bold text-neutral-700">(€{plan.price_eur})</p>
+                          </div>
+                        </div>
+
+                        {/* Specs + description column */}
+                        <div className="border-t border-neutral-100 bg-white px-5 py-4 md:border-l md:border-t-0 md:py-5">
+                          {specItems.length > 0 ? (
+                            <div className={cn('grid items-center gap-3', specItems.length === 1 ? 'grid-cols-1' : specItems.length === 2 ? 'grid-cols-2' : 'grid-cols-3')}>
+                              {specItems.map((s) => (
+                                <div key={s.label} className="flex items-center gap-2">
+                                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
+                                    {s.icon}
+                                  </span>
+                                  <div>
+                                    <p className="text-xs font-semibold text-neutral-700">{s.value}</p>
+                                    <p className="text-[11px] text-neutral-500">{s.label}</p>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
                           ) : null}
-                          <p className="text-2xl font-extrabold text-neutral-900">INR {plan.price_inr}</p>
-                          <p className="mt-1 text-[11px] font-bold text-neutral-700">(EURO - €{plan.price_eur})</p>
-                        </div>
-                      </div>
-
-                      <div className="border-t border-neutral-100 bg-white px-5 py-4 md:border-l md:border-t-0 md:py-5">
-                        <div className="grid grid-cols-3 items-center gap-4">
-                          <div className="flex items-center gap-2">
-                            <span className="flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
-                              <PhoneCall className="h-4 w-4 text-neutral-700" />
-                            </span>
-                            <div>
-                              <p className="text-xs font-semibold text-neutral-700">Unlimited</p>
-                              <p className="text-[11px] text-neutral-500">Calls</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
-                              <Wifi className="h-4 w-4 text-neutral-700" />
-                            </span>
-                            <div>
-                              <p className="text-xs font-semibold text-neutral-700">{plan.data || '2GB/Day'}</p>
-                              <p className="text-[11px] text-neutral-500">Data</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
-                              <MessageSquareText className="h-4 w-4 text-neutral-700" />
-                            </span>
-                            <div>
-                              <p className="text-xs font-semibold text-neutral-700">{plan.sms || '100 SMS/Day'}</p>
-                              <p className="text-[11px] text-neutral-500">SMS</p>
-                            </div>
+                          <div className={cn('text-[11px] text-neutral-600', specItems.length > 0 ? 'mt-4 border-t border-neutral-200/70 pt-3' : '')}>
+                            <span className="font-semibold text-neutral-800 mr-2">{cleanOperatorName(plan.planName ?? '')}</span>
+                            {plan.benefits && plan.benefits !== plan.planName && (
+                              <span>{plan.benefits}</span>
+                            )}
                           </div>
                         </div>
-                        <div className="mt-4 border-t border-neutral-200/70 pt-3 text-[11px] text-neutral-600">
-                          <span className="font-semibold text-neutral-800">{cleanOperatorName(operator) || '—'}</span>
-                          <span className="ml-2">{translateBenefits(plan.benefits, languageCode) || 'Thanks app: Free hello tunes + Wynk music'}</span>
-                        </div>
-                      </div>
 
-                      <div className="flex items-center justify-center border-t border-neutral-100 bg-white px-4 py-4 md:border-l md:border-t-0">
-                        <div className="text-center">
-                          <span className="mx-auto mb-1 flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
-                            <CalendarDays className="h-4 w-4 text-neutral-700" />
-                          </span>
-                          <p className="text-sm font-bold text-neutral-900">{plan.validity || '28 Days'}</p>
-                          <p className="text-[11px] text-neutral-500">Validity</p>
+                        {/* Validity column */}
+                        <div className="flex items-center justify-center border-t border-neutral-100 bg-white px-4 py-4 md:border-l md:border-t-0">
+                          <div className="text-center">
+                            <span className="mx-auto mb-1 flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
+                              <CalendarDays className="h-4 w-4 text-neutral-700" />
+                            </span>
+                            {displayValidity ? (
+                              <p className="text-sm font-bold text-neutral-900">{displayValidity}</p>
+                            ) : (
+                              <p className="text-xs text-neutral-400 italic">—</p>
+                            )}
+                            <p className="text-[11px] text-neutral-500">Validity</p>
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="flex items-center justify-center border-t border-neutral-100 bg-white px-4 py-4 md:border-l md:border-t-0">
-                        <Button
-                          className={cn(
-                            'h-9 rounded-full bg-[var(--hero-cta-orange)] px-6 text-[11px] font-bold uppercase tracking-wide text-white shadow-none hover:brightness-105',
-                          )}
-                          onClick={() => onBuy(plan)}
-                        >
-                          Buy Now
-                        </Button>
+                        {/* Buy button column */}
+                        <div className="flex items-center justify-center border-t border-neutral-100 bg-white px-4 py-4 md:border-l md:border-t-0">
+                          <Button
+                            className={cn(
+                              'h-9 rounded-full bg-[var(--hero-cta-orange)] px-6 text-[11px] font-bold uppercase tracking-wide text-white shadow-none hover:brightness-105',
+                            )}
+                            onClick={() => onBuy(plan)}
+                          >
+                            Buy Now
+                          </Button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))
+                  )
+                })
               )}
             </div>
 
