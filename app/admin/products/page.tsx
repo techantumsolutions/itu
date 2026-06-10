@@ -271,22 +271,6 @@ export default function AdminProductsPage() {
       ) : null}
 
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Package className="size-5" />
-            Product catalog
-          </CardTitle>
-          <CardDescription>
-            {loading
-              ? 'Loading…'
-              : `${plans.length} plan(s) shown${countryOptions.length ? ` · ${countryOptions.length} countries in database` : ''}.`}
-            {' '}
-            <Link href="/admin/providers" className="font-medium text-primary hover:underline">
-              Sync providers
-            </Link>{' '}
-            to ingest more countries.
-          </CardDescription>
-        </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>

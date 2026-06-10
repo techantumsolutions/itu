@@ -19,9 +19,53 @@ import {
   operatorNameFromInternalPlan,
   type InternalPlanRow,
 } from '@/lib/lcr/internal-plan-display'
+import { countriesList } from '@/lib/country-codes'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
+}
+
+/**
+ * In-memory caches built from the countries DB table (all 172+ countries).
+ * The hardcoded ISO2_TO_ISO3 in lib/lcr/countries.ts only covers ~35 countries.
+ */
+let _iso2ToIso3Cache: Map<string, string> | null = null
+let _iso3ToIso2Cache: Map<string, string> | null = null
+
+async function buildCountryCache(): Promise<void> {
+  if (_iso2ToIso3Cache) return
+  try {
+    const rows = await dbFetchCountries()
+    _iso2ToIso3Cache = new Map<string, string>()
+    _iso3ToIso2Cache = new Map<string, string>()
+    for (const r of rows) {
+      if (r.iso2 && r.iso3) {
+        _iso2ToIso3Cache.set(r.iso2.toUpperCase(), r.iso3.toUpperCase())
+        _iso3ToIso2Cache.set(r.iso3.toUpperCase(), r.iso2.toUpperCase())
+      }
+    }
+  } catch {
+    _iso2ToIso3Cache = new Map()
+    _iso3ToIso2Cache = new Map()
+  }
+}
+
+/** Resolve any ISO2 or ISO3 code to ISO3 using the DB countries table. */
+async function resolveIso3FromDb(iso2OrIso3: string): Promise<string> {
+  const t = iso2OrIso3.trim().toUpperCase()
+  if (!t) return ''
+  if (t.length === 3) return t
+  await buildCountryCache()
+  return _iso2ToIso3Cache!.get(t) ?? normalizeCountryIso3(t) ?? t
+}
+
+/** Resolve ISO3 → ISO2 using the DB countries table (covers all 172+ countries). */
+async function resolveIso2FromDb(iso3: string): Promise<string> {
+  const t = iso3.trim().toUpperCase()
+  if (!t) return t
+  if (t.length === 2) return t
+  await buildCountryCache()
+  return _iso3ToIso2Cache!.get(t) ?? toPublicCountryCode(t)
 }
 
 export type PublicCountry = {
@@ -216,7 +260,8 @@ async function listOperatorsFromInternalPlans(countryIso3: string): Promise<Publ
 }
 
 export async function fetchPublicOperators(countryInput: string): Promise<PublicOperator[]> {
-  const countryIso3 = normalizeCountryIso3(countryInput)
+  // Use DB-backed resolver to correctly convert ISO2 → ISO3 for all countries (not just the 35 hardcoded ones)
+  const countryIso3 = await resolveIso3FromDb(countryInput)
   if (!countryIso3) return []
 
   if (await isAggregatorSchemaReady()) {
@@ -234,21 +279,23 @@ export async function fetchPublicOperators(countryInput: string): Promise<Public
       service_domain?: string | null
       status?: string | null
     }>
-    return rows
-      .filter((row) => isMobileCatalogOperator(row))
-      .map((row) => ({
-        id: row.id,
-        code: row.id,
-        name: row.system_operator_name,
-        shortName: row.system_operator_name,
-        countryCode: toPublicCountryCode(row.country_id),
-        countryIso3: row.country_id,
-        logo: row.logo ?? null,
-      }))
+    return await Promise.all(
+      rows
+        .filter((row) => isMobileCatalogOperator(row))
+        .map(async (row) => ({
+          id: row.id,
+          code: row.id,
+          name: row.system_operator_name,
+          shortName: row.system_operator_name,
+          countryCode: await resolveIso2FromDb(row.country_id),
+          countryIso3: row.country_id,
+          logo: row.logo ?? null,
+        }))
+    )
   }
 
   try {
-    const iso2 = toPublicCountryCode(countryIso3)
+    const iso2 = await resolveIso2FromDb(countryIso3)
     const legacy = await dbFetchOperators(iso2.length === 2 ? iso2 : countryInput.toUpperCase())
     return legacy.map((p) => ({
       id: p.code,
@@ -450,7 +497,7 @@ export async function fetchPublicPlans(input: {
   category?: string
   limit?: number
 }): Promise<PublicPlan[]> {
-  const countryIso3 = normalizeCountryIso3(input.countryId ?? input.countryCode ?? '')
+  const countryIso3 = await resolveIso3FromDb(input.countryId ?? input.countryCode ?? '')
   const limit = input.limit ?? 200
 
   const resolved = await resolvePublicOperatorKey(input.countryId ?? input.countryCode ?? '', {
@@ -529,8 +576,47 @@ export async function detectPublicOperator(input: {
   phoneNumber: string
   countryCode: string
 }): Promise<{ operator: string; providerCode?: string; country: string; source: string }> {
-  const countryIso3 = normalizeCountryIso3(input.countryCode)
-  const operators = await fetchPublicOperators(input.countryCode)
+  const dbCountries = await dbFetchCountries().catch(() => [])
+  const digits = input.phoneNumber.replace(/\D/g, '')
+
+  // Build prefix map: use countries.dial_prefix from DB as primary source of truth.
+  // Fall back to countriesList (libphonenumber-js) only for rows where DB dial_prefix is missing.
+  const fallbackMap = new Map<string, string>()
+  for (const item of countriesList) {
+    fallbackMap.set(item.code.toUpperCase(), item.dialCode.replace('+', '').trim())
+  }
+
+  const prefixMap = new Map<string, string>()
+  for (const c of dbCountries) {
+    const iso2 = c.iso2.toUpperCase()
+    const dbPrefix = (c.dial_prefix ?? '').replace('+', '').trim()
+    const prefix = dbPrefix || fallbackMap.get(iso2) || ''
+    if (prefix) prefixMap.set(iso2, prefix)
+  }
+
+  let matchedCountry = null
+  if (digits) {
+    // Sort countries by prefix length descending to match longest first (e.g. 502 before 5)
+    const sorted = [...dbCountries].sort((a, b) => {
+      const prefixA = prefixMap.get(a.iso2.toUpperCase()) || ''
+      const prefixB = prefixMap.get(b.iso2.toUpperCase()) || ''
+      return prefixB.length - prefixA.length
+    })
+
+    for (const c of sorted) {
+      const prefix = prefixMap.get(c.iso2.toUpperCase())
+      if (prefix && digits.startsWith(prefix)) {
+        if (digits.length >= prefix.length + 4) {
+          matchedCountry = c
+          break
+        }
+      }
+    }
+  }
+
+  const verifiedCountryCode = matchedCountry ? matchedCountry.iso2.toUpperCase() : input.countryCode.toUpperCase()
+
+  const operators = await fetchPublicOperators(verifiedCountryCode)
   const legacyShape = operators.map((o) => ({
     country_iso: o.countryCode,
     code: o.code,
@@ -541,12 +627,21 @@ export async function detectPublicOperator(input: {
     region_code: null as string | null,
     is_default: null as boolean | null,
   }))
-  const picked = pickOperatorForPhone(legacyShape, input.phoneNumber)
+
+  let picked = null
+  if (matchedCountry) {
+    const prefix = prefixMap.get(matchedCountry.iso2.toUpperCase()) || ''
+    const nationalDigits = prefix && digits.startsWith(prefix) ? digits.slice(prefix.length) : digits
+    picked = pickOperatorForPhone(legacyShape, nationalDigits) || pickOperatorForPhone(legacyShape, digits)
+  } else {
+    picked = pickOperatorForPhone(legacyShape, digits)
+  }
+
   if (picked) {
     return {
       operator: (picked.short_name ?? picked.name).trim(),
       providerCode: picked.code,
-      country: input.countryCode.toUpperCase(),
+      country: verifiedCountryCode,
       source: 'database',
     }
   }
@@ -555,7 +650,7 @@ export async function detectPublicOperator(input: {
     return {
       operator: (defaultOp.short_name ?? defaultOp.name).trim(),
       providerCode: defaultOp.code,
-      country: input.countryCode.toUpperCase(),
+      country: verifiedCountryCode,
       source: 'database',
     }
   }
@@ -564,14 +659,14 @@ export async function detectPublicOperator(input: {
     return {
       operator: o.shortName,
       providerCode: o.code,
-      country: input.countryCode.toUpperCase(),
+      country: verifiedCountryCode,
       source: 'database',
     }
   }
   return {
     operator: 'Unknown',
     providerCode: undefined,
-    country: countryIso3 || input.countryCode.toUpperCase(),
+    country: verifiedCountryCode,
     source: 'database',
   }
 }
