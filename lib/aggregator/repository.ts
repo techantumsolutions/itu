@@ -496,7 +496,7 @@ export async function aggListSystemPlans(params: {
     'order=amount.asc',
   ]
   if (params.mobileCatalogOnly) {
-    filters.push('service_domain=eq.MOBILE')
+    filters.push('or=(service_domain.eq.MOBILE,service_domain.is.null)')
   } else if (params.serviceDomain) {
     filters.push(`service_domain=eq.${enc(params.serviceDomain)}`)
   }

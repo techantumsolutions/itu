@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -119,19 +119,28 @@ export default function TopupPlanSelectionPage() {
   const [providers, setProviders] = useState<DbProvider[]>([])
   const [selectedProviderCode, setSelectedProviderCode] = useState<string>('')
   const [manualOperatorOverride, setManualOperatorOverride] = useState<boolean>(false)
+  // Tracks when the user explicitly picked a country from the dropdown.
+  // When true, auto-detect is NOT allowed to override the country selection.
+  const [manualCountryOverride, setManualCountryOverride] = useState<boolean>(false)
+  // Ref so the detect effect can read the latest countryCode without being
+  // in the dependency array (which caused re-detection on every country change).
+  const countryCodeRef = useRef(countryCode)
+  useEffect(() => { countryCodeRef.current = countryCode }, [countryCode])
+
+  const [phoneError, setPhoneError] = useState<boolean>(false)
 
   const effectiveOperatorId = resolvedProviderCode || selectedProviderCode
   const operatorReady = Boolean(effectiveOperatorId) || (Boolean(operator) && operator.toLowerCase() !== 'unknown')
-  const showPlansSection = localPhone.trim().length >= 10
-  const showPlans = showPlansSection && operatorReady
+  const showPlans = operatorReady
 
   useEffect(() => {
     setPhoneDetails({ countryCode, phoneNumber: localPhone })
   }, [countryCode, localPhone, setPhoneDetails])
 
   useEffect(() => {
-    // If the number changes, let auto-detect run again.
+    // Phone number changed → allow auto-detect to run (and override country) again.
     setManualOperatorOverride(false)
+    setManualCountryOverride(false)
     setSelectedProviderCode('')
     setResolvedProviderCode(undefined)
     setOperator('')
@@ -151,7 +160,7 @@ export default function TopupPlanSelectionPage() {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phoneNumber: localPhone, countryCode }),
+          body: JSON.stringify({ phoneNumber: localPhone, countryCode: countryCodeRef.current }),
         })
         const data = (await res.json().catch(() => ({}))) as Partial<OperatorDetectResponse>
         const name =
@@ -162,6 +171,17 @@ export default function TopupPlanSelectionPage() {
         const pc =
           res.ok && typeof data.providerCode === 'string' ? data.providerCode.trim() : ''
         setResolvedProviderCode(pc || undefined)
+
+        // Only override the country from auto-detect if the user has NOT manually
+        // selected a country from the dropdown.
+        if (
+          !manualCountryOverride &&
+          res.ok &&
+          data.country &&
+          data.country.toUpperCase() !== countryCodeRef.current.toUpperCase()
+        ) {
+          setPhoneDetails({ countryCode: data.country.toUpperCase(), phoneNumber: localPhone })
+        }
       } catch {
         setOperator('Unknown')
         setResolvedProviderCode(undefined)
@@ -170,14 +190,11 @@ export default function TopupPlanSelectionPage() {
       }
     }
     void run()
-  }, [localPhone, countryCode, setOperator, manualOperatorOverride])
+    // NOTE: countryCode is intentionally NOT in deps. We read it via countryCodeRef
+    // to avoid re-triggering detection every time the user changes the country dropdown.
+  }, [localPhone, setOperator, manualOperatorOverride, manualCountryOverride, setPhoneDetails])
 
-  useEffect(() => {
-    if (detecting || manualOperatorOverride) return
-    if (localPhone.length >= 10 && operator.toLowerCase() === 'unknown') {
-      setOperatorDialogOpen(true)
-    }
-  }, [detecting, operator, localPhone, manualOperatorOverride])
+  // Auto-detect is handled automatically, manual selection via form Select dropdown
 
   // Fetch providers list automatically whenever countryCode changes in background
   useEffect(() => {
@@ -208,15 +225,15 @@ export default function TopupPlanSelectionPage() {
           ? resolvedProviderCode
           : providers[0]!.code
       setSelectedProviderCode(initial)
-    }
-  }, [resolvedProviderCode, providers])
 
-  // Reset selectedProviderCode when the operator dialog is opened
-  useEffect(() => {
-    if (operatorDialogOpen && resolvedProviderCode && providers.some((m) => m.code === resolvedProviderCode)) {
-      setSelectedProviderCode(resolvedProviderCode)
+      const chosen = providers.find((p) => p.code === initial)
+      if (chosen && (!operator || operator === 'Unknown' || operator === '')) {
+        setOperator(chosen.shortName || chosen.name)
+      }
     }
-  }, [operatorDialogOpen, resolvedProviderCode, providers])
+  }, [resolvedProviderCode, providers, operator, setOperator])
+
+
 
   useEffect(() => {
     const load = async () => {
@@ -265,6 +282,13 @@ export default function TopupPlanSelectionPage() {
   }, [plans, tab, sort])
 
   const onBuy = (plan: TopupPlan) => {
+    if (localPhone.trim().length < 10) {
+      setPhoneError(true)
+      const el = document.getElementById('phone-input')
+      if (el) el.focus()
+      return
+    }
+    setPhoneError(false)
     selectPlan(plan)
     calculatePricing({ currency: userCurrency, fee: 0.49 })
     router.push('/topup/summary')
@@ -304,6 +328,7 @@ export default function TopupPlanSelectionPage() {
                           key={c.code}
                           value={`${c.name} ${c.code} ${c.dialCode}`}
                           onSelect={() => {
+                            setManualCountryOverride(true)   // lock: don't let auto-detect override this
                             setPhoneDetails({ countryCode: c.code, phoneNumber: localPhone })
                             setOpenCountry(false)
                           }}
@@ -324,26 +349,54 @@ export default function TopupPlanSelectionPage() {
                 </Command>
               </PopoverContent>
             </Popover>
-            <div className="flex items-center gap-2 rounded-xl bg-white px-4 py-3 ring-1 ring-black/10">
-              <Input
-                value={localPhone}
-                onChange={(e) => setLocalPhone(e.target.value.replace(/[^\d]/g, ''))}
-                placeholder="Enter mobile number"
-                className="h-8 rounded-none border-0 bg-transparent p-0 text-sm font-medium text-neutral-900 shadow-none placeholder:text-neutral-400 focus-visible:border-transparent focus-visible:ring-0"
-              />
-            </div>
-            <div className="flex items-center justify-between rounded-xl bg-white px-4 py-3 ring-1 ring-black/10">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-neutral-900">{cleanOperatorName(operator) || '—'}</span>
-                {detecting ? <span className="text-xs text-neutral-400">…</span> : null}
+            <div className="flex flex-col justify-center">
+              <div className={cn(
+                "flex items-center gap-2 rounded-xl bg-white px-4 py-3 ring-1 transition-all w-full",
+                phoneError ? "ring-red-500" : "ring-black/10"
+              )}>
+                <Input
+                  id="phone-input"
+                  value={localPhone}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^\d]/g, '')
+                    setLocalPhone(val)
+                    if (val.length >= 10) setPhoneError(false)
+                  }}
+                  placeholder="Enter mobile number"
+                  className="h-8 rounded-none border-0 bg-transparent p-0 text-sm font-medium text-neutral-900 shadow-none placeholder:text-neutral-400 focus-visible:border-transparent focus-visible:ring-0 w-full"
+                />
               </div>
-              <button
-                type="button"
-                className="text-xs font-medium text-[var(--hero-cta-orange)] underline underline-offset-2"
-                onClick={() => setOperatorDialogOpen(true)}
+              {phoneError && (
+                <span className="text-[10px] text-red-500 mt-1 font-semibold pl-1">
+                  10+ digit number required
+                </span>
+              )}
+            </div>
+            <div className="flex items-center rounded-xl bg-white ring-1 ring-black/10 w-full px-2">
+              <Select
+                value={selectedProviderCode}
+                onValueChange={(val) => {
+                  const chosen = providers.find((p) => p.code === val)
+                  if (chosen) {
+                    setManualOperatorOverride(true)
+                    setOperator(chosen.shortName || chosen.name)
+                    setResolvedProviderCode(chosen.code)
+                    setSelectedProviderCode(chosen.code)
+                  }
+                }}
+                disabled={providersLoading || providers.length === 0}
               >
-                Change
-              </button>
+                <SelectTrigger className="h-12 border-0 bg-transparent shadow-none ring-0 focus:ring-0 focus-visible:ring-0 text-sm font-semibold text-neutral-900 w-full justify-between">
+                  <SelectValue placeholder={providersLoading ? 'Loading operators…' : 'Select operator'} />
+                </SelectTrigger>
+                <SelectContent>
+                  {providers.map((p) => (
+                    <SelectItem key={p.code} value={p.code} className="cursor-pointer">
+                      {p.shortName || p.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="rounded-xl bg-[#f8f6f7] px-4 py-3 text-[11px] text-neutral-600 ring-1 ring-black/10">
               Recharge will be sent to
@@ -354,246 +407,178 @@ export default function TopupPlanSelectionPage() {
           </div>
         </div>
 
-        {showPlansSection ? (
-          <>
-            {!operatorReady ? (
-              <div className="mx-auto mt-10 max-w-2xl rounded-2xl bg-white p-6 text-center shadow-sm ring-1 ring-black/5">
-                <p className="text-sm font-semibold text-neutral-900">Select your mobile operator</p>
-                <p className="mt-2 text-xs text-neutral-500">
-                  Operator detection uses the catalog database. Choose your operator to load available plans.
-                </p>
-                <Button className="mt-4" onClick={() => setOperatorDialogOpen(true)}>
-                  Choose operator
-                </Button>
-              </div>
-            ) : null}
-
-            {operatorReady ? (
-              <>
-                <div className="mt-10 flex flex-col items-center justify-between gap-4 md:flex-row">
-                  <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="w-full md:w-auto">
-                    <TabsList className="h-12 rounded-full bg-transparent p-0 shadow-none ring-0">
-                      {tabs.map((t) => (
-                        <TabsTrigger
-                          key={t.id}
-                          value={t.id}
-                          className={cn(
-                            'h-10 rounded-full px-6 text-[11px] font-bold uppercase tracking-[0.12em]',
-                            'data-[state=active]:bg-neutral-200/80 data-[state=active]:text-[var(--hero-cta-orange)] data-[state=active]:shadow-none',
-                            'data-[state=inactive]:text-neutral-700 data-[state=inactive]:bg-transparent',
-                          )}
-                        >
-                          {t.label}
-                        </TabsTrigger>
-                      ))}
-                    </TabsList>
-                  </Tabs>
-
-                  <div className="flex w-full items-center justify-end gap-3 md:w-auto">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Filter by:</span>
-                    <Select value={sort} onValueChange={(v) => setSort(v as any)}>
-                      <SelectTrigger className="h-11 w-[190px] rounded-full bg-[#f8f6f7] shadow-none ring-1 ring-black/10">
-                        <SelectValue placeholder="Popular" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="popular">Popular</SelectItem>
-                        <SelectItem value="price">Price Low-High</SelectItem>
-                        <SelectItem value="validity">Validity</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="mt-6 space-y-6">
-                  {loadingPlans ? (
-                    <div className="space-y-4">
-                      {Array.from({ length: 2 }).map((_, i) => (
-                        <div key={i} className="h-28 rounded-2xl bg-white/70 ring-1 ring-black/5" />
-                      ))}
-                    </div>
-                  ) : visiblePlans.length === 0 ? (
-                    <div className="rounded-2xl bg-white px-6 py-12 text-center shadow-sm ring-1 ring-black/5">
-                      <p className="text-sm font-semibold text-neutral-900">No plans available for this operator</p>
-                      <p className="mt-2 text-xs text-neutral-500">
-                        Plans are loaded from the application catalog database. Ask an admin to sync providers in the
-                        admin panel, or choose a different operator using Change.
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="mt-4"
-                        onClick={() => setOperatorDialogOpen(true)}
-                      >
-                        Choose operator
-                      </Button>
-                    </div>
-                  ) : (
-                    visiblePlans.map((plan) => (
-                      <div
-                        key={plan.id}
-                        className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-[0_18px_44px_-34px_rgba(15,23,42,0.35)]"
-                      >
-                        <div className="grid items-stretch gap-0 md:grid-cols-[180px_1fr_150px_150px]">
-                          <div className="relative flex items-center justify-center bg-white p-4 md:p-5">
-                            <div className="w-full rounded-xl border border-neutral-300 bg-white px-4 py-5 text-center">
-                              {plan.tag === 'popular' ? (
-                                <div className="pointer-events-none absolute right-4 top-4 overflow-hidden rounded-tr-xl">
-                                  <div className="absolute right-[-36px] top-[6px] rotate-45 bg-[var(--hero-cta-orange)] px-10 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-white">
-                                    Popular
-                                  </div>
-                                </div>
-                              ) : null}
-                              <p className="text-2xl font-extrabold text-neutral-900">INR {plan.price_inr}</p>
-                              <p className="mt-1 text-[11px] font-bold text-neutral-700">(EURO - €{plan.price_eur})</p>
-                            </div>
-                          </div>
-
-                          <div className="border-t border-neutral-100 bg-white px-5 py-4 md:border-l md:border-t-0 md:py-5">
-                            <div className="grid grid-cols-3 items-center gap-4">
-                              <div className="flex items-center gap-2">
-                                <span className="flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
-                                  <PhoneCall className="h-4 w-4 text-neutral-700" />
-                                </span>
-                                <div>
-                                  <p className="text-xs font-semibold text-neutral-700">Unlimited</p>
-                                  <p className="text-[11px] text-neutral-500">Calls</p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
-                                  <Wifi className="h-4 w-4 text-neutral-700" />
-                                </span>
-                                <div>
-                                  <p className="text-xs font-semibold text-neutral-700">{plan.data || '2GB/Day'}</p>
-                                  <p className="text-[11px] text-neutral-500">Data</p>
-                                </div>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
-                                  <MessageSquareText className="h-4 w-4 text-neutral-700" />
-                                </span>
-                                <div>
-                                  <p className="text-xs font-semibold text-neutral-700">{plan.sms || '100 SMS/Day'}</p>
-                                  <p className="text-[11px] text-neutral-500">SMS</p>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="mt-4 border-t border-neutral-200/70 pt-3 text-[11px] text-neutral-600">
-                              <span className="font-semibold text-neutral-800">{cleanOperatorName(operator) || '—'}</span>
-                              <span className="ml-2">{translateBenefits(plan.benefits, languageCode) || 'Thanks app: Free hello tunes + Wynk music'}</span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-center border-t border-neutral-100 bg-white px-4 py-4 md:border-l md:border-t-0">
-                            <div className="text-center">
-                              <span className="mx-auto mb-1 flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
-                                <CalendarDays className="h-4 w-4 text-neutral-700" />
-                              </span>
-                              <p className="text-sm font-bold text-neutral-900">{plan.validity || '28 Days'}</p>
-                              <p className="text-[11px] text-neutral-500">Validity</p>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center justify-center border-t border-neutral-100 bg-white px-4 py-4 md:border-l md:border-t-0">
-                            <Button
-                              className={cn(
-                                'h-9 rounded-full bg-[var(--hero-cta-orange)] px-6 text-[11px] font-bold uppercase tracking-wide text-white shadow-none hover:brightness-105',
-                              )}
-                              onClick={() => onBuy(plan)}
-                            >
-                              Buy Now
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <div className="mt-10 flex flex-wrap items-center justify-center gap-10 text-center text-sm text-neutral-600">
-                  <div className="flex items-center gap-3">
-                    <span className="flex size-10 items-center justify-center rounded-full bg-violet-600/10 text-violet-700">
-                      <Sparkles className="h-5 w-5" />
-                    </span>
-                    <div className="text-left">
-                      <p className="font-semibold text-neutral-900">Instant Top-Up</p>
-                      <p className="text-xs text-neutral-500">In seconds</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="flex size-10 items-center justify-center rounded-full bg-emerald-600/10 text-emerald-700">
-                      <span className="text-sm font-bold">✓</span>
-                    </span>
-                    <div className="text-left">
-                      <p className="font-semibold text-neutral-900">100% Secure</p>
-                      <p className="text-xs text-neutral-500">Safe payments</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="flex size-10 items-center justify-center rounded-full bg-orange-600/10 text-orange-700">
-                      <span className="text-sm font-bold">%</span>
-                    </span>
-                    <div className="text-left">
-                      <p className="font-semibold text-neutral-900">Best Rates</p>
-                      <p className="text-xs text-neutral-500">No hidden fees</p>
-                    </div>
-                  </div>
-                </div>
-              </>
-            ) : null}
-          </>
-        ) : (
+        {!showPlans ? (
           <div className="mx-auto mt-10 max-w-2xl rounded-2xl bg-white p-6 shadow-sm ring-1 ring-black/5">
-            <p className="text-center text-sm font-semibold text-neutral-900">Enter your mobile number to see plans</p>
+            <p className="text-center text-sm font-semibold text-neutral-900">Select country and operator to see plans</p>
             <p className="mt-2 text-center text-xs text-neutral-500">
-              Once your operator is detected, available recharge plans will populate below.
+              Once an operator is selected, available recharge plans will populate below.
             </p>
           </div>
-        )}
-
-        <Dialog open={operatorDialogOpen} onOpenChange={setOperatorDialogOpen}>
-          <DialogContent className="sm:max-w-[520px]">
-            <DialogHeader>
-              <DialogTitle>Choose operator</DialogTitle>
-              <DialogDescription>Select your operator for this number.</DialogDescription>
-            </DialogHeader>
-
-            <div className="grid gap-3">
-              <Select value={selectedProviderCode} onValueChange={setSelectedProviderCode} disabled={providersLoading || providers.length === 0}>
-                <SelectTrigger className="h-11">
-                  <SelectValue placeholder={providersLoading ? 'Loading operators…' : 'Select operator'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {providers.map((p) => (
-                    <SelectItem key={p.code} value={p.code}>
-                      {p.shortName}
-                    </SelectItem>
+        ) : (
+          <>
+            <div className="mt-10 flex flex-col items-center justify-between gap-4 md:flex-row">
+              <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="w-full md:w-auto">
+                <TabsList className="h-12 rounded-full bg-transparent p-0 shadow-none ring-0">
+                  {tabs.map((t) => (
+                    <TabsTrigger
+                      key={t.id}
+                      value={t.id}
+                      className={cn(
+                        'h-10 rounded-full px-6 text-[11px] font-bold uppercase tracking-[0.12em]',
+                        'data-[state=active]:bg-neutral-200/80 data-[state=active]:text-[var(--hero-cta-orange)] data-[state=active]:shadow-none',
+                        'data-[state=inactive]:text-neutral-700 data-[state=inactive]:bg-transparent',
+                      )}
+                    >
+                      {t.label}
+                    </TabsTrigger>
                   ))}
-                </SelectContent>
-              </Select>
+                </TabsList>
+              </Tabs>
+
+              <div className="flex w-full items-center justify-end gap-3 md:w-auto">
+                <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Filter by:</span>
+                <Select value={sort} onValueChange={(v) => setSort(v as any)}>
+                  <SelectTrigger className="h-11 w-[190px] rounded-full bg-[#f8f6f7] shadow-none ring-1 ring-black/10">
+                    <SelectValue placeholder="Popular" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="popular">Popular</SelectItem>
+                    <SelectItem value="price">Price Low-High</SelectItem>
+                    <SelectItem value="validity">Validity</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setOperatorDialogOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                className="bg-[var(--hero-cta-orange)] text-white hover:brightness-105"
-                disabled={!selectedProviderCode}
-                onClick={() => {
-                  const chosen = providers.find((p) => p.code === selectedProviderCode)
-                  if (!chosen) return
-                  setManualOperatorOverride(true)
-                  setOperator(chosen.shortName || chosen.name)
-                  setResolvedProviderCode(chosen.code)
-                  setOperatorDialogOpen(false)
-                }}
-              >
-                Apply
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            <div className="mt-6 space-y-6">
+              {loadingPlans ? (
+                <div className="space-y-4">
+                  {Array.from({ length: 2 }).map((_, i) => (
+                    <div key={i} className="h-28 rounded-2xl bg-white/70 ring-1 ring-black/5" />
+                  ))}
+                </div>
+              ) : visiblePlans.length === 0 ? (
+                <div className="rounded-2xl bg-white px-6 py-12 text-center shadow-sm ring-1 ring-black/5">
+                  <p className="text-sm font-semibold text-neutral-900">No plans available for this operator</p>
+                  <p className="mt-2 text-xs text-neutral-500">
+                    Plans are loaded from the application catalog database. Ask an admin to sync providers in the
+                    admin panel, or choose a different operator.
+                  </p>
+                </div>
+              ) : (
+                visiblePlans.map((plan) => (
+                  <div
+                    key={plan.id}
+                    className="relative overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-[0_18px_44px_-34px_rgba(15,23,42,0.35)]"
+                  >
+                    <div className="grid items-stretch gap-0 md:grid-cols-[180px_1fr_150px_150px]">
+                      <div className="relative flex items-center justify-center bg-white p-4 md:p-5">
+                        <div className="w-full rounded-xl border border-neutral-300 bg-white px-4 py-5 text-center">
+                          {plan.tag === 'popular' ? (
+                            <div className="pointer-events-none absolute right-4 top-4 overflow-hidden rounded-tr-xl">
+                              <div className="absolute right-[-36px] top-[6px] rotate-45 bg-[var(--hero-cta-orange)] px-10 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-white">
+                                Popular
+                              </div>
+                            </div>
+                          ) : null}
+                          <p className="text-2xl font-extrabold text-neutral-900">INR {plan.price_inr}</p>
+                          <p className="mt-1 text-[11px] font-bold text-neutral-700">(EURO - €{plan.price_eur})</p>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-neutral-100 bg-white px-5 py-4 md:border-l md:border-t-0 md:py-5">
+                        <div className="grid grid-cols-3 items-center gap-4">
+                          <div className="flex items-center gap-2">
+                            <span className="flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
+                              <PhoneCall className="h-4 w-4 text-neutral-700" />
+                            </span>
+                            <div>
+                              <p className="text-xs font-semibold text-neutral-700">Unlimited</p>
+                              <p className="text-[11px] text-neutral-500">Calls</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
+                              <Wifi className="h-4 w-4 text-neutral-700" />
+                            </span>
+                            <div>
+                              <p className="text-xs font-semibold text-neutral-700">{plan.data || '2GB/Day'}</p>
+                              <p className="text-[11px] text-neutral-500">Data</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
+                              <MessageSquareText className="h-4 w-4 text-neutral-700" />
+                            </span>
+                            <div>
+                              <p className="text-xs font-semibold text-neutral-700">{plan.sms || '100 SMS/Day'}</p>
+                              <p className="text-[11px] text-neutral-500">SMS</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="mt-4 border-t border-neutral-200/70 pt-3 text-[11px] text-neutral-600">
+                          <span className="font-semibold text-neutral-800">{cleanOperatorName(operator) || '—'}</span>
+                          <span className="ml-2">{translateBenefits(plan.benefits, languageCode) || 'Thanks app: Free hello tunes + Wynk music'}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-center border-t border-neutral-100 bg-white px-4 py-4 md:border-l md:border-t-0">
+                        <div className="text-center">
+                          <span className="mx-auto mb-1 flex size-9 items-center justify-center rounded-full bg-white ring-1 ring-black/5">
+                            <CalendarDays className="h-4 w-4 text-neutral-700" />
+                          </span>
+                          <p className="text-sm font-bold text-neutral-900">{plan.validity || '28 Days'}</p>
+                          <p className="text-[11px] text-neutral-500">Validity</p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-center border-t border-neutral-100 bg-white px-4 py-4 md:border-l md:border-t-0">
+                        <Button
+                          className={cn(
+                            'h-9 rounded-full bg-[var(--hero-cta-orange)] px-6 text-[11px] font-bold uppercase tracking-wide text-white shadow-none hover:brightness-105',
+                          )}
+                          onClick={() => onBuy(plan)}
+                        >
+                          Buy Now
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="mt-10 flex flex-wrap items-center justify-center gap-10 text-center text-sm text-neutral-600">
+              <div className="flex items-center gap-3">
+                <span className="flex size-10 items-center justify-center rounded-full bg-violet-600/10 text-violet-700">
+                  <Sparkles className="h-5 w-5" />
+                </span>
+                <div className="text-left">
+                  <p className="font-semibold text-neutral-900">Instant Top-Up</p>
+                  <p className="text-xs text-neutral-500">In seconds</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="flex size-10 items-center justify-center rounded-full bg-emerald-600/10 text-emerald-700">
+                  <span className="text-sm font-bold">✓</span>
+                </span>
+                <div className="text-left">
+                  <p className="font-semibold text-neutral-900">100% Secure</p>
+                  <p className="text-xs text-neutral-500">Safe payments</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="flex size-10 items-center justify-center rounded-full bg-orange-600/10 text-orange-700">
+                  <span className="text-sm font-bold">%</span>
+                </span>
+                <div className="text-left">
+                  <p className="font-semibold text-neutral-900">Best Rates</p>
+                  <p className="text-xs text-neutral-500">No hidden fees</p>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
