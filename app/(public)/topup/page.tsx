@@ -82,9 +82,20 @@ function parsePlanSpecs(planName: string, benefits: string): {
  * Classifies a plan into topup, unlimited, or data pack based on its name and benefits.
  */
 function classifyPlanType(planName: string, benefits: string, dbType?: string): 'topup' | 'unlimited' | 'data' {
-  const name = (planName ?? '').toLowerCase()
-  const desc = (benefits ?? '').toLowerCase()
-  const text = `${name} ${desc}`
+    // Trust catalog type first
+  if (dbType === 'topup') {
+    return 'topup'
+  }
+
+  if (dbType === 'unlimited') {
+    return 'unlimited'
+  }
+
+  if (dbType === 'data') {
+    return 'data'
+  }
+
+  const text = `${planName} ${benefits}`.toLowerCase()
 
   // 1. Unlimited Pack (unlimited calls/voice or combo packs)
   const hasUnlimitedCalls =
