@@ -460,6 +460,11 @@ export async function processLcrV2Recharge(request: Request, body: LcrV2Recharge
     attempts: attemptsLog,
   })
 
+  const lastAttemptCost =
+    attemptsLog.length > 0
+      ? attemptsLog[attemptsLog.length - 1]?.cost
+      : decision.selected?.price
+
   // Log MAX_RETRY_EXCEEDED and RECHARGE_FAILED
   await insertDetailedRoutingLog({
     transactionId: distributorRef,
@@ -469,6 +474,7 @@ export async function processLcrV2Recharge(request: Request, body: LcrV2Recharge
     routingStrategy: snapshot.routing_strategy,
     routingRuleMatched: decision.routingType === 'RULE' ? 'Yes' : 'No',
     selectedProvider: decision.selected?.providerId,
+    providerCost: lastAttemptCost,
     executionResult: 'MAX_RETRY_EXCEEDED',
     failureReason: 'All providers failed in failover chain',
   })
@@ -480,6 +486,7 @@ export async function processLcrV2Recharge(request: Request, body: LcrV2Recharge
     routingStrategy: snapshot.routing_strategy,
     routingRuleMatched: decision.routingType === 'RULE' ? 'Yes' : 'No',
     selectedProvider: decision.selected?.providerId,
+    providerCost: lastAttemptCost,
     executionResult: 'RECHARGE_FAILED',
     failureReason: 'All providers failed',
   })

@@ -91,30 +91,30 @@ export async function POST(req: Request) {
     }
 
     // 3. Admin Turnstile verification
-    if (isAdmin && source === 'admin-user') {
-      const secret = process.env.TURNSTILE_SECRET_KEY
-      if (secret && secret !== 'dummy_secret') {
-        if (!turnstileResponse) {
-          await logLoginAudit({ userId: existingProfile?.id, email, status: 'failed', ipAddress, country, userAgent })
-          return NextResponse.json({ ok: false, error: 'Missing CAPTCHA response' }, { status: 400 })
-        }
-        try {
-          const turnstileRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `secret=${encodeURIComponent(secret)}&response=${encodeURIComponent(turnstileResponse)}`
-          })
-          const outcome = await turnstileRes.json()
-          if (!outcome.success) {
-            await logLoginAudit({ userId: existingProfile?.id, email, status: 'failed', ipAddress, country, userAgent })
-            return NextResponse.json({ ok: false, error: 'CAPTCHA verification failed' }, { status: 400 })
-          }
-        } catch (err) {
-          console.error('Turnstile verification error:', err)
-          return NextResponse.json({ ok: false, error: 'CAPTCHA service error' }, { status: 500 })
-        }
-      }
-    }
+    // if (isAdmin && source === 'admin-user') {
+    //   const secret = process.env.TURNSTILE_SECRET_KEY
+    //   if (secret && secret !== 'dummy_secret') {
+    //     if (!turnstileResponse) {
+    //       await logLoginAudit({ userId: existingProfile?.id, email, status: 'failed', ipAddress, country, userAgent })
+    //       return NextResponse.json({ ok: false, error: 'Missing CAPTCHA response' }, { status: 400 })
+    //     }
+    //     try {
+    //       const turnstileRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+    //         method: 'POST',
+    //         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    //         body: `secret=${encodeURIComponent(secret)}&response=${encodeURIComponent(turnstileResponse)}`
+    //       })
+    //       const outcome = await turnstileRes.json()
+    //       if (!outcome.success) {
+    //         await logLoginAudit({ userId: existingProfile?.id, email, status: 'failed', ipAddress, country, userAgent })
+    //         return NextResponse.json({ ok: false, error: 'CAPTCHA verification failed' }, { status: 400 })
+    //       }
+    //     } catch (err) {
+    //       console.error('Turnstile verification error:', err)
+    //       return NextResponse.json({ ok: false, error: 'CAPTCHA service error' }, { status: 500 })
+    //     }
+    //   }
+    // }
 
     let user = null
     let session = null

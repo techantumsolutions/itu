@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { RefreshCcw } from 'lucide-react'
+import { RefreshCcw, ChevronDown, ChevronRight } from 'lucide-react'
 import { RoutingSubnav } from '@/app/admin/routing/_components/routing-subnav'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -74,9 +74,11 @@ export default function RoutingLogsPage() {
       setDetailsLoading((prev) => ({ ...prev, [transactionId]: true }))
       try {
         const res = await fetch(`/api/admin/routing-logs/detail?transactionId=${transactionId}`, { credentials: 'include' })
-        if (res.ok) {
-          const data = await res.json()
+        const data = (await res.json().catch(() => ({}))) as { attempt?: unknown; error?: string }
+        if (res.ok && data.attempt) {
           setDetails((prev) => ({ ...prev, [transactionId]: data.attempt }))
+        } else {
+          toast.error(data.error ?? 'Failed to load audit details')
         }
       } catch (err) {
         console.error(err)
@@ -150,7 +152,7 @@ export default function RoutingLogsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Decision log</CardTitle>
-          <CardDescription>Filter by country, operator, provider, or date range.</CardDescription>
+          <CardDescription>Click a row to expand routing audit details.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap xl:flex-nowrap">
@@ -236,7 +238,10 @@ export default function RoutingLogsPage() {
                           onClick={() => toggleExpand(log.transactionId)}
                         >
                           <div className="grid w-full items-center text-sm gap-2" style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}>
-                            <div>{new Date(log.createdAt).toLocaleString()}</div>
+                            <div className="flex items-center gap-1">
+                              {isExpanded ? <ChevronDown className="size-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-4 shrink-0 text-muted-foreground" />}
+                              <span>{new Date(log.createdAt).toLocaleString()}</span>
+                            </div>
                             <div className="font-mono text-xs truncate" title={log.transactionId ?? ''}>{log.transactionId ?? '—'}</div>
                             <div>{log.countryId ?? '—'}</div>
                             <div className="truncate" title={log.operatorId ?? ''}>{log.operatorId ?? '—'}</div>

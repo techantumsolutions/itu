@@ -424,7 +424,7 @@ export default function PublicLayout({
                           onHeroTop ? 'bg-white/20 text-white' : 'bg-neutral-100 text-neutral-800',
                         )}
                       >
-                        {user.name.charAt(0).toUpperCase()}
+                        {(user.name || user.email || 'U').charAt(0).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
                     <ChevronDown className="hidden size-3.5 opacity-50 sm:block" />
@@ -432,7 +432,7 @@ export default function PublicLayout({
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56 rounded-2xl p-1 shadow-[0_12px_40px_rgba(15,23,42,0.12)]">
                   <div className="px-3 py-2">
-                    <p className="text-sm font-semibold">{user.name}</p>
+                    <p className="text-sm font-semibold">{user.name || 'User'}</p>
                     <p className="text-xs text-muted-foreground">{user.email}</p>
                   </div>
                   <DropdownMenuSeparator />
