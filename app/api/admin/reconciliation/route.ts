@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { supabaseRest } from '@/lib/db/supabase-rest'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function GET(request: Request) {
   if (!(await adminCanUseFeature(request, 'reconciliation', { allowLegacyHeader: true }))) {
@@ -11,5 +12,11 @@ export async function GET(request: Request) {
     { cache: 'no-store' },
   )
   if (!res.ok) return NextResponse.json({ error: 'Failed to load reports' }, { status: 500 })
+
+  await logAdminActivity({
+    action: 'View Reconciliation Reports',
+    pageName: 'Reconciliation',
+  })
+
   return NextResponse.json({ reports: await res.json() })
 }

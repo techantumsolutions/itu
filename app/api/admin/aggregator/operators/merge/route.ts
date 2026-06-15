@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { adminCanManageProviders } from '@/lib/auth/require-admin-feature'
 import { aggMergeSystemOperators } from '@/lib/aggregator/repository'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 const mergeSchema = z.object({
   targetOperatorId: z.string().uuid(),
@@ -35,6 +36,13 @@ export async function POST(request: Request) {
   try {
     const actor = getRequestUser(request)
     const result = await aggMergeSystemOperators(targetOperatorId, sourceOperatorIds, actor?.email ?? 'admin')
+
+    await logAdminActivity({
+      action: 'Merge System Operators',
+      pageName: 'Integrations',
+      details: { targetOperatorId, sourceOperatorIds },
+    })
+
     return NextResponse.json(result)
   } catch (error: any) {
     console.error('[operators/merge]', error)

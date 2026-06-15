@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
 import { supabaseRest, isSupabaseCatalogConfigured } from '@/lib/db/supabase-rest'
 import { ADMIN_FEATURE_KEYS } from '@/lib/auth/admin-features'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 function mergePermissions(input: Record<string, unknown> | null | undefined): Record<string, boolean> {
   const base: Record<string, boolean> = {}
@@ -63,5 +64,12 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   })
   if (!res.ok) return NextResponse.json({ error: await res.text() }, { status: 500 })
   const updated = (await res.json()) as any[]
+
+  await logAdminActivity({
+    action: 'Update Staff Permissions/Status',
+    pageName: 'Staff',
+    details: { targetId: id, update: updatePayload },
+  })
+
   return NextResponse.json({ user: updated?.[0] ?? null })
 }

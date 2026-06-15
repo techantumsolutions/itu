@@ -3,6 +3,7 @@ import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { aggAudit } from '@/lib/aggregator/repository'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!(await adminCanUseFeature(request, 'integrations', { allowLegacyHeader: true }))) {
@@ -71,6 +72,12 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
     after: updatedItem,
     details: { classification: targetClassification }
   }).catch(() => {})
+
+  await logAdminActivity({
+    action: `Review Queue Item: ${action}`,
+    pageName: 'Integrations',
+    details: { id, action, classification: targetClassification },
+  })
 
   return NextResponse.json({ success: true, item: updatedItem })
 }

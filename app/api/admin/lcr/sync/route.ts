@@ -4,6 +4,7 @@ import { adminCanManageProviders } from '@/lib/auth/require-admin-feature'
 import { syncProviderCatalog } from '@/lib/lcr/sync-catalog'
 import { normalizeCountryList } from '@/lib/lcr/countries'
 import { invalidatePublicCatalogCache } from '@/lib/catalog/invalidate-public-cache'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function POST(request: Request) {
   if (!(await adminCanManageProviders(request))) {
@@ -21,6 +22,13 @@ export async function POST(request: Request) {
   try {
     const result = await syncProviderCatalog(providerId, countries.length ? { countries } : undefined)
     await invalidatePublicCatalogCache().catch(() => {})
+
+    await logAdminActivity({
+      action: 'Sync Provider Catalog',
+      pageName: 'Routing',
+      details: { providerId, countries },
+    })
+
     return NextResponse.json({ success: true, result })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'sync_failed'

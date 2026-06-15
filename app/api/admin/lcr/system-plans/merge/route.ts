@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { aggMergeSystemPlans } from '@/lib/aggregator/repository'
 import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function POST(request: Request) {
   if (!(await adminCanUseFeature(request, 'products', { allowLegacyHeader: true }))) {
@@ -23,6 +24,12 @@ export async function POST(request: Request) {
     const actorEmail = ctx?.user?.email || 'admin@system.local'
 
     const result = await aggMergeSystemPlans(targetId, sourceIds, actorEmail)
+
+    await logAdminActivity({
+      action: 'Merge System Plans',
+      pageName: 'Integrations',
+      details: { targetId, sourceIds },
+    })
 
     return NextResponse.json(result)
   } catch (error) {

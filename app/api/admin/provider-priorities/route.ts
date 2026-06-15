@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-rest'
 import { listProviderPriorities, replaceProviderPriorities } from '@/lib/routing/repository'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function GET(request: Request) {
   if (!(await adminCanUseFeature(request, 'routing', { allowLegacyHeader: true }))) {
@@ -9,6 +10,12 @@ export async function GET(request: Request) {
   }
 
   const priorities = await listProviderPriorities()
+
+  await logAdminActivity({
+    action: 'View Provider Priorities',
+    pageName: 'Routing',
+  })
+
   return NextResponse.json({ priorities, source: 'lcr_providers' })
 }
 
@@ -33,5 +40,12 @@ export async function PUT(request: Request) {
   }
 
   const priorities = await replaceProviderPriorities(items)
+
+  await logAdminActivity({
+    action: 'Update Provider Priorities',
+    pageName: 'Routing',
+    details: { prioritiesCount: items.length },
+  })
+
   return NextResponse.json({ priorities })
 }

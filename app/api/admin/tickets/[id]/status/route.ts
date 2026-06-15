@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { isAdminRequest } from '@/lib/tickets/auth-headers'
 import { getTicketAdmin, setTicketStatus } from '@/lib/tickets/db-persistence'
 import type { TicketStatus } from '@/lib/tickets/types'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -27,6 +28,13 @@ export async function PATCH(request: Request, context: Ctx) {
     }
 
     const ticket = await setTicketStatus(ticketId, status)
+
+    await logAdminActivity({
+      action: 'Change Ticket Status',
+      pageName: 'Support Tickets',
+      details: { ticketId, status },
+    })
+
     return NextResponse.json({ ticket })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Server error'

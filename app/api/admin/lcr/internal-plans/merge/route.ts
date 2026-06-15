@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { aggMergeInternalPlans } from '@/lib/aggregator/repository'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 const mergeSchema = z.object({
   targetPlanId: z.string().uuid(),
@@ -35,6 +36,13 @@ export async function POST(request: Request) {
   try {
     const actor = getRequestUser(request)
     const result = await aggMergeInternalPlans(targetPlanId, sourcePlanIds, actor?.email ?? 'admin')
+
+    await logAdminActivity({
+      action: 'Merge Internal Plans',
+      pageName: 'Integrations',
+      details: { targetPlanId, sourcePlanIds },
+    })
+
     return NextResponse.json(result)
   } catch (error: any) {
     console.error('[plans/merge]', error)

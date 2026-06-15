@@ -2,6 +2,9 @@ import { supabaseRest } from '@/lib/db/supabase-rest'
 import { runtimeEnv } from '@/lib/env/runtime'
 import nodemailer from 'nodemailer'
 import { UAParser } from 'ua-parser-js'
+import { cookies, headers } from 'next/headers'
+import { supabaseGetUser } from '@/lib/supabase/auth-rest'
+import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
 
 export async function logLoginAudit({
   userId,
@@ -149,5 +152,46 @@ export async function sendLoginOtp({ email, otp }: { email: string; otp: string 
       console.log(`\n========================================\n[DEV ONLY] LOGIN OTP FOR ${email}: ${otp}\n========================================\n`)
     }
     console.error('Failed to send login OTP:', mailErr)
+  }
+}
+
+export async function logAdminActivity({
+  action,
+  pageName,
+  details = {},
+}: {
+  action: string
+  pageName: string
+  details?: any
+}) {
+  try {
+    const cookieStore = await cookies()
+    const token = cookieStore.get('sb-access-token')?.value
+    if (!token) return
+
+    const u = await supabaseGetUser(token)
+    if (!u?.id) return
+
+    const profile = await fetchProfileForUser(u.id)
+    if (!profile) return
+
+    const headerList = await headers()
+    const ipAddress = headerList.get('x-forwarded-for')?.split(',')[0] || headerList.get('x-real-ip') || '127.0.0.1'
+    const userAgent = headerList.get('user-agent') || 'Unknown'
+
+    await supabaseRest('admin_activity_logs', {
+      method: 'POST',
+      body: JSON.stringify({
+        admin_id: profile.id,
+        admin_email: profile.email,
+        action,
+        page_name: pageName,
+        details,
+        ip_address: ipAddress,
+        user_agent: userAgent,
+      }),
+    })
+  } catch (error) {
+    console.error('Failed to log admin activity:', error)
   }
 }

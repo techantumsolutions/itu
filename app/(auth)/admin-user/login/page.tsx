@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { useAuthStore } from '@/lib/stores'
 import { isClientAdminUser } from '@/lib/tickets/auth-headers'
 import { useFingerprint } from '@/hooks/use-fingerprint'
@@ -336,18 +337,25 @@ export default function AdminUserLoginPage() {
               <form className="space-y-6" onSubmit={handleVerify2FA}>
                 <div className="space-y-2">
                   <Label htmlFor="totp-code">Authentication Code</Label>
-                  <Input
-                    id="totp-code"
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    value={totpCode}
-                    onChange={(e) => setTotpCode(e.target.value)}
-                    placeholder="000000"
-                    className="h-11 rounded-xl text-center text-lg tracking-widest"
-                    maxLength={6}
-                    required
-                  />
+                  <div className="flex justify-center">
+                    <InputOTP
+                      id="totp-code"
+                      maxLength={6}
+                      value={totpCode}
+                      onChange={setTotpCode}
+                      containerClassName="justify-center gap-2"
+                    >
+                      <InputOTPGroup className="gap-2">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                          <InputOTPSlot
+                            key={i}
+                            index={i}
+                            className="h-12 w-12 rounded-xl border border-neutral-200 bg-neutral-50 text-lg shadow-[0_1px_0_rgba(15,23,42,0.03)] text-center font-semibold text-neutral-800"
+                          />
+                        ))}
+                      </InputOTPGroup>
+                    </InputOTP>
+                  </div>
                 </div>
                 {devOtp && (
                   <div className="rounded-lg bg-amber-50 p-2.5 text-center text-xs font-semibold text-amber-800 border border-amber-200">

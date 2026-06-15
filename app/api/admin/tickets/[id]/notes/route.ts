@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getRequestUser, isAdminRequest } from '@/lib/tickets/auth-headers'
 import { addNote, getTicketAdmin } from '@/lib/tickets/db-persistence'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -26,6 +27,13 @@ export async function POST(request: Request, context: Ctx) {
 
     const createdBy = admin?.email || admin?.id || 'admin'
     const row = await addNote({ ticketId, note, createdBy })
+
+    await logAdminActivity({
+      action: 'Add Ticket Note',
+      pageName: 'Support Tickets',
+      details: { ticketId, createdBy },
+    })
+
     return NextResponse.json({ note: row })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Server error'

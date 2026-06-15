@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { getLcrEngineSettings, isRoutingEngineSchemaReady, upsertLcrEngineSettings } from '@/lib/routing/repository'
 import type { FallbackStrategy, RoutingStrategy } from '@/lib/routing/types'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 const DEFAULTS = {
   enabled: true,
@@ -48,6 +49,19 @@ export async function PUT(request: Request) {
   if (!updated) {
     return NextResponse.json({ error: 'Failed to save settings. Run routing_engine_schema.sql first.' }, { status: 503 })
   }
+
+  await logAdminActivity({
+    action: 'Update LCR Settings',
+    pageName: 'Routing',
+    details: {
+      enabled: body.enabled,
+      routingStrategy: body.routingStrategy,
+      fallbackStrategy: body.fallbackStrategy,
+      autoFailover: body.autoFailover,
+      retryEnabled: body.retryEnabled,
+      retryAttempts: body.retryAttempts,
+    },
+  })
 
   return NextResponse.json({ schemaReady: true, settings: updated })
 }

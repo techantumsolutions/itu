@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { isAdminRequest } from '@/lib/tickets/auth-headers'
 import { enqueueProviderSync } from '@/lib/jobs/queue'
 import { adminCanManageProviders } from '@/lib/auth/require-admin-feature'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function POST(request: Request) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -15,6 +16,12 @@ export async function POST(request: Request) {
   if (!job) {
     return NextResponse.json({ error: 'REDIS_URL not configured; cannot enqueue job' }, { status: 503 })
   }
+
+  await logAdminActivity({
+    action: 'Enqueue Provider Sync',
+    pageName: 'Routing',
+    details: { providerId, jobId: job.id },
+  })
 
   return NextResponse.json({ success: true, jobId: job.id })
 }

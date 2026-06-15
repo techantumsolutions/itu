@@ -4,6 +4,7 @@ import { supabaseRest } from '@/lib/db/supabase-rest'
 import { aggAudit } from '@/lib/aggregator/repository'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { slugify } from '@/lib/aggregator/signature'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!(await adminCanUseFeature(request, 'integrations', { allowLegacyHeader: true }))) {
@@ -57,6 +58,12 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     after,
     details: patchData,
   }).catch(() => {})
+
+  await logAdminActivity({
+    action: 'Update System Operator',
+    pageName: 'Integrations',
+    details: { id, patch: patchData },
+  })
 
   return NextResponse.json({ success: true, operator: after })
 }

@@ -4,6 +4,7 @@ import { supabaseRest, isSupabaseCatalogConfigured } from '@/lib/db/supabase-res
 import { ADMIN_FEATURE_KEYS, ADMIN_FEATURE_LABELS, type AdminFeatureKey } from '@/lib/auth/admin-features'
 import { supabaseAdminCreateUser } from '@/lib/supabase/admin-users'
 import { cacheSetJson } from '@/lib/cache/redis'
+import { logAdminActivity } from '@/lib/auth/audit'
 import { runtimeEnv } from '@/lib/env/runtime'
 import nodemailer from 'nodemailer'
 import crypto from 'crypto'
@@ -203,6 +204,12 @@ export async function POST(request: Request) {
         }
       }
     }
+
+    await logAdminActivity({
+      action: 'Create Staff User',
+      pageName: 'Staff',
+      details: { targetEmail: email, targetName: name, permissions },
+    })
 
     return NextResponse.json({ user: adminUser }, { status: 201 })
   } catch (e) {

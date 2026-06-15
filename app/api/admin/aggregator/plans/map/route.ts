@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { adminCanManageProviders } from '@/lib/auth/require-admin-feature'
 import { aggAudit, aggUpsertPlanMapping } from '@/lib/aggregator/repository'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 const mapSchema = z.object({
   serviceProviderId: z.string().uuid(),
@@ -35,5 +36,12 @@ export async function POST(request: Request) {
     entityId: mapping?.id,
     after: mapping,
   })
+
+  await logAdminActivity({
+    action: 'Map Plans',
+    pageName: 'Integrations',
+    details: parsed.data,
+  })
+
   return NextResponse.json({ mapping })
 }

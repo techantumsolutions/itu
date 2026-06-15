@@ -6,6 +6,7 @@ import { aggAudit, aggListProviders } from '@/lib/aggregator/repository'
 import { encryptProviderCredentials } from '@/lib/aggregator/credentials'
 import { slugify } from '@/lib/aggregator/signature'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 const providerSchema = z.object({
   code: z.string().min(2).max(40),
@@ -73,5 +74,16 @@ export async function POST(request: Request) {
   const actor = getRequestUser(request)
   await aggAudit({ actor: actor?.email, action: 'provider.create', entityType: 'lcr_provider', entityId: provider?.id, after: provider })
   if (provider) delete provider.credentials_encrypted
+
+  await logAdminActivity({
+    action: 'Create Aggregator Provider',
+    pageName: 'Integrations',
+    details: {
+      code,
+      name: input.name,
+      adapterKey: input.adapterKey,
+    },
+  })
+
   return NextResponse.json({ provider }, { status: 201 })
 }

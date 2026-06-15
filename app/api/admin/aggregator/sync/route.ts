@@ -5,6 +5,7 @@ import { aggListProviders } from '@/lib/aggregator/repository'
 import { syncProviderCatalog } from '@/lib/lcr/sync-catalog'
 import { enqueueProviderSync } from '@/lib/jobs/queue'
 import { invalidatePublicCatalogCache } from '@/lib/catalog/invalidate-public-cache'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 import { normalizeCountryList } from '@/lib/lcr/countries'
 
@@ -54,5 +55,17 @@ export async function POST(request: Request) {
   if (parsed.data.mode !== 'queue') {
     await invalidatePublicCatalogCache().catch(() => {})
   }
+
+  await logAdminActivity({
+    action: 'Sync Aggregator Providers',
+    pageName: 'Integrations',
+    details: {
+      providerId: parsed.data.providerId,
+      mode: parsed.data.mode,
+      countries,
+      results,
+    },
+  })
+
   return NextResponse.json({ success: true, results })
 }

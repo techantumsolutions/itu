@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { countriesList } from '@/lib/country-codes'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 /**
  * POST /api/admin/seed-dial-prefixes
@@ -56,6 +57,19 @@ export async function POST() {
       failed.push(`${country.iso2}: ${await upd.text()}`)
     }
   }
+
+  await logAdminActivity({
+    action: 'Seed Dial Prefixes',
+    pageName: 'System',
+    details: {
+      total: rows.length,
+      alreadyHad: rows.length - missing.length,
+      missing: missing.length,
+      updated,
+      skipped: skipped.length,
+      failed: failed.length,
+    },
+  })
 
   return NextResponse.json({
     total: rows.length,
