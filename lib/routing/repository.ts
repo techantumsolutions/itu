@@ -396,3 +396,202 @@ export async function insertDetailedRoutingLog(input: {
     return null
   }
 }
+
+function parseRoutingLogStatus(status: string): Record<string, unknown> {
+  try {
+    if (status && status.startsWith('{')) {
+      return JSON.parse(status) as Record<string, unknown>
+    }
+  } catch {
+    /* ignore */
+  }
+  return { event: status }
+}
+
+export async function listRoutingLogsForTransaction(transactionId: string): Promise<RoutingLogRow[]> {
+  const res = await supabaseRest(
+    `routing_logs?transaction_id=eq.${enc(transactionId)}&select=*,lcr_providers(code,name)&order=created_at.asc`,
+    { cache: 'no-store' },
+  )
+  if (!res.ok) return []
+  const rows = (await res.json()) as Record<string, unknown>[]
+  return rows.map((row) => {
+    const prov = row.lcr_providers as { code?: string; name?: string } | null
+    return {
+      id: String(row.id),
+      transactionId: row.transaction_id != null ? String(row.transaction_id) : null,
+      countryId: row.country_id != null ? String(row.country_id) : null,
+      operatorId: row.operator_id != null ? String(row.operator_id) : null,
+      productId: row.product_id != null ? String(row.product_id) : null,
+      providerId: row.provider_id != null ? String(row.provider_id) : null,
+      providerCode: prov?.code,
+      providerName: prov?.name,
+      routingType: String(row.routing_type ?? 'LCR') as 'RULE' | 'LCR',
+      providerCost: row.provider_cost != null ? Number(row.provider_cost) : null,
+      fallbackUsed: Boolean(row.fallback_used),
+      status: String(row.status ?? 'SELECTED'),
+      createdAt: String(row.created_at ?? ''),
+    }
+  })
+}
+
+export type RoutingAuditDetail = {
+  id: string
+  distributor_ref: string
+  internal_plan_id: string | null
+  status: 'success' | 'failed'
+  routing_decision: Record<string, unknown>
+  attempts: Array<{
+    providerName: string
+    cost: number | null
+    source: 'RULE' | 'LCR'
+    ok: boolean
+    error?: string
+    errorCode?: string
+    errorMessage?: string
+  }>
+}
+
+export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingAuditDetail | null {
+  if (!logs.length) return null
+
+  const parsed = logs.map((log) => ({
+    log,
+    meta: parseRoutingLogStatus(log.status),
+    event: String(parseRoutingLogStatus(log.status).event ?? log.status),
+  }))
+
+  const first = logs[0]
+  const transactionId = first.transactionId ?? first.id
+
+  let routingStrategy = 'LEAST_COST'
+  let routingRuleMatched = false
+  let routingRuleProvider: string | null = null
+  let routingDecisionReason: string | null = null
+  let mappingCount = 0
+  let selectedProvider: string | null = null
+
+  const evaluatedMap = new Map<
+    string,
+    {
+      providerId: string
+      providerName: string
+      costPrice: number | null
+      margin: number | null
+      priority: number | null
+      eligibility: boolean
+      filterReason: string | null
+    }
+  >()
+
+  const attempts: RoutingAuditDetail['attempts'] = []
+  let success = false
+
+  for (const row of parsed) {
+    const { log, meta, event } = row
+    if (typeof meta.routingStrategy === 'string') routingStrategy = meta.routingStrategy
+    if (meta.routingRuleMatched === 'Yes') routingRuleMatched = true
+    if (typeof meta.routingRuleProvider === 'string' && meta.routingRuleProvider) {
+      routingRuleProvider = meta.routingRuleProvider
+    }
+    if (typeof meta.verificationMappingCount === 'number') {
+      mappingCount = Math.max(mappingCount, meta.verificationMappingCount)
+    }
+
+    if (event === 'LCR_PROVIDER_DISCOVERED' || event === 'LCR_PROVIDER_FILTERED') {
+      if (!log.providerId) continue
+      evaluatedMap.set(log.providerId, {
+        providerId: log.providerId,
+        providerName: log.providerName || log.providerCode || log.providerId,
+        costPrice: log.providerCost,
+        margin: null,
+        priority: typeof meta.providerPriority === 'number' ? meta.providerPriority : null,
+        eligibility: event === 'LCR_PROVIDER_DISCOVERED',
+        filterReason:
+          typeof meta.failureReason === 'string'
+            ? meta.failureReason
+            : event === 'LCR_PROVIDER_FILTERED'
+              ? 'FILTERED'
+              : null,
+      })
+    }
+
+    if (
+      event === 'HIGHEST_MARGIN_SELECTED' ||
+      event === 'LEAST_COST_SELECTED' ||
+      event === 'PRIORITY_SELECTED' ||
+      event === 'RULE_MATCHED'
+    ) {
+      routingDecisionReason = event
+      selectedProvider = log.providerName || log.providerCode || log.providerId || selectedProvider
+    }
+
+    if (
+      event === 'NO_ELIGIBLE_PROVIDER' ||
+      event === 'NO_PROVIDER_MAPPING' ||
+      event === 'INTERNAL_PLAN_NOT_FOUND' ||
+      event === 'RECHARGE_FAILED' ||
+      event === 'MAX_RETRY_EXCEEDED'
+    ) {
+      routingDecisionReason = routingDecisionReason ?? event
+    }
+
+    if (event === 'RECHARGE_SUCCESS') {
+      success = true
+      routingDecisionReason = 'RECHARGE_SUCCESS'
+      selectedProvider = log.providerName || log.providerCode || log.providerId || selectedProvider
+      attempts.push({
+        providerName: log.providerName || log.providerCode || '—',
+        cost: log.providerCost,
+        source: meta.routingRuleMatched === 'Yes' ? 'RULE' : 'LCR',
+        ok: true,
+      })
+    }
+
+    if (event === 'RETRY_FAILOVER' || event === 'RULE_PROVIDER_FAILED') {
+      attempts.push({
+        providerName: log.providerName || log.providerCode || '—',
+        cost: log.providerCost,
+        source: event === 'RULE_PROVIDER_FAILED' || meta.routingRuleMatched === 'Yes' ? 'RULE' : 'LCR',
+        ok: false,
+        error: typeof meta.failureReason === 'string' ? meta.failureReason : event,
+        errorCode: typeof meta.responseCode === 'string' ? meta.responseCode : undefined,
+        errorMessage: typeof meta.responseMessage === 'string' ? meta.responseMessage : undefined,
+      })
+    }
+  }
+
+  const evaluatedProviders = Array.from(evaluatedMap.values())
+  const candidateProviderCount = evaluatedProviders.length
+  const eligibleProviderCount = evaluatedProviders.filter((p) => p.eligibility).length
+
+  if (!selectedProvider) {
+    const priced = evaluatedProviders
+      .filter((p) => p.costPrice != null)
+      .sort((a, b) => (b.costPrice ?? 0) - (a.costPrice ?? 0))
+    selectedProvider = priced[0]?.providerName ?? null
+  }
+
+  if (!mappingCount && candidateProviderCount > 0) {
+    mappingCount = candidateProviderCount
+  }
+
+  return {
+    id: first.id,
+    distributor_ref: transactionId,
+    internal_plan_id: first.productId,
+    status: success ? 'success' : 'failed',
+    routing_decision: {
+      routing_strategy: routingStrategy,
+      routing_rule_matched: routingRuleMatched,
+      routing_rule_provider: routingRuleProvider,
+      mapping_count: mappingCount,
+      candidate_provider_count: candidateProviderCount,
+      eligible_provider_count: eligibleProviderCount,
+      selected_provider: selectedProvider,
+      routing_decision_reason: routingDecisionReason,
+      evaluated_providers: evaluatedProviders,
+    },
+    attempts,
+  }
+}

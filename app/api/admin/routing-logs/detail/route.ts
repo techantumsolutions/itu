@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { dbFindRechargeByDistributorRef } from '@/lib/lcr-v2/recharge-db'
+import {
+  buildRoutingAuditDetailFromLogs,
+  listRoutingLogsForTransaction,
+} from '@/lib/routing/repository'
 
 export async function GET(request: Request) {
   if (!(await adminCanUseFeature(request, 'routing', { allowLegacyHeader: true }))) {
@@ -15,12 +19,20 @@ export async function GET(request: Request) {
   }
 
   try {
-    const attempt = await dbFindRechargeByDistributorRef(transactionId)
-    if (!attempt) {
+    const attempt = await dbFindRechargeByDistributorRef(transactionId).catch(() => null)
+    if (attempt) {
+      return NextResponse.json({ attempt })
+    }
+
+    const logs = await listRoutingLogsForTransaction(transactionId)
+    const audit = buildRoutingAuditDetailFromLogs(logs)
+    if (!audit) {
       return NextResponse.json({ error: 'Routing details not found' }, { status: 404 })
     }
-    return NextResponse.json({ attempt })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Internal Server Error' }, { status: 500 })
+
+    return NextResponse.json({ attempt: audit })
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Internal Server Error'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
