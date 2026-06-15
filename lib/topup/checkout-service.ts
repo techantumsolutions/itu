@@ -226,12 +226,11 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
   const operatorCode = plan?.operator_ref ?? normalizedInput.operatorId ?? ''
 
   // For every candidate evaluated, log the discovered/filtered status
-  const evaluated_providers = (routingResult.evaluated || []).map((e: any) => {
+  const candidateLogWrites = (routingResult.evaluated || []).map(async (e: any) => {
     const isFiltered = !e.eligible
     const filterReason = e.filterReason || e.reason || (e.eligible ? 'ELIGIBLE' : 'PRICE_MISSING')
-    
-    // Log candidate status
-    void insertDetailedRoutingLog({
+
+    await insertDetailedRoutingLog({
       transactionId,
       countryCode,
       operatorCode,
@@ -244,6 +243,11 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
       executionResult: isFiltered ? 'LCR_PROVIDER_FILTERED' : 'LCR_PROVIDER_DISCOVERED',
       failureReason: isFiltered ? filterReason : undefined,
     }).catch(() => {})
+  })
+
+  const evaluated_providers = (routingResult.evaluated || []).map((e: any) => {
+    const isFiltered = !e.eligible
+    const filterReason = e.filterReason || e.reason || (e.eligible ? 'ELIGIBLE' : 'PRICE_MISSING')
 
     return {
       providerId: e.providerId,
@@ -259,10 +263,16 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     }
   })
 
+  await Promise.all(candidateLogWrites)
+
   if (!routingResult.selected) {
     const errMsg = 'No active provider available for this transaction'
     logHint(`Provider Assignment FAILED: No active provider available for this plan`)
     const reason = routingResult.routing_decision_reason || 'NO_ELIGIBLE_PROVIDER'
+    const pricedCandidates = (routingResult.evaluated || []).filter(
+      (e: any) => typeof e.price === 'number' && Number.isFinite(e.price) && e.price > 0,
+    )
+    const bestPricedCandidate = pricedCandidates.sort((a: any, b: any) => (b.price ?? 0) - (a.price ?? 0))[0]
     await insertDetailedRoutingLog({
       transactionId,
       countryCode,
@@ -270,6 +280,8 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
       planId: normalizedInput.planId,
       routingStrategy: routingResult.settings?.routingStrategy || 'LEAST_COST',
       routingRuleMatched: 'No',
+      selectedProvider: bestPricedCandidate?.providerId,
+      providerCost: bestPricedCandidate?.price !== Infinity ? bestPricedCandidate?.price : undefined,
       executionResult: reason,
     })
     await updateTransactionStatus(transactionId, 'failed', { error: errMsg, routing: routingResult })
@@ -591,6 +603,11 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
   }
 
   // Log MAX_RETRY_EXCEEDED and RECHARGE_FAILED
+  const lastAttemptCost =
+    attemptsLog.length > 0
+      ? attemptsLog[attemptsLog.length - 1]?.cost
+      : routingResult.selected?.price
+
   await insertDetailedRoutingLog({
     transactionId,
     countryCode,
@@ -599,6 +616,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     routingStrategy: snapshot.routing_strategy,
     routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
     selectedProvider: routingResult.selected?.providerId,
+    providerCost: lastAttemptCost,
     executionResult: 'MAX_RETRY_EXCEEDED',
     failureReason: 'All providers failed in failover chain',
   })
@@ -610,6 +628,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     routingStrategy: snapshot.routing_strategy,
     routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
     selectedProvider: routingResult.selected?.providerId,
+    providerCost: lastAttemptCost,
     executionResult: 'RECHARGE_FAILED',
     failureReason: 'All providers failed',
   })

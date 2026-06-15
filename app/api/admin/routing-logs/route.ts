@@ -66,9 +66,9 @@ export async function GET(request: Request) {
     let ruleMatched = 'No'
     let ruleId: string | null = null
     let ruleProvider: string | null = null
-    let resolvedProviderName = finalLog.providerName
-    let resolvedProviderCode = finalLog.providerCode
-    let resolvedCost = finalLog.providerCost
+    let resolvedProviderName: string | undefined = finalLog.providerName
+    let resolvedProviderCode: string | undefined = finalLog.providerCode
+    let resolvedCost: number | null = null
     let outcomeStatus = 'processing'
 
     for (const log of sortedTxLogs) {
@@ -81,14 +81,26 @@ export async function GET(request: Request) {
         if (parsed.attemptNumber && parsed.attemptNumber > maxAttempt) {
           maxAttempt = parsed.attemptNumber
         }
+
+        // Keep the latest non-null provider cost and identity from the same routing/attempt event.
+        if (log.providerCost != null) {
+          resolvedCost = log.providerCost
+          if (log.providerName || log.providerCode) {
+            resolvedProviderName = log.providerName ?? resolvedProviderName
+            resolvedProviderCode = log.providerCode ?? resolvedProviderCode
+          }
+        } else if ((log.providerName || log.providerCode) && !resolvedProviderName && !resolvedProviderCode) {
+          resolvedProviderName = log.providerName ?? resolvedProviderName
+          resolvedProviderCode = log.providerCode ?? resolvedProviderCode
+        }
         
         const event = parsed.event
         if (event === 'RECHARGE_SUCCESS') {
           outcomeStatus = 'success'
           finalLog = log
-          resolvedProviderName = log.providerName
-          resolvedProviderCode = log.providerCode
-          resolvedCost = log.providerCost
+          resolvedProviderName = log.providerName ?? resolvedProviderName
+          resolvedProviderCode = log.providerCode ?? resolvedProviderCode
+          resolvedCost = log.providerCost ?? resolvedCost
         } else if (
           event === 'RECHARGE_FAILED' ||
           event === 'MAX_RETRY_EXCEEDED' ||
