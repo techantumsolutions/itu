@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Check, ChevronsUpDown, Package, RefreshCcw, Loader2, GitMerge } from 'lucide-react'
+import { Check, ChevronsUpDown, Package, RefreshCcw, Loader2, GitMerge, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -24,6 +24,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import type { SystemPlanProviderCostBreakdown } from '@/lib/admin/provider-cost-breakdown'
+import { formatMoney } from '@/lib/admin/provider-pricing-extractor'
 
 type ProductPlan = {
   id: string
@@ -159,6 +162,11 @@ export default function AdminProductsPage() {
   const [merging, setMerging] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
+  const [costDialogOpen, setCostDialogOpen] = useState(false)
+  const [costLoading, setCostLoading] = useState(false)
+  const [costError, setCostError] = useState<string | null>(null)
+  const [costBreakdown, setCostBreakdown] = useState<SystemPlanProviderCostBreakdown | null>(null)
+
   const countryNameMap = useMemo(() => {
     const map = new Map<string, string>()
     for (const c of countryOptions) {
@@ -173,6 +181,28 @@ export default function AdminProductsPage() {
   const selectedPlans = useMemo(() => {
     return plans.filter((p) => selectedIds.includes(p.id))
   }, [plans, selectedIds])
+
+  const openProviderCosts = useCallback(async (planId: string) => {
+    setCostDialogOpen(true)
+    setCostLoading(true)
+    setCostError(null)
+    setCostBreakdown(null)
+    try {
+      const res = await fetch(`/api/admin/lcr/system-plans/${encodeURIComponent(planId)}/provider-costs`, {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? 'Failed to load provider costs')
+      setCostBreakdown(data.breakdown ?? null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load provider costs'
+      setCostError(message)
+      toast.error(message)
+    } finally {
+      setCostLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     setPage(1)
@@ -498,8 +528,12 @@ export default function AdminProductsPage() {
                 </TableRow>
               ) : (
                 paginatedPlans.map((plan) => (
-                  <TableRow key={plan.id}>
-                    <TableCell className="w-[50px]">
+                  <TableRow
+                    key={plan.id}
+                    className="cursor-pointer hover:bg-muted/40"
+                    onClick={() => void openProviderCosts(plan.id)}
+                  >
+                    <TableCell className="w-[50px]" onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={selectedIds.includes(plan.id)}
                         onCheckedChange={(checked) => {
@@ -531,7 +565,7 @@ export default function AdminProductsPage() {
                         {plan.active ? 'Active' : 'Inactive'}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex justify-end items-center">
                         {togglingId === plan.id ? (
                           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -673,6 +707,128 @@ export default function AdminProductsPage() {
               ) : (
                 'Merge'
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={costDialogOpen} onOpenChange={setCostDialogOpen}>
+        <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Provider Cost Breakdown</DialogTitle>
+            <DialogDescription>
+              Pricing from all providers mapped to this system plan.
+            </DialogDescription>
+          </DialogHeader>
+
+          {costLoading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading provider pricing…
+            </div>
+          ) : costError ? (
+            <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+              {costError}
+            </div>
+          ) : costBreakdown ? (
+            <div className="space-y-4">
+              <div className="rounded-md border bg-muted/30 p-4 space-y-1">
+                <p className="font-semibold">{costBreakdown.systemPlanName}</p>
+                <p className="text-xs text-muted-foreground">System plan ID: {costBreakdown.systemPlanId}</p>
+                {costBreakdown.internalPlanId ? (
+                  <p className="text-xs text-muted-foreground">Internal plan ID: {costBreakdown.internalPlanId}</p>
+                ) : (
+                  <p className="text-xs text-amber-700">No internal plan linked — provider mappings unavailable.</p>
+                )}
+                <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">System plan price: </span>
+                    <span className="font-medium">
+                      {formatMoney(costBreakdown.systemPlanPrice, costBreakdown.systemPlanCurrency)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Final selling price: </span>
+                    <span className="font-medium">
+                      {formatMoney(costBreakdown.finalSellingPrice, costBreakdown.systemPlanCurrency)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {costBreakdown.providers.length === 0 ? (
+                <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  No provider mappings found for this plan.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {costBreakdown.providers.map((provider) => {
+                    const currency =
+                      provider.extractedPricing.currency ||
+                      provider.mapping.providerCurrency ||
+                      provider.rawPlanCurrency ||
+                      costBreakdown.systemPlanCurrency
+                    const pricing = provider.extractedPricing
+                    return (
+                      <div key={`${provider.providerId}:${provider.providerPlanId}`} className="rounded-md border p-4 space-y-3">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="font-semibold">{provider.providerName}</p>
+                            <p className="text-xs text-muted-foreground">
+                              Provider ID: {provider.providerId}
+                              {provider.providerCode ? ` · ${provider.providerCode}` : ''}
+                            </p>
+                            <p className="text-xs text-muted-foreground">Provider plan ID: {provider.providerPlanId}</p>
+                            {provider.rawPlanName ? (
+                              <p className="text-xs text-muted-foreground">Raw plan: {provider.rawPlanName}</p>
+                            ) : null}
+                          </div>
+                          <Badge variant={provider.mapping.enabled ? 'default' : 'secondary'}>
+                            {provider.mapping.enabled ? 'Enabled' : 'Disabled'}
+                          </Badge>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                          <div><span className="text-muted-foreground">Base price: </span>{formatMoney(pricing.basePrice ?? provider.rawPlanAmount, currency)}</div>
+                          <div><span className="text-muted-foreground">Provider cost: </span>{formatMoney(pricing.providerCost ?? provider.mapping.providerPrice, currency)}</div>
+                          <div><span className="text-muted-foreground">Markup: </span>{formatMoney(pricing.markup, currency)}</div>
+                          <div><span className="text-muted-foreground">Platform markup: </span>{formatMoney(pricing.platformMarkup, currency)}</div>
+                          <div><span className="text-muted-foreground">Fee: </span>{formatMoney(pricing.fee, currency)}</div>
+                          <div><span className="text-muted-foreground">Commission: </span>{formatMoney(pricing.commission, currency)}</div>
+                          <div><span className="text-muted-foreground">Margin: </span>{formatMoney(pricing.margin ?? provider.mapping.margin, currency)}</div>
+                          <div><span className="text-muted-foreground">Tax: </span>{formatMoney(pricing.tax, currency)}</div>
+                          <div><span className="text-muted-foreground">Currency: </span>{currency || '—'}</div>
+                          <div><span className="text-muted-foreground">Final price: </span>{formatMoney(pricing.finalPrice, currency)}</div>
+                          <div><span className="text-muted-foreground">Mapping price: </span>{formatMoney(provider.mapping.providerPrice, provider.mapping.providerCurrency)}</div>
+                          <div><span className="text-muted-foreground">Priority: </span>{provider.mapping.providerPriority ?? '—'}</div>
+                        </div>
+
+                        {provider.rawData ? (
+                          <Collapsible>
+                            <CollapsibleTrigger className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
+                              <ChevronDown className="h-3 w-3" />
+                              View raw provider data
+                            </CollapsibleTrigger>
+                            <CollapsibleContent>
+                              <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-muted p-3 text-[10px] leading-relaxed">
+                                {JSON.stringify(provider.rawData, null, 2)}
+                              </pre>
+                            </CollapsibleContent>
+                          </Collapsible>
+                        ) : (
+                          <p className="text-xs text-muted-foreground">No raw provider JSON stored for this mapping.</p>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCostDialogOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>
