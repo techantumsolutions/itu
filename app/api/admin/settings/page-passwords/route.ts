@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
 import { supabaseRest } from '@/lib/db/supabase-rest'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function GET(request: Request) {
   const ctx = await getAdminFromAccessCookie(request)
@@ -56,6 +57,12 @@ export async function POST(request: Request) {
     if (!res.ok) {
       return NextResponse.json({ error: await res.text() }, { status: 500 })
     }
+
+    await logAdminActivity({
+      action: 'Update Page Passwords',
+      pageName: 'Passwords',
+      details: { paths: Object.keys(passwords) },
+    })
 
     return NextResponse.json({ ok: true })
   } catch (e) {

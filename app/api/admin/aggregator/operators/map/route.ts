@@ -5,6 +5,7 @@ import { aggAudit, aggUpsertOperatorMapping } from '@/lib/aggregator/repository'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { OperatorTrustEngine } from '@/lib/aggregator/catalog-intelligence/trust-engine'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 const mapSchema = z.object({
   serviceProviderId: z.string().uuid(),
@@ -84,5 +85,12 @@ export async function POST(request: Request) {
     entityId: mapping?.id,
     after: mapping,
   })
+
+  await logAdminActivity({
+    action: 'Map Operator',
+    pageName: 'Integrations',
+    details: parsed.data,
+  })
+
   return NextResponse.json({ mapping })
 }

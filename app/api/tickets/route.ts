@@ -30,6 +30,7 @@ export async function POST(request: Request) {
       typeof body.transactionCreatedAt === 'string' ? body.transactionCreatedAt.trim() : ''
     const subject = typeof body.subject === 'string' ? body.subject.trim() : ''
     const description = typeof body.description === 'string' ? body.description.trim() : ''
+    const attachmentUrl = typeof body.attachmentUrl === 'string' ? body.attachmentUrl.trim() : ''
     if (!subject || !description) {
       return NextResponse.json({ error: 'Subject and description are required' }, { status: 400 })
     }
@@ -57,6 +58,7 @@ export async function POST(request: Request) {
       transactionId: transactionId || undefined,
       subject,
       description,
+      attachmentUrl: attachmentUrl || undefined,
     })
     return NextResponse.json({ ticket })
   } catch (e) {

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { isAdminRequest, getRequestUser } from '@/lib/tickets/auth-headers'
 import { supabaseRest } from '@/lib/db/supabase-rest'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
   if (!isAdminRequest(request)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -36,6 +37,12 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     }),
   }).catch(() => {})
 
+  await logAdminActivity({
+    action: 'Update Provider',
+    pageName: 'Providers',
+    details: { id, patch },
+  })
+
   const rows = (await res.json()) as any[]
   return NextResponse.json({ provider: rows?.[0] ?? null })
 }
@@ -58,6 +65,12 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
       details: {},
     }),
   }).catch(() => {})
+
+  await logAdminActivity({
+    action: 'Delete Provider',
+    pageName: 'Providers',
+    details: { id },
+  })
 
   return NextResponse.json({ success: true })
 }

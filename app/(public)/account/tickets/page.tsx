@@ -47,6 +47,9 @@ export default function AccountTicketsPage() {
   const [submitting, setSubmitting] = useState(false)
   const [subject, setSubject] = useState('')
   const [description, setDescription] = useState('')
+  const [attachmentUrl, setAttachmentUrl] = useState('')
+  const [attachmentName, setAttachmentName] = useState('')
+  const [uploading, setUploading] = useState(false)
 
   const load = useCallback(async () => {
     if (!headers) return
@@ -65,16 +68,58 @@ export default function AccountTicketsPage() {
     void load()
   }, [load])
 
+  useEffect(() => {
+    if (open) {
+      setSubject('')
+      setDescription('')
+      setAttachmentUrl('')
+      setAttachmentName('')
+    }
+  }, [open])
+
+  async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploading(true)
+    setAttachmentUrl('')
+    setAttachmentName('')
+
+    const formData = new FormData()
+    formData.append('file', file)
+
+    try {
+      const res = await fetch('/api/tickets/upload', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'Upload failed')
+      }
+      setAttachmentUrl(data.url)
+      setAttachmentName(file.name)
+      toast.success('File uploaded successfully')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to upload file')
+      e.target.value = ''
+    } finally {
+      setUploading(false)
+    }
+  }
+
   async function onCreate(e: React.FormEvent) {
     e.preventDefault()
     if (!headers) return
     setSubmitting(true)
     try {
-      await apiCreateTicket(headers, { subject, description })
+      await apiCreateTicket(headers, { subject, description, attachmentUrl })
       toast.success('Ticket created')
       setOpen(false)
       setSubject('')
       setDescription('')
+      setAttachmentUrl('')
+      setAttachmentName('')
       await load()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to create ticket')
@@ -132,16 +177,33 @@ export default function AccountTicketsPage() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label>Attachment</Label>
-                  <Input type="file" disabled className="cursor-not-allowed opacity-60" />
-                  <p className="text-xs text-muted-foreground">File uploads are coming soon.</p>
+                  <Label htmlFor="ticket-file">Attachment (Optional)</Label>
+                  <Input
+                    id="ticket-file"
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={onFileChange}
+                    disabled={uploading || submitting}
+                    className="cursor-pointer"
+                  />
+                  {uploading && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 animate-pulse">
+                      <Loader2 className="size-3 animate-spin" /> Uploading file...
+                    </p>
+                  )}
+                  {attachmentName && !uploading && (
+                    <p className="text-xs text-emerald-600 font-medium flex items-center gap-1">
+                      ✓ Ready: {attachmentName}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-muted-foreground">Images (PNG, JPG, GIF, WEBP) and PDFs are supported.</p>
                 </div>
               </div>
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" disabled={submitting}>
+                 <Button type="submit" disabled={submitting || uploading}>
                   {submitting ? <Loader2 className="size-4 animate-spin" /> : 'Submit ticket'}
                 </Button>
               </DialogFooter>

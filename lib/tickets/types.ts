@@ -13,6 +13,7 @@ export interface Ticket {
   status: TicketStatus
   createdAt: string
   updatedAt: string
+  attachmentUrl?: string
 }
 
 export interface TicketMessage {

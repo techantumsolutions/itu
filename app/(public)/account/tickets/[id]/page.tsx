@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { format } from 'date-fns'
-import { ArrowLeft, Loader2, Send } from 'lucide-react'
+import { ArrowLeft, Loader2, Send, RotateCw } from 'lucide-react'
 import { useAuthStore } from '@/lib/stores'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 import { TicketStatusBadge } from '@/components/ticket-status-badge'
 import { TicketThread } from '@/components/ticket-thread'
 import { apiGetTicket, apiPostTicketMessage } from '@/lib/tickets/client-api'
@@ -30,6 +31,7 @@ export default function AccountTicketDetailPage() {
   const [loading, setLoading] = useState(true)
   const [reply, setReply] = useState('')
   const [sending, setSending] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
   const load = useCallback(async () => {
     if (!headers || !id) return
@@ -44,6 +46,20 @@ export default function AccountTicketDetailPage() {
       setLoading(false)
     }
   }, [headers, id])
+
+  const handleRefresh = async () => {
+    if (!headers || !id) return
+    setRefreshing(true)
+    try {
+      const t = await apiGetTicket(headers, id)
+      setData(t)
+      toast.success('Messages refreshed')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to refresh messages')
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   useEffect(() => {
     void load()
@@ -117,9 +133,48 @@ export default function AccountTicketDetailPage() {
         </div>
       </div>
 
+      {data.attachmentUrl && (
+        <section className="rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-elevated-sm space-y-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Ticket Attachment</h2>
+          {/\.(png|jpe?g|gif|webp)$/i.test(data.attachmentUrl) ? (
+            <div className="max-w-sm rounded-lg overflow-hidden border border-neutral-200 shadow-sm bg-neutral-50/50">
+              <a href={data.attachmentUrl} target="_blank" rel="noopener noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={data.attachmentUrl} alt="Ticket attachment" className="max-h-48 w-auto object-contain hover:opacity-95 transition-opacity" />
+              </a>
+            </div>
+          ) : (
+            <a
+              href={data.attachmentUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-800 hover:underline bg-neutral-100 px-3 py-1.5 rounded-lg border border-neutral-200"
+            >
+              <span>📎</span> Download / View File
+            </a>
+          )}
+        </section>
+      )}
+
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Conversation</h2>
-        <TicketThread description={data.description} messages={data.messages} />
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Conversation</h2>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="h-8 gap-1 rounded-lg text-muted-foreground hover:text-foreground"
+          >
+            <RotateCw className={cn('size-3.5', refreshing && 'animate-spin')} />
+            Refresh
+          </Button>
+        </div>
+        <TicketThread
+          description={data.description}
+          messages={data.messages}
+          ticketCreatedAt={data.createdAt}
+        />
       </section>
 
       {canReply ? (

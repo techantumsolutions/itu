@@ -2,6 +2,9 @@ import { supabaseRest } from '@/lib/db/supabase-rest'
 import { runtimeEnv } from '@/lib/env/runtime'
 import nodemailer from 'nodemailer'
 import { UAParser } from 'ua-parser-js'
+import { cookies, headers } from 'next/headers'
+import { supabaseGetUser } from '@/lib/supabase/auth-rest'
+import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
 
 export async function logLoginAudit({
   userId,
@@ -151,3 +154,69 @@ export async function sendLoginOtp({ email, otp }: { email: string; otp: string 
     console.error('Failed to send login OTP:', mailErr)
   }
 }
+
+// Memory cache to deduplicate rapid view logs (e.g. from concurrent client page loads or strict mode)
+const recentViewLogs = new Map<string, number>()
+const DEDUPLICATE_WINDOW_MS = 5000 // 5 seconds
+
+export async function logAdminActivity({
+  action,
+  pageName,
+  details = {},
+}: {
+  action: string
+  pageName: string
+  details?: any
+}) {
+  try {
+    const cookieStore = await cookies()
+    const token = cookieStore.get('sb-access-token')?.value
+    if (!token) return
+
+    const u = await supabaseGetUser(token)
+    if (!u?.id) return
+
+    const profile = await fetchProfileForUser(u.id)
+    if (!profile) return
+
+    // Deduplicate rapid duplicate "View" logs
+    if (action.toLowerCase().startsWith('view')) {
+      const cacheKey = `${profile.id}-${action.toLowerCase()}-${pageName.toLowerCase()}`
+      const now = Date.now()
+      const lastLogTime = recentViewLogs.get(cacheKey)
+      if (lastLogTime && now - lastLogTime < DEDUPLICATE_WINDOW_MS) {
+        return
+      }
+      recentViewLogs.set(cacheKey, now)
+
+      // Clean up old entries periodically to prevent memory growth
+      if (recentViewLogs.size > 1000) {
+        for (const [key, timestamp] of recentViewLogs.entries()) {
+          if (now - timestamp > DEDUPLICATE_WINDOW_MS) {
+            recentViewLogs.delete(key)
+          }
+        }
+      }
+    }
+
+    const headerList = await headers()
+    const ipAddress = headerList.get('x-forwarded-for')?.split(',')[0] || headerList.get('x-real-ip') || '127.0.0.1'
+    const userAgent = headerList.get('user-agent') || 'Unknown'
+
+    await supabaseRest('admin_activity_logs', {
+      method: 'POST',
+      body: JSON.stringify({
+        admin_id: profile.id,
+        admin_email: profile.email,
+        action,
+        page_name: pageName,
+        details,
+        ip_address: ipAddress,
+        user_agent: userAgent,
+      }),
+    })
+  } catch (error) {
+    console.error('Failed to log admin activity:', error)
+  }
+}
+

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
 import { supabaseRest } from '@/lib/db/supabase-rest'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function GET(request: Request) {
   try {
@@ -44,6 +45,12 @@ export async function POST(request: Request) {
     if (!res.ok) {
       return NextResponse.json({ error: await res.text() }, { status: 500 })
     }
+
+    await logAdminActivity({
+      action: enabled ? 'Enable Global 2FA' : 'Disable Global 2FA',
+      pageName: 'Security',
+      details: { enabled },
+    })
 
     return NextResponse.json({ ok: true })
   } catch (e) {

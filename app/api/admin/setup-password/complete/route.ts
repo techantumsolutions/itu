@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cacheGetJson, cacheDel } from '@/lib/cache/redis'
 import { runtimeEnv } from '@/lib/env/runtime'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function POST(req: Request) {
   try {
@@ -61,6 +62,12 @@ export async function POST(req: Request) {
 
     // 3. Clear token from Redis
     await cacheDel(cacheKey)
+
+    await logAdminActivity({
+      action: 'Complete Admin Setup Password',
+      pageName: 'Security',
+      details: { email: record.email },
+    })
 
     return NextResponse.json({
       ok: true,

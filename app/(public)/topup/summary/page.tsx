@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/command'
 import { countriesList, getFlagEmoji, isValidPhoneNumber } from '@/lib/country-codes'
 import { getCountryCallingCode } from 'libphonenumber-js'
+import { useFingerprint } from '@/hooks/use-fingerprint'
 
 declare global {
   interface Window {
@@ -60,6 +61,7 @@ function InlineLoginDialog({
 }) {
   const dialPrefix = getDialCode(countryIso)
   const { login, setSession } = useAuthStore()
+  const fingerprint = useFingerprint()
   const [tab, setTab] = useState<'mobile' | 'email'>('mobile')
 
   // --- Mobile OTP state ---
@@ -93,6 +95,14 @@ function InlineLoginDialog({
   const [showPw, setShowPw] = useState(false)
   const [emailLoading, setEmailLoading] = useState(false)
 
+  // --- Email 2FA state ---
+  const [requires2FA, setRequires2FA] = useState(false)
+  const [tempToken, setTempToken] = useState('')
+  const [emailOtpValue, setEmailOtpValue] = useState('')
+  const [emailOtpTimer, setEmailOtpTimer] = useState(0)
+  const [verifyingEmailOtp, setVerifyingEmailOtp] = useState(false)
+  const [devEmailOtp, setDevEmailOtp] = useState('')
+
   const [err, setErr] = useState('')
 
   // OTP countdown
@@ -102,6 +112,13 @@ function InlineLoginDialog({
     return () => clearInterval(t)
   }, [otpTimer])
 
+  // Email OTP countdown
+  useEffect(() => {
+    if (emailOtpTimer <= 0) return
+    const t = setInterval(() => setEmailOtpTimer((s) => Math.max(0, s - 1)), 1000)
+    return () => clearInterval(t)
+  }, [emailOtpTimer])
+
   // Reset state when dialog opens
   useEffect(() => {
     if (open) {
@@ -110,6 +127,10 @@ function InlineLoginDialog({
       setOtpValue('')
       setPhone('')
       setDevOtp('')
+      setRequires2FA(false)
+      setTempToken('')
+      setEmailOtpValue('')
+      setDevEmailOtp('')
     }
   }, [open])
 
@@ -177,13 +198,44 @@ function InlineLoginDialog({
     if (!email || !password) return
     setEmailLoading(true)
     setErr('')
-    const result = await login(email, password)
+    const result = await login(email, password, fingerprint || undefined)
     setEmailLoading(false)
     if (result.ok) {
-      onOpenChange(false)
-      onSuccess()
+      if (result.requires_2fa) {
+        setRequires2FA(true)
+        setTempToken(result.temp_token || '')
+        setDevEmailOtp(result.otp || '')
+        setEmailOtpValue('')
+        setEmailOtpTimer(25)
+      } else {
+        onOpenChange(false)
+        onSuccess()
+      }
     } else {
       setErr(result.error ?? 'Invalid email or password')
+    }
+  }
+
+  const verifyEmailOtp = async () => {
+    if (emailOtpValue.length !== 6) return
+    setVerifyingEmailOtp(true)
+    setErr('')
+    try {
+      const res = await fetch('/api/auth/2fa/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ temp_token: tempToken, code: emailOtpValue }),
+      })
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; user?: any }
+      if (!res.ok || !data.ok) throw new Error(data.error || '2FA verification failed')
+      if (data.user?.id) setSession(data.user)
+
+      onOpenChange(false)
+      onSuccess()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Invalid 2FA code')
+    } finally {
+      setVerifyingEmailOtp(false)
     }
   }
 
@@ -197,7 +249,7 @@ function InlineLoginDialog({
 
         {err ? <div className="rounded-lg bg-red-50 px-4 py-2 text-sm font-medium text-red-700">{err}</div> : null}
 
-        <Tabs value={tab} onValueChange={(v) => { setTab(v as 'mobile' | 'email'); setErr('') }}>
+        <Tabs value={tab} onValueChange={(v) => { setTab(v as 'mobile' | 'email'); setErr(''); setRequires2FA(false) }}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="mobile">
               <Smartphone className="mr-2 h-4 w-4" />
@@ -322,40 +374,99 @@ function InlineLoginDialog({
 
           {/* ---- Email / Password Tab ---- */}
           <TabsContent value="email" className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-neutral-700">Email</p>
-              <Input
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@example.com"
-                className="h-11"
-                autoComplete="username"
-              />
-            </div>
-            <div className="space-y-2">
-              <p className="text-sm font-medium text-neutral-700">Password</p>
-              <div className="relative">
+            {requires2FA ? (
+              <>
+                <p className="text-center text-sm text-neutral-600">
+                  Enter the 6-digit verification code sent to <span className="font-semibold">{email}</span>
+                </p>
                 <Input
-                  type={showPw ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter password"
-                  className="h-11 pr-10"
-                  autoComplete="current-password"
+                  value={emailOtpValue}
+                  onChange={(e) => setEmailOtpValue(e.target.value.replace(/[^\d]/g, '').slice(0, 6))}
+                  placeholder="Enter 6-digit code"
+                  className="h-11 text-center text-lg tracking-[0.3em]"
+                  maxLength={6}
                 />
-                <button type="button" onClick={() => setShowPw((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700">
-                  {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-            <Button
-              className="h-11 w-full rounded-xl bg-[var(--hero-cta-orange)] font-semibold text-white hover:brightness-105"
-              disabled={emailLoading || !email.trim() || !password}
-              onClick={loginEmail}
-            >
-              {emailLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-              {emailLoading ? 'Logging in…' : 'Log In & Pay'}
-            </Button>
+                <div className="text-center text-xs text-neutral-500">
+                  {emailOtpTimer > 0 ? (
+                    <>Resend in <span className="font-semibold text-[var(--hero-cta-orange)]">00:{String(emailOtpTimer).padStart(2, '0')}</span></>
+                  ) : (
+                    <button
+                      type="button"
+                      className="font-semibold text-[var(--hero-cta-orange)] hover:underline"
+                      onClick={() => {
+                        setRequires2FA(false)
+                        setEmailOtpValue('')
+                        setErr('Please log in again to receive a new code.')
+                      }}
+                    >
+                      Login again to resend code
+                    </button>
+                  )}
+                </div>
+                <Button
+                  className="h-11 w-full rounded-xl bg-[var(--hero-cta-orange)] font-semibold text-white hover:brightness-105"
+                  disabled={verifyingEmailOtp || emailOtpValue.length !== 6}
+                  onClick={verifyEmailOtp}
+                >
+                  {verifyingEmailOtp ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {verifyingEmailOtp ? 'Verifying…' : 'Verify & Pay'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="h-9 w-full text-sm"
+                  onClick={() => {
+                    setRequires2FA(false)
+                    setEmailOtpValue('')
+                    setErr('')
+                  }}
+                >
+                  Back to Login
+                </Button>
+
+                {devEmailOtp && (
+                  <div className="mt-2 rounded-lg bg-amber-50 p-2.5 text-center text-xs font-semibold text-amber-800 border border-amber-200">
+                    [Development Mode] Your OTP is: <strong className="text-sm font-bold text-amber-900">{devEmailOtp}</strong>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-neutral-700">Email</p>
+                  <Input
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    className="h-11"
+                    autoComplete="username"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-neutral-700">Password</p>
+                  <div className="relative">
+                    <Input
+                      type={showPw ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter password"
+                      className="h-11 pr-10"
+                      autoComplete="current-password"
+                    />
+                    <button type="button" onClick={() => setShowPw((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700">
+                      {showPw ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+                <Button
+                  className="h-11 w-full rounded-xl bg-[var(--hero-cta-orange)] font-semibold text-white hover:brightness-105"
+                  disabled={emailLoading || !email.trim() || !password || !fingerprint}
+                  onClick={loginEmail}
+                >
+                  {emailLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {emailLoading ? 'Logging in…' : 'Log In & Pay'}
+                </Button>
+              </>
+            )}
           </TabsContent>
         </Tabs>
       </DialogContent>

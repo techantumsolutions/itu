@@ -4,6 +4,7 @@ import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { aggMergeSystemPlans } from '@/lib/aggregator/repository'
 import { recordPlanMergeHistoryFromSystemMerge } from '@/lib/aggregator/plan-merge-history'
 import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 const mergeSchema = z.object({
   targetPlanId: z.string().uuid(),
@@ -65,6 +66,12 @@ export async function POST(request: Request) {
     })
 
     const result = await aggMergeSystemPlans(targetPlanId, sourcePlanIds, actorEmail)
+
+    await logAdminActivity({
+      action: 'Merge System Plans',
+      pageName: 'Integrations',
+      details: { targetId, sourceIds },
+    })
 
     return NextResponse.json(result)
   } catch (error) {

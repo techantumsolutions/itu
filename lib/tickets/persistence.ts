@@ -61,6 +61,7 @@ export async function createTicket(input: {
   transactionId?: string
   subject: string
   description: string
+  attachmentUrl?: string
 }): Promise<Ticket> {
   return withFileLock(async () => {
     const db = await readDbFile()
@@ -77,6 +78,7 @@ export async function createTicket(input: {
       status: 'open',
       createdAt: ts,
       updatedAt: ts,
+      attachmentUrl: input.attachmentUrl || undefined,
     }
     db.tickets.push(ticket)
     await writeDbFile(db)

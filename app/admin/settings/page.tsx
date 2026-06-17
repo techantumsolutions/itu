@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { User, Bell, Shield, Palette, Globe, Save, Settings, ArrowRight, LayoutDashboard, Clock, Eye, EyeOff, Lock, Camera, Loader2, Mail, Phone, CheckCircle2, Check, ChevronDown } from "lucide-react"
+import { User, Bell, Shield, Palette, Globe, Save, Settings, ArrowRight, LayoutDashboard, Clock, Eye, EyeOff, Lock, Camera, Loader2, Mail, Phone, CheckCircle2, Check, ChevronDown, History, Search, RefreshCw, FileJson } from "lucide-react"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -34,6 +34,45 @@ import {
 } from "@/components/ui/command"
 import { countriesList, getFlagEmoji, isValidPhoneNumber } from "@/lib/country-codes"
 import { parsePhoneNumberFromString } from "libphonenumber-js"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+
+function getPageBadgeColor(page: string) {
+  switch (page?.toLowerCase()) {
+    case 'security':
+      return 'bg-green-50 text-green-700 ring-green-600/20'
+    case 'passwords':
+      return 'bg-amber-50 text-amber-700 ring-amber-600/20'
+    case 'staff':
+      return 'bg-orange-50 text-orange-700 ring-orange-600/20'
+    case 'support tickets':
+      return 'bg-blue-50 text-blue-700 ring-blue-600/20'
+    case 'routing':
+      return 'bg-violet-50 text-violet-700 ring-violet-600/20'
+    case 'integrations':
+      return 'bg-indigo-50 text-indigo-700 ring-indigo-600/20'
+    case 'providers':
+      return 'bg-teal-50 text-teal-700 ring-teal-600/20'
+    case 'system':
+      return 'bg-rose-50 text-rose-700 ring-rose-600/20'
+    case 'ads':
+      return 'bg-cyan-50 text-cyan-700 ring-cyan-600/20'
+    case 'reconciliation':
+      return 'bg-purple-50 text-purple-700 ring-purple-600/20'
+    case 'cms':
+      return 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'
+    default:
+      return 'bg-neutral-50 text-neutral-700 ring-neutral-600/20'
+  }
+}
 
 const MANAGEABLE_PATHS = [
   { path: '/admin/providers', label: 'Providers (/admin/providers)' },
@@ -75,6 +114,64 @@ function SettingsContent() {
   // Global 2FA States & Handlers
   const [global2FAEnabled, setGlobal2FAEnabled] = useState(false)
   const [isSaving2FA, setIsSaving2FA] = useState(false)
+
+  // Activity logs states
+  const [logs, setLogs] = useState<any[]>([])
+  const [loadingLogs, setLoadingLogs] = useState(false)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [pageFilter, setPageFilter] = useState("all")
+  const [selectedLog, setSelectedLog] = useState<any>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+
+  const fetchActivityLogs = async () => {
+    setLoadingLogs(true)
+    try {
+      const res = await fetch('/api/admin/activity-logs')
+      if (res.ok) {
+        const data = await res.json()
+        setLogs(data.logs || [])
+      } else {
+        toast.error('Failed to load activity logs')
+      }
+    } catch {
+      toast.error('Failed to load activity logs')
+    } finally {
+      setLoadingLogs(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'activity') {
+      void fetchActivityLogs()
+    }
+  }, [activeTab])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery, pageFilter])
+
+  const filteredLogs = logs.filter(log => {
+    const matchesPage = pageFilter === 'all' || log.page_name === pageFilter
+    const query = searchQuery.toLowerCase().trim()
+    if (!query) return matchesPage
+
+    const matchesSearch =
+      log.admin_email?.toLowerCase().includes(query) ||
+      log.action?.toLowerCase().includes(query) ||
+      log.page_name?.toLowerCase().includes(query) ||
+      log.ip_address?.toLowerCase().includes(query) ||
+      JSON.stringify(log.details || {}).toLowerCase().includes(query)
+
+    return matchesPage && matchesSearch
+  })
+
+  const itemsPerPage = 10
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / itemsPerPage))
+  const safeCurrentPage = Math.min(currentPage, totalPages)
+  const paginatedLogs = filteredLogs.slice(
+    (safeCurrentPage - 1) * itemsPerPage,
+    safeCurrentPage * itemsPerPage
+  )
 
   useEffect(() => {
     if (activeTab !== 'security') return
@@ -494,7 +591,7 @@ function SettingsContent() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className={cn("grid w-full", isSuperAdmin ? "grid-cols-6" : "grid-cols-5")}>
+        <TabsList className={cn("grid w-full", isSuperAdmin ? "grid-cols-7" : "grid-cols-6")}>
           <TabsTrigger value="profile" className="gap-2">
             <User className="h-4 w-4" />
             <span className="hidden sm:inline">Profile</span>
@@ -514,6 +611,10 @@ function SettingsContent() {
           <TabsTrigger value="system" className="gap-2">
             <Settings className="h-4 w-4" />
             <span className="hidden sm:inline">System</span>
+          </TabsTrigger>
+          <TabsTrigger value="activity" className="gap-2">
+            <History className="h-4 w-4" />
+            <span className="hidden sm:inline">Activity Logs</span>
           </TabsTrigger>
           {isSuperAdmin && (
             <TabsTrigger value="passwords" className="gap-2">
@@ -981,6 +1082,161 @@ function SettingsContent() {
           </div>
         </TabsContent>
 
+        <TabsContent value="activity">
+          <Card>
+            <CardHeader className="flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-2 sm:space-y-0 pb-4">
+              <div>
+                <CardTitle>Activity Logs</CardTitle>
+                <CardDescription>
+                  Review actions performed by administrators in the dashboard.
+                </CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchActivityLogs}
+                disabled={loadingLogs}
+                className="rounded-xl border-neutral-200"
+              >
+                <RefreshCw className={cn("h-4 w-4 mr-2", loadingLogs && "animate-spin")} />
+                Refresh
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    placeholder="Search logs by email, action, page, IP..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9 rounded-xl border-neutral-200"
+                  />
+                </div>
+                <Select
+                  value={pageFilter}
+                  onValueChange={setPageFilter}
+                >
+                  <SelectTrigger className="w-full sm:w-[180px] rounded-xl">
+                    <SelectValue placeholder="All Pages" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Pages</SelectItem>
+                    {Array.from(new Set(logs.map(l => l.page_name))).map(p => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="rounded-md border overflow-x-auto">
+                <Table className="w-full min-w-[800px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[180px] whitespace-nowrap">Date</TableHead>
+                      <TableHead className="w-[200px] whitespace-nowrap">Admin</TableHead>
+                      <TableHead className="w-[120px] whitespace-nowrap">Page</TableHead>
+                      <TableHead className="whitespace-nowrap">Action</TableHead>
+                      <TableHead className="w-[120px] whitespace-nowrap">IP Address</TableHead>
+                      <TableHead className="w-[100px] text-right whitespace-nowrap">Details</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loadingLogs ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                          <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                          Loading activity logs...
+                        </TableCell>
+                      </TableRow>
+                    ) : paginatedLogs.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                          No activity logs found.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      paginatedLogs.map((log) => (
+                        <TableRow key={log.id}>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                            {new Date(log.created_at).toLocaleString()}
+                          </TableCell>
+                          <TableCell className="font-medium text-xs truncate max-w-[200px] whitespace-nowrap">
+                            {log.admin_email}
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            <span className={cn(
+                              "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset",
+                              getPageBadgeColor(log.page_name)
+                            )}>
+                              {log.page_name}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-xs font-medium text-neutral-900 whitespace-nowrap">
+                            {log.action}
+                          </TableCell>
+                          <TableCell className="text-xs font-mono text-muted-foreground whitespace-nowrap">
+                            {log.ip_address || '127.0.0.1'}
+                          </TableCell>
+                          <TableCell className="text-right whitespace-nowrap">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setSelectedLog(log)}
+                              className="h-8 w-8 rounded-full hover:bg-neutral-100"
+                            >
+                              <FileJson className="h-4 w-4 text-neutral-500" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* Pagination Controls */}
+              {filteredLogs.length > 0 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-border/40 mt-4">
+                  {/* Info text */}
+                  <div className="text-xs text-muted-foreground font-medium">
+                    Showing {Math.min((safeCurrentPage - 1) * 10 + 1, filteredLogs.length)} to{' '}
+                    {Math.min(safeCurrentPage * 10, filteredLogs.length)} of {filteredLogs.length} logs
+                  </div>
+
+                  {/* Page Navigation */}
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs font-semibold rounded-xl"
+                      onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                      disabled={safeCurrentPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    
+                    {/* Page indicator */}
+                    <span className="text-xs font-semibold px-2">
+                      Page {safeCurrentPage} of {totalPages}
+                    </span>
+
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs font-semibold rounded-xl"
+                      onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                      disabled={safeCurrentPage === totalPages}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {isSuperAdmin && (
           <TabsContent value="passwords">
             <Card>
@@ -1134,6 +1390,54 @@ function SettingsContent() {
           </Card>
         </div>
       )}
+      {/* Activity Log Details Dialog */}
+      <Dialog open={!!selectedLog} onOpenChange={(open) => { if (!open) setSelectedLog(null) }}>
+        <DialogContent className="sm:max-w-lg rounded-2xl bg-white border border-neutral-200">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold">
+              <History className="h-5 w-5 text-primary" />
+              Activity Log Details
+            </DialogTitle>
+            <DialogDescription>
+              Detailed payload for the action performed by the administrator.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedLog && (
+            <div className="space-y-4 py-2">
+              <div className="grid grid-cols-3 gap-2 text-sm border-b border-neutral-100 pb-4">
+                <span className="font-semibold text-neutral-500">Date</span>
+                <span className="col-span-2 text-neutral-800">{new Date(selectedLog.created_at).toLocaleString()}</span>
+                
+                <span className="font-semibold text-neutral-500">Administrator</span>
+                <span className="col-span-2 text-neutral-800">{selectedLog.admin_email}</span>
+
+                <span className="font-semibold text-neutral-500">Page</span>
+                <span className="col-span-2 text-neutral-800">{selectedLog.page_name}</span>
+
+                <span className="font-semibold text-neutral-500">Action</span>
+                <span className="col-span-2 text-neutral-800 font-medium">{selectedLog.action}</span>
+
+                <span className="font-semibold text-neutral-500">IP Address</span>
+                <span className="col-span-2 text-neutral-800">{selectedLog.ip_address || '127.0.0.1'}</span>
+
+                <span className="font-semibold text-neutral-500">User Agent</span>
+                <span className="col-span-2 text-neutral-800 text-xs break-all">{selectedLog.user_agent || 'Unknown'}</span>
+              </div>
+              <div className="space-y-1">
+                <span className="text-sm font-semibold text-neutral-500">Metadata Details</span>
+                <pre className="p-3 text-xs bg-neutral-50 rounded-lg overflow-auto border border-neutral-100 max-h-60 font-mono text-neutral-800">
+                  {JSON.stringify(selectedLog.details, null, 2)}
+                </pre>
+              </div>
+            </div>
+          )}
+          <DialogFooter className="border-t border-neutral-100 pt-3">
+            <DialogClose asChild>
+              <Button variant="outline" className="rounded-xl">Close</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

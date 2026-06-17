@@ -4,6 +4,7 @@ import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-res
 import { getDtoneCredentialsFromEnv } from '@/lib/dtone'
 import { getValuetopupCredentialsFromEnv } from '@/lib/valuetopup'
 import { adminCanManageProviders } from '@/lib/auth/require-admin-feature'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 function readEnv(name: string): string | undefined {
   const v = process.env[name]
@@ -115,6 +116,12 @@ export async function POST(request: Request) {
       details: { created, errors },
     }),
   }).catch(() => {})
+
+  await logAdminActivity({
+    action: 'Bootstrap Environment Providers',
+    pageName: 'System',
+    details: { created, errors },
+  })
 
   return NextResponse.json({
     created,

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { isAdminRequest } from '@/lib/tickets/auth-headers'
 import { addMessage, bumpToInProgressIfNeeded, getTicketAdmin } from '@/lib/tickets/db-persistence'
 import type { Ticket } from '@/lib/tickets/types'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -45,6 +46,12 @@ export async function POST(request: Request, context: Ctx) {
       createdAt: updated.createdAt,
       updatedAt: updated.updatedAt,
     }
+    await logAdminActivity({
+      action: 'Respond to Ticket',
+      pageName: 'Support Tickets',
+      details: { ticketId },
+    })
+
     return NextResponse.json({ message: msg, ticket: ticketOut })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Server error'

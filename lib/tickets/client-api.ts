@@ -21,7 +21,7 @@ function headers(user: TicketUserHeaders) {
 
 export async function apiCreateTicket(
   user: TicketUserHeaders,
-  body: { subject: string; description: string; transactionId?: string; transactionCreatedAt?: string },
+  body: { subject: string; description: string; transactionId?: string; transactionCreatedAt?: string; attachmentUrl?: string },
 ) {
   const res = await fetch('/api/tickets', {
     method: 'POST',

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import type { SiteContent } from '@/lib/cms-store'
 import { cacheDel, cacheGetJson, cacheSetJson } from '@/lib/cache/redis'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -13,6 +14,12 @@ export async function GET() {
   try {
     const cached = await cacheGetJson<{ content: SiteContent | null; ok: boolean }>(CMS_CACHE_KEY)
     if (cached) {
+      // Only log if not a cached hit for admin, but wait: cache hit still means they accessed it.
+      // But to be consistent we can just call logAdminActivity. It returns early anyway for non-admins.
+      await logAdminActivity({
+        action: 'View CMS Content',
+        pageName: 'CMS',
+      })
       return NextResponse.json(
         cached,
         { headers: { 'Cache-Control': 'no-store, max-age=0' } },
@@ -30,6 +37,12 @@ export async function GET() {
     const content = (rows?.[0]?.content ?? null) as SiteContent | null
     const payload = { content, ok: true }
     await cacheSetJson(CMS_CACHE_KEY, payload, 60)
+
+    await logAdminActivity({
+      action: 'View CMS Content',
+      pageName: 'CMS',
+    })
+
     return NextResponse.json(
       payload,
       { headers: { 'Cache-Control': 'no-store, max-age=0' } },
@@ -61,6 +74,13 @@ export async function POST(req: Request) {
     }
 
     await cacheDel(CMS_CACHE_KEY)
+
+    await logAdminActivity({
+      action: 'Update CMS Content',
+      pageName: 'CMS',
+      details: body.content,
+    })
+
     return NextResponse.json({ ok: true })
   } catch (e) {
     return NextResponse.json({ ok: false, error: 'Failed to save CMS content' }, { status: 500 })

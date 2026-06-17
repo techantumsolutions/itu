@@ -29,12 +29,13 @@ export function PagePasswordGate({ children }: PagePasswordGateProps) {
   const pathname = usePathname()
   const { user } = useAuthStore()
   const [protectedPaths, setProtectedPaths] = useState<string[]>([])
-  const [loadingPaths, setLoadingPaths] = useState(false)
+  const [loadingPaths, setLoadingPaths] = useState(true)
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState('')
   const [unlockedMap, setUnlockedMap] = useState<Record<string, number>>({})
+  const hasLoadedPathsRef = React.useRef(false)
 
   const isAdmin = user?.role === 'admin'
 
@@ -56,13 +57,16 @@ export function PagePasswordGate({ children }: PagePasswordGateProps) {
     if (!isAdmin) return
     let cancelled = false
     async function fetchPaths() {
-      setLoadingPaths(true)
+      if (!hasLoadedPathsRef.current) {
+        setLoadingPaths(true)
+      }
       try {
         const res = await fetch('/api/admin/settings/page-passwords')
         if (res.ok) {
           const data = await res.json()
           if (!cancelled && data.protectedPaths) {
             setProtectedPaths(data.protectedPaths)
+            hasLoadedPathsRef.current = true
           }
         }
       } catch {

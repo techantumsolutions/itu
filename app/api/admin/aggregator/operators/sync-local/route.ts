@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminCanManageProviders } from '@/lib/auth/require-admin-feature'
 import { runLocalOperatorSync } from '@/lib/aggregator/sync-service'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function POST(request: Request) {
   if (!(await adminCanManageProviders(request))) {
@@ -14,6 +15,12 @@ export async function POST(request: Request) {
     // Fire and forget in the background to avoid route timeouts
     void runLocalOperatorSync(providerId).catch((err) => {
       console.error('[sync-local] Background local sync failed:', err)
+    })
+
+    await logAdminActivity({
+      action: 'Local Operator Sync',
+      pageName: 'Integrations',
+      details: { providerId },
     })
 
     return NextResponse.json({

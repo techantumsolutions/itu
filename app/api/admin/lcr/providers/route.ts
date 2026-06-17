@@ -3,6 +3,7 @@ import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-rest'
 import { getDtoneCredentialsFromEnv } from '@/lib/dtone'
 import { adminCanUseAnyFeature, adminCanManageProviders } from '@/lib/auth/require-admin-feature'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 function dingEnvReady(): boolean {
   const a = process.env.DING_API_KEY?.trim()
@@ -193,6 +194,12 @@ export async function POST(request: Request) {
       details: { code, adapterKey },
     }),
   }).catch(() => {})
+
+  await logAdminActivity({
+    action: 'Create Provider',
+    pageName: 'Providers',
+    details: { code, name, adapterKey },
+  })
 
   const rows = (await res.json()) as any[]
   return NextResponse.json({ provider: rows?.[0] ?? null }, { status: 201 })

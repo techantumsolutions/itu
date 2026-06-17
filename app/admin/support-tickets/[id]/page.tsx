@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { format } from 'date-fns'
-import { ArrowLeft, Loader2, Send, StickyNote } from 'lucide-react'
+import { ArrowLeft, Loader2, Send, StickyNote, RotateCw } from 'lucide-react'
 import { useAuthStore } from '@/lib/stores'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { cn } from '@/lib/utils'
 import {
   Select,
   SelectContent,
@@ -48,6 +49,7 @@ export default function AdminSupportTicketDetailPage() {
   const [sending, setSending] = useState(false)
   const [savingStatus, setSavingStatus] = useState(false)
   const [savingNote, setSavingNote] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
 
   useEffect(() => {
     if (user && !isClientAdminUser(user)) {
@@ -70,6 +72,21 @@ export default function AdminSupportTicketDetailPage() {
       setLoading(false)
     }
   }, [headers, id])
+
+  const handleRefresh = async () => {
+    if (!headers || !id) return
+    setRefreshing(true)
+    try {
+      const t = await apiAdminGetTicket(headers, id)
+      setData(t)
+      setStatusPick(t.status)
+      toast.success('Messages refreshed')
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to refresh messages')
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   useEffect(() => {
     void load()
@@ -158,36 +175,21 @@ export default function AdminSupportTicketDetailPage() {
 
       <div className="flex flex-col gap-4 border-b border-border/60 pb-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 space-y-2">
-          <p className="font-mono text-xs text-muted-foreground">{data.id}</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs text-muted-foreground">{data.id}</span>
+            <TicketStatusBadge status={data.status} />
+          </div>
           <h1 className="text-2xl font-bold tracking-tight">{data.subject}</h1>
           <p className="text-sm text-muted-foreground">
             Created {format(new Date(data.createdAt), 'MMM d, yyyy HH:mm')} · Updated{' '}
             {format(new Date(data.updatedAt), 'MMM d, yyyy HH:mm')}
           </p>
         </div>
-        <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/80 p-4 shadow-elevated-sm lg:w-[280px]">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-semibold uppercase text-muted-foreground">Status</span>
-            <TicketStatusBadge status={data.status} />
-          </div>
-          <Select value={statusPick} onValueChange={(v) => setStatusPick(v as TicketStatus)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="open">Open</SelectItem>
-              <SelectItem value="in_progress">In progress</SelectItem>
-              <SelectItem value="resolved">Resolved</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button type="button" size="sm" onClick={() => void onSaveStatus()} disabled={savingStatus || statusPick === data.status}>
-            {savingStatus ? <Loader2 className="size-4 animate-spin" /> : 'Save status'}
-          </Button>
-        </div>
       </div>
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="space-y-6">
+          {/* 1. Customer Information */}
           <section className="rounded-2xl border border-border/70 bg-card/80 p-4 shadow-elevated-sm">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Customer</h2>
             <dl className="grid gap-2 text-sm">
@@ -206,11 +208,7 @@ export default function AdminSupportTicketDetailPage() {
             </dl>
           </section>
 
-          <section className="space-y-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Thread</h2>
-            <TicketThread description={data.description} messages={data.messages} variant="admin" />
-          </section>
-
+          {/* 2. Linked Transaction */}
           <section className="rounded-2xl border border-border/70 bg-card/80 p-4 shadow-elevated-sm">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Linked Transaction</h2>
             {!data.transactionId ? (
@@ -224,6 +222,54 @@ export default function AdminSupportTicketDetailPage() {
             )}
           </section>
 
+          {/* 3. Attachment (if exists) */}
+          {data.attachmentUrl && (
+            <section className="rounded-2xl border border-border/70 bg-card/80 p-4 shadow-elevated-sm space-y-3">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Attachments</h2>
+              {/\.(png|jpe?g|gif|webp)$/i.test(data.attachmentUrl) ? (
+                <div className="max-w-sm rounded-lg overflow-hidden border border-border bg-muted/10 shadow-sm">
+                  <a href={data.attachmentUrl} target="_blank" rel="noopener noreferrer">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={data.attachmentUrl} alt="Attachment" className="max-h-48 w-auto object-contain hover:opacity-95 transition-opacity" />
+                  </a>
+                </div>
+              ) : (
+                <a
+                  href={data.attachmentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-800 hover:underline bg-neutral-100 px-3 py-1.5 rounded-lg border border-neutral-200"
+                >
+                  <span>📎</span> Download / View File
+                </a>
+              )}
+            </section>
+          )}
+
+          {/* 4. Thread (Conversation history) */}
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Thread</h2>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="h-8 gap-1 rounded-lg text-muted-foreground hover:text-foreground"
+              >
+                <RotateCw className={cn('size-3.5', refreshing && 'animate-spin')} />
+                Refresh
+              </Button>
+            </div>
+            <TicketThread
+              description={data.description}
+              messages={data.messages}
+              variant="admin"
+              ticketCreatedAt={data.createdAt}
+            />
+          </section>
+
+          {/* 4. Reply to customer */}
           <section className="rounded-2xl border border-border/70 bg-card/80 p-4 shadow-elevated-sm">
             <h2 className="mb-3 text-sm font-semibold">Reply to customer</h2>
             {canPublicReply ? (
@@ -250,6 +296,28 @@ export default function AdminSupportTicketDetailPage() {
         </div>
 
         <aside className="space-y-4">
+          {/* Status Change Card */}
+          <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/80 p-4 shadow-elevated-sm">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase text-muted-foreground">Ticket Status</span>
+              <TicketStatusBadge status={data.status} />
+            </div>
+            <Select value={statusPick} onValueChange={(v) => setStatusPick(v as TicketStatus)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="open">Open</SelectItem>
+                <SelectItem value="in_progress">In progress</SelectItem>
+                <SelectItem value="resolved">Resolved</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button type="button" size="sm" onClick={() => void onSaveStatus()} disabled={savingStatus || statusPick === data.status}>
+              {savingStatus ? <Loader2 className="size-4 animate-spin" /> : 'Save status'}
+            </Button>
+          </div>
+
+          {/* Internal notes Card */}
           <div className="rounded-2xl border border-amber-200/80 bg-amber-50/60 p-4  ">
             <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-amber-900 ">
               <StickyNote className="size-4" />

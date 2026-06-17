@@ -115,6 +115,7 @@ create table if not exists support_tickets (
   subject text not null,
   description text not null,
   status text not null default 'open' check (status in ('open', 'in_progress', 'resolved')),
+  attachment_url text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

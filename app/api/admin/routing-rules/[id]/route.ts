@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { deleteRoutingRule, getRoutingRule, updateRoutingRule } from '@/lib/routing/repository'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -42,6 +43,13 @@ export async function PUT(request: Request, { params }: Params) {
   })
 
   if (!rule) return NextResponse.json({ error: 'Update failed' }, { status: 500 })
+
+  await logAdminActivity({
+    action: 'Update Routing Rule',
+    pageName: 'Routing',
+    details: { ruleId: id, update: body },
+  })
+
   return NextResponse.json({ rule })
 }
 
@@ -53,5 +61,12 @@ export async function DELETE(request: Request, { params }: Params) {
   const { id } = await params
   const ok = await deleteRoutingRule(id)
   if (!ok) return NextResponse.json({ error: 'Delete failed' }, { status: 500 })
+
+  await logAdminActivity({
+    action: 'Delete Routing Rule',
+    pageName: 'Routing',
+    details: { ruleId: id },
+  })
+
   return NextResponse.json({ success: true })
 }

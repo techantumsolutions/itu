@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { createRoutingRule, listRoutingRules } from '@/lib/routing/repository'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function GET(request: Request) {
   if (!(await adminCanUseFeature(request, 'routing', { allowLegacyHeader: true }))) {
@@ -38,6 +39,12 @@ export async function POST(request: Request) {
   if (!rule) {
     return NextResponse.json({ error: 'Failed to create rule' }, { status: 500 })
   }
+
+  await logAdminActivity({
+    action: 'Create Routing Rule',
+    pageName: 'Routing',
+    details: { ruleName, providerId, countryId: body.countryId, operatorId: body.operatorId },
+  })
 
   return NextResponse.json({ rule }, { status: 201 })
 }

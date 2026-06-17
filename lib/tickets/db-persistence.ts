@@ -7,6 +7,7 @@ import type {
   TicketStatus,
   TicketWithThread,
 } from './types'
+import * as filePersistence from './persistence'
 
 type TicketRow = {
   id: string
@@ -17,6 +18,7 @@ type TicketRow = {
   subject: string
   description: string
   status: TicketStatus
+  attachment_url: string | null
   created_at: string
   updated_at: string
 }
@@ -49,6 +51,7 @@ function toTicket(row: TicketRow): Ticket {
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    attachmentUrl: row.attachment_url ?? undefined,
   }
 }
 
@@ -76,12 +79,29 @@ function encode(value: string): string {
   return encodeURIComponent(value)
 }
 
+async function isTableMissing(res: Response): Promise<boolean> {
+  if (res.status === 404) {
+    try {
+      const text = await res.clone().text()
+      return text.includes('PGRST205') || text.includes('support_tickets') || text.includes('ticket_messages') || text.includes('ticket_notes')
+    } catch {
+      return true
+    }
+  }
+  return false
+}
+
 async function selectTicketById(ticketId: string): Promise<TicketRow | null> {
   const res = await supabaseRest(
-    `support_tickets?id=eq.${encode(ticketId)}&select=id,user_id,user_email,user_name,transaction_id,subject,description,status,created_at,updated_at&limit=1`,
+    `support_tickets?id=eq.${encode(ticketId)}&select=id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at&limit=1`,
     { cache: 'no-store' },
   )
-  if (!res.ok) throw new Error('Failed to load ticket')
+  if (!res.ok) {
+    if (await isTableMissing(res)) {
+      throw new Error('Table support_tickets not found')
+    }
+    throw new Error('Failed to load ticket')
+  }
   const rows = (await res.json()) as TicketRow[]
   return rows[0] ?? null
 }
@@ -91,7 +111,12 @@ async function selectMessages(ticketId: string): Promise<TicketMessage[]> {
     `ticket_messages?ticket_id=eq.${encode(ticketId)}&select=id,ticket_id,sender_type,message,created_at&order=created_at.asc`,
     { cache: 'no-store' },
   )
-  if (!res.ok) throw new Error('Failed to load ticket messages')
+  if (!res.ok) {
+    if (await isTableMissing(res)) {
+      throw new Error('Table ticket_messages not found')
+    }
+    throw new Error('Failed to load ticket messages')
+  }
   return ((await res.json()) as MessageRow[]).map(toMessage)
 }
 
@@ -100,7 +125,12 @@ async function selectNotes(ticketId: string): Promise<TicketNote[]> {
     `ticket_notes?ticket_id=eq.${encode(ticketId)}&select=id,ticket_id,note,created_by,created_at&order=created_at.asc`,
     { cache: 'no-store' },
   )
-  if (!res.ok) throw new Error('Failed to load ticket notes')
+  if (!res.ok) {
+    if (await isTableMissing(res)) {
+      throw new Error('Table ticket_notes not found')
+    }
+    throw new Error('Failed to load ticket notes')
+  }
   return ((await res.json()) as NoteRow[]).map(toNote)
 }
 
@@ -111,40 +141,76 @@ export async function createTicket(input: {
   transactionId?: string
   subject: string
   description: string
+  attachmentUrl?: string
 }): Promise<Ticket> {
-  const res = await supabaseRest('support_tickets?select=id,user_id,user_email,user_name,transaction_id,subject,description,status,created_at,updated_at', {
-    method: 'POST',
-    headers: { Prefer: 'return=representation' },
-    body: JSON.stringify([
-      {
-        user_id: input.userId,
-        user_email: input.userEmail,
-        user_name: input.userName,
-        transaction_id: input.transactionId?.trim() || null,
-        subject: input.subject.trim(),
-        description: input.description.trim(),
-        status: 'open',
-      },
-    ]),
-  })
-  if (!res.ok) throw new Error('Failed to create ticket')
-  const rows = (await res.json()) as TicketRow[]
-  return toTicket(rows[0]!)
+  try {
+    const res = await supabaseRest('support_tickets?select=id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify([
+        {
+          user_id: input.userId,
+          user_email: input.userEmail,
+          user_name: input.userName,
+          transaction_id: input.transactionId?.trim() || null,
+          subject: input.subject.trim(),
+          description: input.description.trim(),
+          status: 'open',
+          attachment_url: input.attachmentUrl || null,
+        },
+      ]),
+    })
+    if (!res.ok) {
+      if (await isTableMissing(res)) {
+        return filePersistence.createTicket(input)
+      }
+      throw new Error('Failed to create ticket')
+    }
+    const rows = (await res.json()) as TicketRow[]
+    return toTicket(rows[0]!)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : ''
+    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+      return filePersistence.createTicket(input)
+    }
+    throw err
+  }
 }
 
 export async function listTicketsForUser(userId: string): Promise<Ticket[]> {
-  const res = await supabaseRest(
-    `support_tickets?user_id=eq.${encode(userId)}&select=id,user_id,user_email,user_name,transaction_id,subject,description,status,created_at,updated_at&order=updated_at.desc`,
-    { cache: 'no-store' },
-  )
-  if (!res.ok) throw new Error('Failed to load tickets')
-  return ((await res.json()) as TicketRow[]).map(toTicket)
+  try {
+    const res = await supabaseRest(
+      `support_tickets?user_id=eq.${encode(userId)}&select=id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at&order=updated_at.desc`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) {
+      if (await isTableMissing(res)) {
+        return filePersistence.listTicketsForUser(userId)
+      }
+      throw new Error('Failed to load tickets')
+    }
+    return ((await res.json()) as TicketRow[]).map(toTicket)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : ''
+    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+      return filePersistence.listTicketsForUser(userId)
+    }
+    throw err
+  }
 }
 
 export async function getTicketForUser(ticketId: string, userId: string): Promise<TicketWithThread | null> {
-  const row = await selectTicketById(ticketId)
-  if (!row || row.user_id !== userId) return null
-  return { ...toTicket(row), messages: await selectMessages(ticketId) }
+  try {
+    const row = await selectTicketById(ticketId)
+    if (!row || row.user_id !== userId) return null
+    return { ...toTicket(row), messages: await selectMessages(ticketId) }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : ''
+    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+      return filePersistence.getTicketForUser(ticketId, userId)
+    }
+    throw err
+  }
 }
 
 function applySearchFilter(tickets: Ticket[], q?: string): Ticket[] {
@@ -160,22 +226,43 @@ function applySearchFilter(tickets: Ticket[], q?: string): Ticket[] {
 }
 
 export async function listTicketsAdmin(filters: { status?: TicketStatus | 'all'; q?: string }): Promise<Ticket[]> {
-  const status = filters.status && filters.status !== 'all' ? `status=eq.${encode(filters.status)}&` : ''
-  const res = await supabaseRest(
-    `support_tickets?${status}select=id,user_id,user_email,user_name,transaction_id,subject,description,status,created_at,updated_at&order=updated_at.desc`,
-    { cache: 'no-store' },
-  )
-  if (!res.ok) throw new Error('Failed to load tickets')
-  return applySearchFilter(((await res.json()) as TicketRow[]).map(toTicket), filters.q)
+  try {
+    const status = filters.status && filters.status !== 'all' ? `status=eq.${encode(filters.status)}&` : ''
+    const res = await supabaseRest(
+      `support_tickets?${status}select=id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at&order=updated_at.desc`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) {
+      if (await isTableMissing(res)) {
+        return filePersistence.listTicketsAdmin(filters)
+      }
+      throw new Error('Failed to load tickets')
+    }
+    return applySearchFilter(((await res.json()) as TicketRow[]).map(toTicket), filters.q)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : ''
+    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+      return filePersistence.listTicketsAdmin(filters)
+    }
+    throw err
+  }
 }
 
 export async function getTicketAdmin(ticketId: string): Promise<TicketAdminDetail | null> {
-  const row = await selectTicketById(ticketId)
-  if (!row) return null
-  return {
-    ...toTicket(row),
-    messages: await selectMessages(ticketId),
-    notes: await selectNotes(ticketId),
+  try {
+    const row = await selectTicketById(ticketId)
+    if (!row) return null
+    return {
+      ...toTicket(row),
+      messages: await selectMessages(ticketId),
+      notes: await selectNotes(ticketId),
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : ''
+    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+      return filePersistence.getTicketAdmin(ticketId)
+    }
+    throw err
   }
 }
 
@@ -184,64 +271,111 @@ export async function addMessage(input: {
   senderType: 'admin' | 'user'
   message: string
 }): Promise<TicketMessage> {
-  const res = await supabaseRest('ticket_messages?select=id,ticket_id,sender_type,message,created_at', {
-    method: 'POST',
-    headers: { Prefer: 'return=representation' },
-    body: JSON.stringify([
-      {
-        ticket_id: input.ticketId,
-        sender_type: input.senderType,
-        message: input.message.trim(),
-      },
-    ]),
-  })
-  if (!res.ok) throw new Error('Failed to add message')
-  await supabaseRest(`support_tickets?id=eq.${encode(input.ticketId)}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ updated_at: new Date().toISOString() }),
-  })
-  const rows = (await res.json()) as MessageRow[]
-  return toMessage(rows[0]!)
+  try {
+    const res = await supabaseRest('ticket_messages?select=id,ticket_id,sender_type,message,created_at', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify([
+        {
+          ticket_id: input.ticketId,
+          sender_type: input.senderType,
+          message: input.message.trim(),
+        },
+      ]),
+    })
+    if (!res.ok) {
+      if (await isTableMissing(res)) {
+        return filePersistence.addMessage(input)
+      }
+      throw new Error('Failed to add message')
+    }
+    await supabaseRest(`support_tickets?id=eq.${encode(input.ticketId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ updated_at: new Date().toISOString() }),
+    })
+    const rows = (await res.json()) as MessageRow[]
+    return toMessage(rows[0]!)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : ''
+    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+      return filePersistence.addMessage(input)
+    }
+    throw err
+  }
 }
 
 export async function setTicketStatus(ticketId: string, status: TicketStatus): Promise<Ticket | null> {
-  const res = await supabaseRest(
-    `support_tickets?id=eq.${encode(ticketId)}&select=id,user_id,user_email,user_name,transaction_id,subject,description,status,created_at,updated_at`,
-    {
-      method: 'PATCH',
-      headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({ status }),
-    },
-  )
-  if (!res.ok) throw new Error('Failed to update ticket')
-  const rows = (await res.json()) as TicketRow[]
-  return rows[0] ? toTicket(rows[0]) : null
+  try {
+    const res = await supabaseRest(
+      `support_tickets?id=eq.${encode(ticketId)}&select=id,user_id,user_email,user_name,transaction_id,subject,description,status,created_at,updated_at`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({ status }),
+      },
+    )
+    if (!res.ok) {
+      if (await isTableMissing(res)) {
+        return filePersistence.setTicketStatus(ticketId, status)
+      }
+      throw new Error('Failed to update ticket')
+    }
+    const rows = (await res.json()) as TicketRow[]
+    return rows[0] ? toTicket(rows[0]) : null
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : ''
+    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+      return filePersistence.setTicketStatus(ticketId, status)
+    }
+    throw err
+  }
 }
 
 /** After admin sends a public reply, move to in_progress unless already resolved. */
 export async function bumpToInProgressIfNeeded(ticketId: string): Promise<void> {
-  const row = await selectTicketById(ticketId)
-  if (!row || row.status === 'resolved') return
-  await setTicketStatus(ticketId, 'in_progress')
+  try {
+    const row = await selectTicketById(ticketId)
+    if (!row || row.status === 'resolved') return
+    await setTicketStatus(ticketId, 'in_progress')
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : ''
+    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+      return filePersistence.bumpToInProgressIfNeeded(ticketId)
+    }
+    throw err
+  }
 }
 
 export async function addNote(input: { ticketId: string; note: string; createdBy: string }): Promise<TicketNote> {
-  const res = await supabaseRest('ticket_notes?select=id,ticket_id,note,created_by,created_at', {
-    method: 'POST',
-    headers: { Prefer: 'return=representation' },
-    body: JSON.stringify([
-      {
-        ticket_id: input.ticketId,
-        note: input.note.trim(),
-        created_by: input.createdBy,
-      },
-    ]),
-  })
-  if (!res.ok) throw new Error('Failed to add note')
-  await supabaseRest(`support_tickets?id=eq.${encode(input.ticketId)}`, {
-    method: 'PATCH',
-    body: JSON.stringify({ updated_at: new Date().toISOString() }),
-  })
-  const rows = (await res.json()) as NoteRow[]
-  return toNote(rows[0]!)
+  try {
+    const res = await supabaseRest('ticket_notes?select=id,ticket_id,note,created_by,created_at', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify([
+        {
+          ticket_id: input.ticketId,
+          note: input.note.trim(),
+          created_by: input.createdBy,
+        },
+      ]),
+    })
+    if (!res.ok) {
+      if (await isTableMissing(res)) {
+        return filePersistence.addNote(input)
+      }
+      throw new Error('Failed to add note')
+    }
+    await supabaseRest(`support_tickets?id=eq.${encode(input.ticketId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ updated_at: new Date().toISOString() }),
+    })
+    const rows = (await res.json()) as NoteRow[]
+    return toNote(rows[0]!)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : ''
+    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+      return filePersistence.addNote(input)
+    }
+    throw err
+  }
 }
