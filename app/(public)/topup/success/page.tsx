@@ -5,28 +5,46 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useTopupStore } from '@/store/topupStore'
-import { Download, RotateCcw } from 'lucide-react'
-
+import { Download, RotateCcw, Sparkles } from 'lucide-react'
 import { getDialCode } from '@/lib/lcr/countries'
+import { ConfettiCelebration } from '@/components/confetti-celebration'
 
 export default function TopupSuccessPage() {
-  const { orderId, phoneNumber, countryCode, operator, selectedPlan, pricing, totalAmount, resetSession, transactionId, providerRef, providerName } =
-    useTopupStore()
+  const {
+    orderId,
+    phoneNumber,
+    countryCode,
+    operator,
+    selectedPlan,
+    pricing,
+    totalAmount,
+    resetSession,
+    transactionId,
+    providerRef,
+    providerName,
+    rewardPointsEarned,
+  } = useTopupStore()
 
   const refId = useMemo(() => {
     if (transactionId) return transactionId.slice(0, 12).toUpperCase()
     if (orderId) return orderId.slice(0, 12).toUpperCase()
     return ''
   }, [transactionId, orderId])
+
   const dt = useMemo(() => new Date().toLocaleString(), [])
 
   if ((!orderId && !transactionId) || !selectedPlan || !pricing) return null
 
   return (
     <div className="min-h-[calc(100vh-6rem)] bg-[var(--hero-navy)]">
+      {/* Confetti fires only when reward points were earned */}
+      {rewardPointsEarned > 0 && <ConfettiCelebration />}
+
       <div className="pointer-events-none absolute inset-0 opacity-35" aria-hidden />
       <div className="mx-auto flex max-w-6xl flex-col items-center px-4 py-16">
         <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-[0_24px_80px_-30px_rgba(0,0,0,0.6)]">
+
+          {/* Header */}
           <div className="bg-emerald-600 px-6 py-8 text-center text-white">
             <p className="text-lg font-bold">Recharge Successful!</p>
             <p className="mt-1 text-xs text-white/90">
@@ -45,12 +63,16 @@ export default function TopupSuccessPage() {
             </div>
           </div>
 
+          {/* Transaction Details */}
           <div className="px-6 py-6">
             <div className="space-y-3 text-xs text-neutral-700">
               <Row label="Transaction ID" value={refId} mono />
               <Row label="Mobile Number" value={`+${getDialCode(countryCode)} ${phoneNumber}`} />
               <Row label="Operator" value={operator} />
-              <Row label="Plan Name" value={selectedPlan.planName || `₹${selectedPlan.price_inr} • ${selectedPlan.validity}`} />
+              <Row
+                label="Plan Name"
+                value={selectedPlan.planName || `₹${selectedPlan.price_inr} • ${selectedPlan.validity}`}
+              />
               <Row
                 label="Amount Paid"
                 value={`${totalAmount.toFixed(2)} ${pricing.localCurrency} (₹ ${selectedPlan.price_inr})`}
@@ -60,6 +82,7 @@ export default function TopupSuccessPage() {
               <Row label="Date & Time" value={dt} />
             </div>
 
+            {/* Action Buttons */}
             <div className="mt-5 grid gap-3">
               <Button
                 variant="outline"
@@ -76,7 +99,10 @@ export default function TopupSuccessPage() {
               </Button>
 
               <div className="grid grid-cols-2 gap-3">
-                <Button className={cn('h-11 rounded-xl bg-[var(--hero-navy)] text-white hover:bg-[var(--hero-navy)]/95')} asChild>
+                <Button
+                  className={cn('h-11 rounded-xl bg-[var(--hero-navy)] text-white hover:bg-[var(--hero-navy)]/95')}
+                  asChild
+                >
                   <Link href="/account/transactions">View Transaction History</Link>
                 </Button>
                 <Button
@@ -93,20 +119,38 @@ export default function TopupSuccessPage() {
             </div>
           </div>
 
+          {/* Reward Points / Trust Footer */}
           <div className="border-t border-neutral-200 bg-white px-6 py-5">
-            <div className="flex items-center justify-between rounded-xl bg-neutral-50 px-4 py-3 ring-1 ring-black/5">
-              <div>
-                <p className="text-xs font-semibold text-neutral-900">Rewarded Conversion</p>
-                <p className="text-[11px] text-neutral-500">Thanks for using our service! You have earned</p>
+            {rewardPointsEarned > 0 ? (
+              <div className="flex items-center justify-between rounded-xl bg-gradient-to-r from-amber-50 to-orange-50 px-4 py-3 ring-1 ring-amber-200/80">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-amber-500 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-neutral-900">Reward Points Earned! 🎉</p>
+                    <p className="text-[11px] text-neutral-500">Added to your rewards balance</p>
+                  </div>
+                </div>
+                <div className="rounded-lg bg-white px-3 py-2 text-sm font-bold text-amber-600 ring-1 ring-amber-200 shrink-0">
+                  +{rewardPointsEarned} pts
+                </div>
               </div>
-              <div className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-neutral-900 ring-1 ring-black/5">10+</div>
-            </div>
+            ) : (
+              <div className="flex items-center justify-between rounded-xl bg-neutral-50 px-4 py-3 ring-1 ring-black/5">
+                <div>
+                  <p className="text-xs font-semibold text-neutral-900">Rewarded Conversion</p>
+                  <p className="text-[11px] text-neutral-500">Thanks for using our service!</p>
+                </div>
+                <div className="rounded-lg bg-white px-3 py-2 text-xs font-bold text-neutral-900 ring-1 ring-black/5">🎉</div>
+              </div>
+            )}
+
             <div className="mt-4 flex flex-wrap items-center justify-center gap-10 text-center text-sm text-neutral-600">
               <TrustItem title="Instant Top-Up" subtitle="In seconds" />
               <TrustItem title="100% Secure" subtitle="Safe payments" />
               <TrustItem title="Best Rates" subtitle="No hidden fees" />
             </div>
           </div>
+
         </div>
       </div>
     </div>
@@ -130,5 +174,3 @@ function TrustItem({ title, subtitle }: { title: string; subtitle: string }) {
     </div>
   )
 }
-
-

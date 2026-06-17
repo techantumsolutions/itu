@@ -12,8 +12,9 @@ import { cn } from '@/lib/utils'
 import { TicketStatusBadge } from '@/components/ticket-status-badge'
 import { TicketThread } from '@/components/ticket-thread'
 import { apiGetTicket, apiPostTicketMessage } from '@/lib/tickets/client-api'
-import type { TicketWithThread } from '@/lib/tickets/types'
+import type { TicketStatus, TicketWithThread, TicketMessage } from '@/lib/tickets/types'
 import { toast } from 'sonner'
+import { io } from 'socket.io-client'
 
 export default function AccountTicketDetailPage() {
   const params = useParams()
@@ -33,9 +34,9 @@ export default function AccountTicketDetailPage() {
   const [sending, setSending] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (isInitial = false) => {
     if (!headers || !id) return
-    setLoading(true)
+    if (isInitial) setLoading(true)
     try {
       const t = await apiGetTicket(headers, id)
       setData(t)
@@ -62,8 +63,40 @@ export default function AccountTicketDetailPage() {
   }
 
   useEffect(() => {
-    void load()
+    void load(true)
   }, [load])
+
+  useEffect(() => {
+    if (!id) return
+    const socket = io('http://localhost:3001')
+
+    socket.emit('join', id)
+
+    socket.on('message', (newMessage: TicketMessage) => {
+      setData((prev) => {
+        if (!prev) return prev
+        if (prev.messages.some((m) => m.id === newMessage.id)) return prev
+        return {
+          ...prev,
+          messages: [...prev.messages, newMessage],
+        }
+      })
+    })
+
+    socket.on('status_update', (newStatus: TicketStatus) => {
+      setData((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          status: newStatus,
+        }
+      })
+    })
+
+    return () => {
+      socket.disconnect()
+    }
+  }, [id])
 
   async function onSendReply(e: React.FormEvent) {
     e.preventDefault()
@@ -72,7 +105,6 @@ export default function AccountTicketDetailPage() {
     try {
       await apiPostTicketMessage(headers, id, reply.trim())
       setReply('')
-      toast.success('Message sent')
       await load()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to send')
@@ -155,6 +187,11 @@ export default function AccountTicketDetailPage() {
           )}
         </section>
       )}
+      {/* Original Issue Description */}
+      <section className="rounded-2xl border border-orange-100 bg-orange-50/20 p-5 shadow-elevated-sm space-y-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-orange-800">Original Description</h2>
+        <p className="text-sm text-neutral-800 whitespace-pre-wrap leading-relaxed">{data.description}</p>
+      </section>
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">

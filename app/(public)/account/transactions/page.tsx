@@ -228,9 +228,9 @@ export default function TransactionsPage() {
       networkOperator,
       mobileNumber: txn.metadata?.mobile_number || txn.metadata?.phoneNumber || '—',
       paymentMethod: txn.type === 'topup' ? 'Card/Wallet' : 'Wallet',
-      paymentStatus: (txn.metadata?.razorpay_payment_id || txn.metadata?.payment_order_id) ? 'completed' : txn.status,
-      paymentReferenceId: txn.metadata?.razorpay_payment_id || txn.metadata?.providerRef || txn.metadata?.orderId || txn.id,
-      gatewayResponse: (txn.metadata?.razorpay_payment_id || txn.metadata?.payment_order_id) ? 'Approved' : (txn.status === 'failed' ? txn.description : 'Approved'),
+      paymentStatus: ((txn.metadata as any)?.razorpay_payment_id || (txn.metadata as any)?.payment_order_id) ? 'completed' : txn.status,
+      paymentReferenceId: (txn.metadata as any)?.razorpay_payment_id || txn.metadata?.providerRef || txn.metadata?.orderId || txn.id,
+      gatewayResponse: ((txn.metadata as any)?.razorpay_payment_id || (txn.metadata as any)?.payment_order_id) ? 'Approved' : (txn.status === 'failed' ? txn.description : 'Approved'),
       providerUsed: networkOperator,
       routingType,
       apiResponseStatus: normalizedStatus.toUpperCase(),
@@ -320,6 +320,77 @@ export default function TransactionsPage() {
 
   const recurringTxn = recurringTxnId ? transactions.find((x) => x.id === recurringTxnId) : null
 
+  const handleExport = () => {
+    if (filteredTransactions.length === 0) {
+      toast.error('No transactions to export')
+      return
+    }
+
+    const escapeCSV = (val: any) => {
+      if (val === null || val === undefined) return ''
+      const stringVal = String(val)
+      const escaped = stringVal.replace(/"/g, '""')
+      if (escaped.includes(',') || escaped.includes('\n') || escaped.includes('"')) {
+        return `"${escaped}"`
+      }
+      return escaped
+    }
+
+    const headers = [
+      'Transaction ID',
+      'Date & Time',
+      'Type',
+      'Description',
+      'Mobile Number',
+      'Country',
+      'Operator',
+      'Amount',
+      'Currency',
+      'Status',
+      'Reward Points'
+    ]
+
+    const rows = filteredTransactions.map((txn) => {
+      const countryId = txn.metadata?.country_id || txn.metadata?.country || txn.metadata?.countryName || ''
+      const countryName = (typeof countryId === 'string' && countryId.length === 2)
+        ? getCountryName(countryId)
+        : countryId
+
+      return [
+        txn.id,
+        `${formatDate(txn.createdAt)} ${formatTime(txn.createdAt)}`,
+        txn.type,
+        txn.description,
+        txn.metadata?.mobile_number || txn.metadata?.phoneNumber || '—',
+        countryName || '—',
+        txn.metadata?.carrierName || txn.metadata?.carrier || txn.metadata?.operator_id || '—',
+        txn.currency === 'PTS' ? `${txn.amount} pts` : `$${txn.amount.toFixed(2)}`,
+        txn.currency,
+        txn.status,
+        txn.rewardPoints ? `+${txn.rewardPoints} pts` : '—'
+      ]
+    })
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map((row) => row.map(escapeCSV).join(','))
+    ].join('\n')
+
+    try {
+      const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `transaction_history_${new Date().toISOString().slice(0, 10)}.csv`)
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      toast.success('Transaction history exported successfully')
+    } catch (e) {
+      toast.error('Failed to export transaction history')
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -327,7 +398,7 @@ export default function TransactionsPage() {
           <h1 className="text-2xl font-bold">Transaction History</h1>
           <p className="text-muted-foreground">View all your past transactions</p>
         </div>
-        <Button variant="outline" size="sm">
+        <Button variant="outline" size="sm" onClick={handleExport}>
           <Download className="mr-2 h-4 w-4" />
           Export
         </Button>

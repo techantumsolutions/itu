@@ -35,36 +35,42 @@ export function TicketThread({
       createdAt: firstMessageDate.toISOString(),
       isOriginal: true,
     },
-    ...messages.map(m => ({
-      id: m.id,
-      senderType: m.senderType,
-      message: m.message,
-      createdAt: m.createdAt,
-      isOriginal: false,
-    }))
+    ...messages.map(m => {
+      const sType = m.senderType || (m as any).sender_type || 'user'
+      const cAt = m.createdAt || (m as any).created_at || new Date().toISOString()
+      return {
+        id: m.id,
+        senderType: sType,
+        message: m.message,
+        createdAt: cAt,
+        isOriginal: false,
+      }
+    })
   ]
 
   return (
-    <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-6 shadow-inner max-h-[600px] overflow-y-auto flex flex-col gap-5">
+    <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-6 shadow-inner max-h-[400px] overflow-y-auto flex flex-col gap-5">
       {allMessages.map((msg) => {
+        console.log("each message:::::", msg);
+        const sType = msg.senderType || (msg as any).sender_type || 'user'
         // Determine if outgoing from perspective of variant
-        const isOutgoing = variant === 'user' 
-          ? msg.senderType === 'user'
-          : msg.senderType === 'admin'
+        const isOutgoing = variant === 'user'
+          ? sType === 'user'
+          : sType === 'admin'
 
         // Determine sender display name
         let senderName = ''
         let avatarText = ''
         let avatarBg = ''
 
-        if (msg.senderType === 'user') {
+        if (sType === 'user') {
           senderName = variant === 'user' ? 'You' : 'Customer'
           avatarText = 'C'
-          avatarBg = 'bg-orange-500 text-white'
+          avatarBg = 'bg-orange-500 text-white shadow-sm shadow-orange-500/20'
         } else {
           senderName = variant === 'admin' ? 'You (Support)' : 'Support Team'
           avatarText = 'S'
-          avatarBg = 'bg-neutral-800 text-white'
+          avatarBg = 'bg-neutral-800 text-white shadow-sm shadow-neutral-800/20'
         }
 
         return (
@@ -79,7 +85,11 @@ export function TicketThread({
             <div
               className={cn(
                 'flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-full text-[10px] font-bold shadow-sm',
-                isOutgoing ? 'bg-neutral-100 text-neutral-800 border border-neutral-200 shadow-sm' : avatarBg
+                isOutgoing
+                  ? variant === 'user'
+                    ? 'bg-orange-100 text-orange-700 border border-orange-200'
+                    : 'bg-neutral-100 text-neutral-800 border border-neutral-200'
+                  : avatarBg
               )}
             >
               {isOutgoing ? 'You' : avatarText}
@@ -102,14 +112,18 @@ export function TicketThread({
               {/* Message Bubble */}
               <div
                 className={cn(
-                  'rounded-2xl px-4 py-3 text-sm shadow-sm border whitespace-pre-wrap',
+                  'rounded-2xl px-4 py-3 text-sm shadow-md border whitespace-pre-wrap transition-all duration-200 hover:shadow-lg',
                   isOutgoing
-                    ? 'bg-orange-500/10 border-orange-500/20 text-neutral-900 rounded-br-none'
-                    : 'bg-white border-neutral-200/80 text-neutral-900 rounded-bl-none'
+                    ? variant === 'user'
+                      ? 'bg-gradient-to-br from-orange-500 to-orange-600 text-white border-transparent rounded-br-none'
+                      : 'bg-gradient-to-br from-neutral-800 to-neutral-900 text-white border-transparent rounded-br-none'
+                    : variant === 'user'
+                      ? 'bg-white border-neutral-200/80 text-neutral-900 rounded-bl-none'
+                      : 'bg-orange-50/70 border-orange-100/80 text-neutral-900 rounded-bl-none'
                 )}
               >
                 {/* Message Body */}
-                <p className="leading-relaxed">{msg.message}</p>
+                <p className="leading-relaxed font-medium">{msg.message}</p>
               </div>
             </div>
           </div>

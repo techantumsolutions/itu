@@ -52,7 +52,7 @@ async function main() {
   }
 
   console.log('Applying pending database migrations locally...')
-  const result = spawnSync('pnpm', ['exec', 'supabase', 'migration', 'up', '--db-url', targetUrl], {
+  const result = spawnSync('pnpm', ['exec', 'supabase', 'migration', 'up', '--db-url', targetUrl, '--include-all'], {
     stdio: 'inherit',
     shell: true,
     env: process.env, // Ensure child process inherits updated PGSSLMODE env var

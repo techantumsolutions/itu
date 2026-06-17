@@ -1079,6 +1079,24 @@ function SettingsContent() {
                 </Button>
               </CardFooter>
             </Card>
+
+            <Card className="flex h-full flex-col">
+              <CardHeader>
+                <CardTitle>Rewards Management</CardTitle>
+                <CardDescription>Configure loyalty reward points and rules.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1 text-sm text-muted-foreground">
+                Manage first recharge, minimum amount, and recharge count reward rules.
+              </CardContent>
+              <CardFooter>
+                <Button asChild className="w-full sm:w-auto">
+                  <a href="/admin/settings/rewards">
+                    Open
+                    <ArrowRight className="ml-2 size-4" />
+                  </a>
+                </Button>
+              </CardFooter>
+            </Card>
           </div>
         </TabsContent>
 

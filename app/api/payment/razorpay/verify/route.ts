@@ -88,6 +88,7 @@ export async function POST(request: Request) {
         status: result.status,
         error: result.error,
         hints: result.hints,
+        rewardPointsEarned: result.rewardPointsEarned ?? 0,
       })
     }
 

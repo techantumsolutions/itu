@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { addMessage, getTicketForUser } from '@/lib/tickets/db-persistence'
+import { notifyNewMessage } from '@/lib/tickets/socket-notifier'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -28,6 +29,7 @@ export async function POST(request: Request, context: Ctx) {
     }
 
     const msg = await addMessage({ ticketId, senderType: 'user', message })
+    await notifyNewMessage(ticketId, msg)
     return NextResponse.json({ message: msg })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Server error'

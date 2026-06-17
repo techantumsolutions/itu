@@ -3,6 +3,7 @@ import { isAdminRequest } from '@/lib/tickets/auth-headers'
 import { getTicketAdmin, setTicketStatus } from '@/lib/tickets/db-persistence'
 import type { TicketStatus } from '@/lib/tickets/types'
 import { logAdminActivity } from '@/lib/auth/audit'
+import { notifyStatusUpdate } from '@/lib/tickets/socket-notifier'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -28,6 +29,10 @@ export async function PATCH(request: Request, context: Ctx) {
     }
 
     const ticket = await setTicketStatus(ticketId, status)
+
+    if (ticket) {
+      await notifyStatusUpdate(ticketId, ticket.status)
+    }
 
     await logAdminActivity({
       action: 'Change Ticket Status',

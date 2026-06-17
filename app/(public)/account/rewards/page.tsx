@@ -1,37 +1,97 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { useAuthStore, useWalletStore } from '@/lib/stores'
-import { Gift, Sparkles, Trophy, Clock, ArrowRight, Info } from 'lucide-react'
+import { useAuthStore } from '@/lib/stores'
+import { Gift, Sparkles, Clock, ArrowRight, Info, Coins, Phone, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+
+type LedgerEntry = {
+  id: string
+  points: number
+  reason: string
+  metadata: {
+    rule_id?: string
+    trigger?: string
+    scope?: Record<string, unknown>
+    all_qualified?: Array<{ rule_id: string; name: string; points: number }>
+  }
+  created_at: string
+  transaction_id: string | null
+  transactions: {
+    id: string
+    amount: number
+    currency: string
+    status: string
+    description: string
+    metadata: {
+      mobile_number?: string
+      operator_id?: string
+      plan_id?: string
+      country_id?: string
+      [key: string]: unknown
+    }
+  } | null
+}
 
 export default function RewardsPage() {
   const { user } = useAuthStore()
-  const { transactions } = useWalletStore()
+  const [entries, setEntries] = useState<LedgerEntry[]>([])
+  const [pointValue, setPointValue] = useState(0.01)
+  const [balance, setBalance] = useState(0)
+  const [balanceWorth, setBalanceWorth] = useState(0)
+  const [loading, setLoading] = useState(true)
 
   const rewardPoints = user?.rewardPoints || 0
-  const pointsToNextTier = 500 - (rewardPoints % 500)
-  const progress = ((rewardPoints % 500) / 500) * 100
 
-  // Filter points transactions
-  const pointsHistory = transactions.filter(
-    (t) => t.type === 'points_earned' || t.type === 'points_redeemed'
-  )
+  useEffect(() => {
+    async function fetchHistory() {
+      try {
+        const res = await fetch('/api/account/rewards/history', {
+          credentials: 'include',
+          cache: 'no-store',
+        })
+        if (res.ok) {
+          const data = await res.json()
+          setEntries(data.entries ?? [])
+          setPointValue(data.pointValue ?? 0.01)
+          setBalance(data.balance ?? 0)
+          setBalanceWorth(data.balanceWorth ?? 0)
+        }
+      } catch {
+        // silent
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchHistory()
+  }, [])
 
-  // Reward tiers
-  const tiers = [
-    { name: 'Bronze', minPoints: 0, discount: '0%', color: 'bg-amber-700' },
-    { name: 'Silver', minPoints: 500, discount: '2%', color: 'bg-gray-400' },
-    { name: 'Gold', minPoints: 1000, discount: '5%', color: 'bg-yellow-500' },
-    { name: 'Platinum', minPoints: 2500, discount: '10%', color: 'bg-purple-500' },
-  ]
+  // Use the live balance from the API, fall back to the auth store value
+  const displayPoints = balance || rewardPoints
+  const displayWorth = balanceWorth || +(displayPoints * pointValue).toFixed(2)
 
-  const currentTier = [...tiers].reverse().find((t) => rewardPoints >= t.minPoints) || tiers[0]
-  const nextTier = tiers.find((t) => t.minPoints > rewardPoints)
+  // Format the trigger type into a readable label
+  function triggerLabel(trigger?: string): string {
+    switch (trigger) {
+      case 'FIRST_RECHARGE': return 'First Recharge Bonus'
+      case 'MIN_AMOUNT': return 'High Value Recharge'
+      case 'RECHARGE_COUNT': return 'Loyalty Bonus'
+      default: return 'Reward'
+    }
+  }
+
+  // Pick an accent color for the trigger badge
+  function triggerColor(trigger?: string): string {
+    switch (trigger) {
+      case 'FIRST_RECHARGE': return 'bg-blue-100 text-blue-700 border-blue-200'
+      case 'MIN_AMOUNT': return 'bg-emerald-100 text-emerald-700 border-emerald-200'
+      case 'RECHARGE_COUNT': return 'bg-purple-100 text-purple-700 border-purple-200'
+      default: return 'bg-gray-100 text-gray-700 border-gray-200'
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -40,17 +100,22 @@ export default function RewardsPage() {
         <p className="text-muted-foreground">Earn and redeem points on your recharges</p>
       </div>
 
-      {/* Points Balance Card */}
+      {/* Points Balance Card — no progress bar, shows monetary worth */}
       <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
         <CardContent className="pt-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <div className="flex items-center gap-2 mb-2">
-                <div className={`h-6 w-6 rounded-full ${currentTier.color}`} />
-                <Badge variant="secondary">{currentTier.name} Member</Badge>
-              </div>
-              <p className="text-4xl font-bold text-primary">{rewardPoints.toLocaleString()}</p>
+              <p className="text-4xl font-bold text-primary">{displayPoints.toLocaleString()}</p>
               <p className="text-muted-foreground">Available Points</p>
+              <div className="mt-2 flex items-center gap-2">
+                <Coins className="h-4 w-4 text-amber-500" />
+                <span className="text-sm font-semibold text-amber-600">
+                  Worth ${displayWorth.toFixed(2)} USD
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  (1 pt = ${pointValue} USD)
+                </span>
+              </div>
             </div>
             <div className="flex gap-2">
               <Button asChild>
@@ -61,18 +126,6 @@ export default function RewardsPage() {
               </Button>
             </div>
           </div>
-
-          {nextTier && (
-            <div className="mt-6">
-              <div className="flex justify-between text-sm mb-2">
-                <span>Progress to {nextTier.name}</span>
-                <span className="text-muted-foreground">
-                  {pointsToNextTier} points to go
-                </span>
-              </div>
-              <Progress value={progress} className="h-2" />
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -93,18 +146,18 @@ export default function RewardsPage() {
               <div>
                 <p className="font-medium">Earn Points</p>
                 <p className="text-sm text-muted-foreground">
-                  Get 1 point for every $1 spent on recharges
+                  Get bonus points on qualifying recharges
                 </p>
               </div>
             </div>
             <div className="flex items-start gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                <Trophy className="h-5 w-5" />
+                <Coins className="h-5 w-5" />
               </div>
               <div>
-                <p className="font-medium">Level Up</p>
+                <p className="font-medium">Points Have Value</p>
                 <p className="text-sm text-muted-foreground">
-                  Reach higher tiers for better discounts
+                  Each point is worth real money (${pointValue} USD)
                 </p>
               </div>
             </div>
@@ -115,7 +168,7 @@ export default function RewardsPage() {
               <div>
                 <p className="font-medium">Redeem</p>
                 <p className="text-sm text-muted-foreground">
-                  Use 100+ points to get discounts on recharges
+                  Use points for discounts on future recharges
                 </p>
               </div>
             </div>
@@ -123,7 +176,8 @@ export default function RewardsPage() {
         </CardContent>
       </Card>
 
-      {/* Membership Tiers */}
+      {/* Membership Tiers — commented out per requirement */}
+      {/*
       <Card>
         <CardHeader>
           <CardTitle>Membership Tiers</CardTitle>
@@ -136,17 +190,13 @@ export default function RewardsPage() {
               return (
                 <div
                   key={tier.name}
-                  className={`rounded-lg border p-4 ${
-                    isCurrentTier ? 'border-primary bg-primary/5' : ''
-                  }`}
+                  className={`rounded-lg border p-4 ${isCurrentTier ? 'border-primary bg-primary/5' : ''}`}
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <div className={`h-4 w-4 rounded-full ${tier.color}`} />
                     <p className="font-semibold">{tier.name}</p>
                     {isCurrentTier && (
-                      <Badge variant="secondary" className="ml-auto">
-                        Current
-                      </Badge>
+                      <Badge variant="secondary" className="ml-auto">Current</Badge>
                     )}
                   </div>
                   <p className="text-sm text-muted-foreground mb-2">
@@ -159,15 +209,20 @@ export default function RewardsPage() {
           </div>
         </CardContent>
       </Card>
+      */}
 
-      {/* Points History */}
+      {/* Points Activity — real data from reward_ledger with transaction details */}
       <Card>
         <CardHeader>
           <CardTitle>Points Activity</CardTitle>
-          <CardDescription>Your recent points earned and redeemed</CardDescription>
+          <CardDescription>Your recent reward points earned from recharges</CardDescription>
         </CardHeader>
         <CardContent>
-          {pointsHistory.length === 0 ? (
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : entries.length === 0 ? (
             <div className="text-center py-8">
               <Gift className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
               <p className="font-medium">No points activity yet</p>
@@ -182,30 +237,91 @@ export default function RewardsPage() {
               </Button>
             </div>
           ) : (
-            <div className="space-y-4">
-              {pointsHistory.slice(0, 5).map((txn) => (
-                <div key={txn.id} className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
-                      <Sparkles className="h-4 w-4 text-primary" />
-                    </div>
-                    <div>
-                      <p className="font-medium">{txn.description}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {new Date(txn.createdAt).toLocaleDateString()}
-                      </p>
+            <div className="space-y-3">
+              {entries.map((entry) => {
+                const txn = entry.transactions
+                const trigger = entry.metadata?.trigger
+                const mobileNumber = txn?.metadata?.mobile_number || txn?.description || '—'
+                const amount = txn?.amount
+                const currency = txn?.currency || 'INR'
+                const status = txn?.status
+                const date = new Date(entry.created_at)
+
+                return (
+                  <div
+                    key={entry.id}
+                    className="rounded-lg border p-4 hover:bg-muted/30 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      {/* Left: details */}
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 shrink-0">
+                          <Sparkles className="h-5 w-5" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-semibold text-sm">{triggerLabel(trigger)}</p>
+                            <Badge
+                              variant="outline"
+                              className={`text-[10px] px-1.5 py-0 h-5 ${triggerColor(trigger)}`}
+                            >
+                              {trigger || 'REWARD'}
+                            </Badge>
+                          </div>
+
+                          {/* Recharge details */}
+                          <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Phone className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{mobileNumber}</span>
+                          </div>
+
+                          {amount != null && (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Recharge: {amount.toFixed(2)} {currency}
+                              {status && (
+                                <span
+                                  className={`ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                                    status === 'completed'
+                                      ? 'bg-emerald-50 text-emerald-700'
+                                      : status === 'failed'
+                                        ? 'bg-red-50 text-red-700'
+                                        : 'bg-amber-50 text-amber-700'
+                                  }`}
+                                >
+                                  {status}
+                                </span>
+                              )}
+                            </p>
+                          )}
+
+                          <p className="text-[11px] text-muted-foreground mt-1">
+                            {date.toLocaleDateString(undefined, {
+                              day: 'numeric',
+                              month: 'short',
+                              year: 'numeric',
+                            })}{' '}
+                            at{' '}
+                            {date.toLocaleTimeString(undefined, {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Right: points earned */}
+                      <div className="text-right shrink-0">
+                        <p className="text-lg font-bold text-emerald-600">
+                          +{entry.points}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          pts (${(entry.points * pointValue).toFixed(2)})
+                        </p>
+                      </div>
                     </div>
                   </div>
-                  <p
-                    className={`font-semibold ${
-                      txn.type === 'points_earned' ? 'text-emerald-600' : 'text-red-600'
-                    }`}
-                  >
-                    {txn.type === 'points_earned' ? '+' : '-'}
-                    {txn.amount} pts
-                  </p>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </CardContent>
