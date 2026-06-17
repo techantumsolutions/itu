@@ -1,5 +1,6 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { normalizeOperatorForRegistry } from '@/lib/aggregator/catalog-intelligence/brand-intelligence'
+import { buildStableOperatorMergeKey } from '@/lib/aggregator/merge-keys'
 import { OperatorMergeHistoryMatcher } from './matcher'
 import type {
   OperatorMergeHistoryRow,
@@ -11,16 +12,21 @@ function enc(value: string): string {
 }
 
 function mapRow(row: Record<string, unknown>): OperatorMergeHistoryRow {
+  const sourceNormalized = String(row.source_operator_normalized ?? '')
+  const targetNormalized = String(row.target_operator_normalized ?? '')
   return {
     id: String(row.id ?? ''),
     countryIso3: String(row.country_iso3 ?? '').toUpperCase(),
     sourceOperatorName: String(row.source_operator_name ?? ''),
-    sourceOperatorNormalized: String(row.source_operator_normalized ?? ''),
+    sourceOperatorNormalized: sourceNormalized,
     targetOperatorName: String(row.target_operator_name ?? ''),
-    targetOperatorNormalized: String(row.target_operator_normalized ?? ''),
+    targetOperatorNormalized: targetNormalized,
+    sourceMergeKey: String(row.source_merge_key ?? sourceNormalized),
+    targetMergeKey: String(row.target_merge_key ?? targetNormalized),
     mergeReason: String(row.merge_reason ?? 'ADMIN_MERGE'),
     mergedByAdmin: row.merged_by_admin ? String(row.merged_by_admin) : null,
     isActive: row.is_active !== false,
+    createdAt: row.created_at ? String(row.created_at) : null,
   }
 }
 
@@ -40,8 +46,8 @@ export async function upsertOperatorMergeHistory(
   const countryIso3 = input.countryIso3.trim().toUpperCase()
   const sourceOperatorName = input.sourceOperatorName.trim()
   const targetOperatorName = input.targetOperatorName.trim()
-  const sourceOperatorNormalized = normalizeOperatorForRegistry(sourceOperatorName)
-  const targetOperatorNormalized = normalizeOperatorForRegistry(targetOperatorName)
+  const sourceOperatorNormalized = buildStableOperatorMergeKey(sourceOperatorName)
+  const targetOperatorNormalized = buildStableOperatorMergeKey(targetOperatorName)
   if (!countryIso3 || !sourceOperatorNormalized || !targetOperatorNormalized) return null
 
   const res = await supabaseRest('operator_merge_history?on_conflict=country_iso3,source_operator_normalized', {
@@ -53,6 +59,8 @@ export async function upsertOperatorMergeHistory(
       source_operator_normalized: sourceOperatorNormalized,
       target_operator_name: targetOperatorName,
       target_operator_normalized: targetOperatorNormalized,
+      source_merge_key: sourceOperatorNormalized,
+      target_merge_key: targetOperatorNormalized,
       merge_reason: input.mergeReason ?? 'ADMIN_MERGE',
       merged_by_admin: input.mergedByAdmin ?? null,
       is_active: input.isActive ?? true,
@@ -66,7 +74,7 @@ export async function upsertOperatorMergeHistory(
 }
 
 export async function loadOperatorMergeHistory(countryIso3?: string): Promise<OperatorMergeHistoryRow[]> {
-  const filters = ['is_active=eq.true', 'select=*', 'limit=5000']
+  const filters = ['is_active=eq.true', 'select=*', 'order=created_at.desc', 'limit=5000']
   if (countryIso3) filters.unshift(`country_iso3=eq.${enc(countryIso3.toUpperCase())}`)
 
   const res = await supabaseRest(`operator_merge_history?${filters.join('&')}`, {
@@ -76,6 +84,44 @@ export async function loadOperatorMergeHistory(countryIso3?: string): Promise<Op
 
   const rows = (await res.json().catch(() => [])) as Record<string, unknown>[]
   return rows.map(mapRow)
+}
+
+export async function loadAllOperatorMergeHistory(countryIso3?: string): Promise<OperatorMergeHistoryRow[]> {
+  const filters = ['select=*', 'order=created_at.desc', 'limit=5000']
+  if (countryIso3) filters.unshift(`country_iso3=eq.${enc(countryIso3.toUpperCase())}`)
+
+  const res = await supabaseRest(`operator_merge_history?${filters.join('&')}`, {
+    cache: 'no-store',
+  }).catch(() => null)
+  if (!res?.ok) return []
+
+  const rows = (await res.json().catch(() => [])) as Record<string, unknown>[]
+  return rows.map(mapRow)
+}
+
+export async function patchOperatorMergeHistory(
+  id: string,
+  patch: { isActive?: boolean },
+): Promise<OperatorMergeHistoryRow | null> {
+  const body: Record<string, unknown> = { updated_at: new Date().toISOString() }
+  if (patch.isActive !== undefined) body.is_active = patch.isActive
+
+  const res = await supabaseRest(`operator_merge_history?id=eq.${enc(id)}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(body),
+  }).catch(() => null)
+
+  if (!res?.ok) return null
+  const rows = (await res.json().catch(() => [])) as Record<string, unknown>[]
+  return rows[0] ? mapRow(rows[0]) : null
+}
+
+export async function deleteOperatorMergeHistory(id: string): Promise<boolean> {
+  const res = await supabaseRest(`operator_merge_history?id=eq.${enc(id)}`, {
+    method: 'DELETE',
+  }).catch(() => null)
+  return Boolean(res?.ok)
 }
 
 export async function createOperatorMergeHistoryMatcher(

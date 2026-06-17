@@ -263,6 +263,7 @@ export default function AdminProductsPage() {
       const res = await fetch('/api/admin/lcr/system-plans/merge', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           targetPlanId,
           sourcePlanIds,

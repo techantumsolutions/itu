@@ -15,6 +15,36 @@ import * as countries from 'i18n-iso-countries'
 import { stringToBigInt } from '@/lib/aggregator/agg-id-hash'
 import { resolvePlanCountryCode } from '@/lib/aggregator/plan-country-resolver'
 
+const RAW_PAGE_SIZE = 1000
+
+/** PostgREST defaults to 1000 rows; paginate so large providers (e.g. DING) import fully. */
+async function fetchAllProviderRawRows(
+  table: 'provider_operator_raw' | 'provider_plans_raw',
+  providerId: string,
+): Promise<any[]> {
+  const filter =
+    table === 'provider_operator_raw'
+      ? `service_provider_id=eq.${providerId}`
+      : `provider_id=eq.${providerId}`
+
+  const rows: any[] = []
+  let offset = 0
+
+  while (true) {
+    const res = await supabaseRest(
+      `${table}?${filter}&select=*&limit=${RAW_PAGE_SIZE}&offset=${offset}`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) throw new Error(`Failed to load ${table}: ${await res.text()}`)
+    const page = (await res.json()) as any[]
+    rows.push(...page)
+    if (page.length < RAW_PAGE_SIZE) break
+    offset += RAW_PAGE_SIZE
+  }
+
+  return rows
+}
+
 function resolveCountryIso3(op: any, registry: Awaited<ReturnType<typeof loadCountryRegistry>>): string {
   const rawCountry = op.raw_response_json?.country || op.raw_response_json || {}
   const countryInput = {
@@ -41,11 +71,8 @@ export async function runStep3Countries(
   await supabaseRest(`agg_plans?provider=eq.${config.code}`, { method: 'DELETE' })
   await supabaseRest(`agg_operators?provider=eq.${config.code}`, { method: 'DELETE' })
 
-  const opsRes = await supabaseRest(`provider_operator_raw?service_provider_id=eq.${providerId}&select=*`, { cache: 'no-store' })
-  const rawOps = await opsRes.json().catch(() => []) as any[]
-
-  const plansRes = await supabaseRest(`provider_plans_raw?provider_id=eq.${providerId}&select=*`, { cache: 'no-store' })
-  const rawPlans = await plansRes.json().catch(() => []) as any[]
+  const rawOps = await fetchAllProviderRawRows('provider_operator_raw', providerId)
+  const rawPlans = await fetchAllProviderRawRows('provider_plans_raw', providerId)
 
   const countryMap = new Map<string, { iso3: string; iso2?: string; name: string; raw_response: any }>()
   let matchedCount = 0
@@ -180,6 +207,7 @@ export async function runStep3Countries(
     message: `Step 3 complete. Normalized ${opsInput.length} operators and ${plansUpserted} plans into staging by country ISO3. Countries: ${matchedCount} matched, ${unknownCount} unknown.`,
     data: {
       checked: rawOps.length,
+      rawPlansFetched: rawPlans.length,
       matched: matchedCount,
       unknown: unknownCount,
       operatorsNormalized: opsInput.length,

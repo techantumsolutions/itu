@@ -25,6 +25,7 @@ import {
   ChartNoAxesCombined,
   PlugZap,
   Cog,
+  History,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -78,6 +79,12 @@ const mainMenuItems: {
       title: 'Operators',
       url: '/admin/integrations/operators',
       icon: PlugZap,
+      feature: 'integrations',
+    },
+    {
+      title: 'Catalog History',
+      url: '/admin/catalog/history',
+      icon: History,
       feature: 'integrations',
     },
     {

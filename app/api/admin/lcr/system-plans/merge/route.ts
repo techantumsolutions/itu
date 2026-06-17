@@ -1,7 +1,33 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { aggMergeSystemPlans } from '@/lib/aggregator/repository'
+import { recordPlanMergeHistoryFromSystemMerge } from '@/lib/aggregator/plan-merge-history'
 import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
+
+const mergeSchema = z.object({
+  targetPlanId: z.string().uuid(),
+  sourcePlanIds: z.array(z.string().uuid()).nonempty(),
+})
+
+const legacyMergeSchema = z.object({
+  targetId: z.string().uuid(),
+  sourceIds: z.array(z.string().uuid()).nonempty(),
+})
+
+function parseMergeBody(body: unknown) {
+  const modern = mergeSchema.safeParse(body)
+  if (modern.success) {
+    return { targetPlanId: modern.data.targetPlanId, sourcePlanIds: modern.data.sourcePlanIds }
+  }
+
+  const legacy = legacyMergeSchema.safeParse(body)
+  if (legacy.success) {
+    return { targetPlanId: legacy.data.targetId, sourcePlanIds: legacy.data.sourceIds }
+  }
+
+  return null
+}
 
 export async function POST(request: Request) {
   if (!(await adminCanUseFeature(request, 'products', { allowLegacyHeader: true }))) {
@@ -10,11 +36,23 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}))
-    const { targetId, sourceIds } = body
+    const parsed = parseMergeBody(body)
 
-    if (!targetId || !Array.isArray(sourceIds) || sourceIds.length === 0) {
+    if (!parsed) {
       return NextResponse.json(
-        { error: 'targetId (string) and sourceIds (array of strings) are required' },
+        {
+          error: 'Invalid merge payload',
+          details: 'targetPlanId (string) and sourcePlanIds (non-empty array of strings) are required',
+        },
+        { status: 400 },
+      )
+    }
+
+    const { targetPlanId, sourcePlanIds } = parsed
+
+    if (sourcePlanIds.includes(targetPlanId)) {
+      return NextResponse.json(
+        { error: 'Target plan cannot be in the list of source plans to merge' },
         { status: 400 },
       )
     }
@@ -22,7 +60,11 @@ export async function POST(request: Request) {
     const ctx = await getAdminFromAccessCookie(request)
     const actorEmail = ctx?.user?.email || 'admin@system.local'
 
-    const result = await aggMergeSystemPlans(targetId, sourceIds, actorEmail)
+    await recordPlanMergeHistoryFromSystemMerge(targetPlanId, sourcePlanIds, actorEmail).catch((err) => {
+      console.error('[history][plan] Failed to record plan merge history:', err)
+    })
+
+    const result = await aggMergeSystemPlans(targetPlanId, sourcePlanIds, actorEmail)
 
     return NextResponse.json(result)
   } catch (error) {

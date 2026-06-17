@@ -1,4 +1,5 @@
 import { normalizeOperatorForRegistry } from '@/lib/aggregator/catalog-intelligence/brand-intelligence'
+import { buildStableOperatorMergeKey } from '@/lib/aggregator/merge-keys'
 import { normalizeRegistryAlias } from '@/lib/aggregator/telecom-registry/normalize'
 import type {
   MergeHistoryMatchMethod,
@@ -62,6 +63,8 @@ export class OperatorMergeHistoryMatcher {
 
       this.exactByCountry.get(country)!.set(row.sourceOperatorName.trim().toLowerCase(), row)
       this.normalizedByCountry.get(country)!.set(row.sourceOperatorNormalized, row)
+      this.normalizedByCountry.get(country)!.set(row.sourceMergeKey, row)
+      this.normalizedByCountry.get(country)!.set(buildStableOperatorMergeKey(row.sourceOperatorName), row)
       this.aliasByCountry.get(country)!.set(normalizeRegistryAlias(row.sourceOperatorName), row)
     }
   }
@@ -69,13 +72,19 @@ export class OperatorMergeHistoryMatcher {
   match(operatorName: string, countryIso3: string): OperatorMergeHistoryMatchResult | null {
     const country = countryIso3.trim().toUpperCase()
     const normalizedCandidate = normalizeOperatorForRegistry(operatorName)
-    if (!country || !normalizedCandidate) return null
+    const stableCandidate = buildStableOperatorMergeKey(operatorName)
+    if (!country || (!normalizedCandidate && !stableCandidate)) return null
 
     const exactKey = operatorName.trim().toLowerCase()
     const exactHit = this.exactByCountry.get(country)?.get(exactKey)
     if (exactHit) return buildMatch(exactHit, 'exact', 1, exactKey)
 
-    const normalizedHit = this.normalizedByCountry.get(country)?.get(normalizedCandidate)
+    const stableHit = this.normalizedByCountry.get(country)?.get(stableCandidate)
+    if (stableHit) return buildMatch(stableHit, 'normalized', 1, stableCandidate)
+
+    const normalizedHit = normalizedCandidate
+      ? this.normalizedByCountry.get(country)?.get(normalizedCandidate)
+      : null
     if (normalizedHit) return buildMatch(normalizedHit, 'normalized', 1, normalizedCandidate)
 
     const aliasKey = normalizeRegistryAlias(operatorName)

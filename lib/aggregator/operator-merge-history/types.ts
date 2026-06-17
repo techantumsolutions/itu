@@ -7,9 +7,12 @@ export type OperatorMergeHistoryRow = {
   sourceOperatorNormalized: string
   targetOperatorName: string
   targetOperatorNormalized: string
+  sourceMergeKey: string
+  targetMergeKey: string
   mergeReason: string
   mergedByAdmin: string | null
   isActive: boolean
+  createdAt?: string | null
 }
 
 export type OperatorMergeHistoryUpsertInput = {

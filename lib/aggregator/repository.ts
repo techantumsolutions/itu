@@ -17,6 +17,11 @@ import type {
   SystemOperatorInput,
   SystemPlanInput,
 } from '@/lib/aggregator/types'
+import {
+  groupEquivalentDisplayPlans,
+  pickMergeTargetPlan,
+  type SystemPlanMergeRow,
+} from '@/lib/aggregator/plan-display-merge'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -1059,6 +1064,10 @@ export async function aggMergeSystemOperators(targetOperatorId: string, sourceOp
       }).catch((err) => {
         console.error('[Merge] Failed to record operator merge history:', err)
       })
+
+      console.log(
+        `[history][operator] Saved merge history source=${sourceOperator.system_operator_name} target=${targetOperator.system_operator_name} country=${countryIso3}`,
+      )
     }
 
     // Delete the source operator
@@ -1195,6 +1204,50 @@ export async function aggMergeInternalPlans(targetPlanId: string, sourcePlanIds:
   return { success: true, logs }
 }
 
+async function repointPlanMappingsForSystemPlanMerge(
+  targetSystemPlanId: string,
+  sourceSystemPlanId: string,
+): Promise<void> {
+  const mappingsRes = await supabaseRest(
+    `plan_mappings?system_plan_id=eq.${enc(sourceSystemPlanId)}&select=id,service_provider_id,provider_plan_raw_id`,
+    { cache: 'no-store' },
+  )
+  if (!mappingsRes.ok) return
+
+  const mappings = (await mappingsRes.json()) as Array<{
+    id: string
+    service_provider_id: string
+    provider_plan_raw_id: string
+  }>
+
+  for (const mapping of mappings) {
+    const existingRes = await supabaseRest(
+      `plan_mappings?service_provider_id=eq.${enc(mapping.service_provider_id)}&provider_plan_raw_id=eq.${enc(mapping.provider_plan_raw_id)}&system_plan_id=eq.${enc(targetSystemPlanId)}&select=id&limit=1`,
+      { cache: 'no-store' },
+    )
+    if (existingRes.ok) {
+      const existing = (await existingRes.json()) as Array<{ id: string }>
+      if (existing.length > 0) {
+        await supabaseRest(`plan_mappings?id=eq.${enc(mapping.id)}`, { method: 'DELETE' })
+        continue
+      }
+    }
+
+    await supabaseRest(`plan_mappings?id=eq.${enc(mapping.id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ system_plan_id: targetSystemPlanId }),
+    })
+  }
+
+  await supabaseRest(
+    `duplicate_plan_suggestions?suggested_system_plan_id=eq.${enc(sourceSystemPlanId)}`,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ suggested_system_plan_id: targetSystemPlanId }),
+    },
+  )
+}
+
 export async function aggMergeSystemPlans(targetSystemPlanId: string, sourceSystemPlanIds: string[], actorEmail: string = 'system') {
   // 1. Verify target system plan exists
   const targetRes = await supabaseRest(
@@ -1207,11 +1260,7 @@ export async function aggMergeSystemPlans(targetSystemPlanId: string, sourceSyst
     throw new Error('Target system plan not found')
   }
   const targetSystemPlan = targetRows[0]
-  const targetInternalPlanId = targetSystemPlan.internal_plan_id
-
-  if (!targetInternalPlanId) {
-    throw new Error('Target system plan is not linked to an internal plan, cannot merge.')
-  }
+  let targetInternalPlanId = targetSystemPlan.internal_plan_id as string | null | undefined
 
   const logs: string[] = []
 
@@ -1228,15 +1277,30 @@ export async function aggMergeSystemPlans(targetSystemPlanId: string, sourceSyst
     const sourceRows = await sourceRes.json() as any[]
     if (sourceRows.length === 0) continue
     const sourcePlan = sourceRows[0]
-    const sourceInternalPlanId = sourcePlan.internal_plan_id
+    const sourceInternalPlanId = sourcePlan.internal_plan_id as string | null | undefined
+
+    if (!targetInternalPlanId && sourceInternalPlanId) {
+      targetInternalPlanId = sourceInternalPlanId
+      await supabaseRest(`system_plans?id=eq.${encodeURIComponent(targetSystemPlanId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ internal_plan_id: targetInternalPlanId }),
+      })
+      targetSystemPlan.internal_plan_id = targetInternalPlanId
+    }
 
     // If there is an internal plan, merge it
-    if (sourceInternalPlanId && sourceInternalPlanId !== targetInternalPlanId) {
+    if (
+      targetInternalPlanId &&
+      sourceInternalPlanId &&
+      sourceInternalPlanId !== targetInternalPlanId
+    ) {
       const mergeInternalRes = await aggMergeInternalPlans(targetInternalPlanId, [sourceInternalPlanId], actorEmail)
       if (mergeInternalRes.success) {
         logs.push(...mergeInternalRes.logs)
       }
     }
+
+    await repointPlanMappingsForSystemPlanMerge(targetSystemPlanId, sourceId)
 
     // Delete the source system plan
     await supabaseRest(`system_plans?id=eq.${encodeURIComponent(sourceId)}`, {
@@ -1471,8 +1535,69 @@ export async function aggMergeDuplicateSystemOperators(actorEmail: string = 'sys
   return mergedCount
 }
 
+async function fetchSystemPlansByIds(
+  systemPlanIds: string[],
+  select: string,
+): Promise<SystemPlanMergeRow[]> {
+  const systemPlans: SystemPlanMergeRow[] = []
+  for (let i = 0; i < systemPlanIds.length; i += 100) {
+    const chunk = systemPlanIds.slice(i, i + 100)
+    const res = await supabaseRest(
+      `system_plans?id=in.(${chunk.map(enc).join(',')})&select=${select}`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) continue
+    systemPlans.push(...((await res.json()) as SystemPlanMergeRow[]))
+  }
+  return systemPlans
+}
+
+async function fetchSystemPlansForOperators(
+  operatorIds: string[],
+  select: string,
+): Promise<SystemPlanMergeRow[]> {
+  const systemPlans: SystemPlanMergeRow[] = []
+  for (let i = 0; i < operatorIds.length; i += 50) {
+    const chunk = operatorIds.slice(i, i + 50)
+    const res = await supabaseRest(
+      `system_plans?system_operator_id=in.(${chunk.map(enc).join(',')})&select=${select}`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) continue
+    systemPlans.push(...((await res.json()) as SystemPlanMergeRow[]))
+  }
+  return systemPlans
+}
+
+async function mergeSystemPlanGroups(
+  groups: Map<string, SystemPlanMergeRow[]>,
+  actorEmail: string,
+  logLabel: string,
+): Promise<number> {
+  let mergedCount = 0
+  for (const plans of groups.values()) {
+    if (plans.length < 2) continue
+
+    const target = pickMergeTargetPlan(plans)
+    if (!target?.id || !target.internal_plan_id) continue
+
+    const sources = plans
+      .map((row) => row.id)
+      .filter((id): id is string => Boolean(id) && id !== target.id)
+    if (!sources.length) continue
+
+    try {
+      const mergeResult = await aggMergeSystemPlans(target.id, sources, actorEmail)
+      if (mergeResult.success) mergedCount += sources.length
+    } catch (err) {
+      console.error(`[Auto-Merge] Failed to merge duplicate system plans (${logLabel}):`, err)
+    }
+  }
+  return mergedCount
+}
+
 /** Merge duplicate system_plans that share the same operator + normalized_signature for this provider sync. */
-export async function aggMergeDuplicateSystemPlansForProvider(
+async function aggMergeDuplicateSystemPlansBySignatureForProvider(
   providerId: string,
   actorEmail: string = 'system-sync',
 ): Promise<number> {
@@ -1488,18 +1613,12 @@ export async function aggMergeDuplicateSystemPlansForProvider(
   )
   if (systemPlanIds.length === 0) return 0
 
-  const systemPlans: any[] = []
-  for (let i = 0; i < systemPlanIds.length; i += 100) {
-    const chunk = systemPlanIds.slice(i, i + 100)
-    const res = await supabaseRest(
-      `system_plans?id=in.(${chunk.map(enc).join(',')})&select=id,system_operator_id,normalized_signature,country_code,status,created_at,internal_plan_id`,
-      { cache: 'no-store' },
-    )
-    if (!res.ok) continue
-    systemPlans.push(...((await res.json()) as any[]))
-  }
+  const systemPlans = await fetchSystemPlansByIds(
+    systemPlanIds,
+    'id,system_operator_id,normalized_signature,country_code,status,created_at,internal_plan_id,system_plan_name',
+  )
 
-  const groups = new Map<string, any[]>()
+  const groups = new Map<string, SystemPlanMergeRow[]>()
   for (const plan of systemPlans) {
     const signature = String(plan.normalized_signature ?? '').trim()
     const operatorId = String(plan.system_operator_id ?? '').trim()
@@ -1510,32 +1629,59 @@ export async function aggMergeDuplicateSystemPlansForProvider(
     groups.get(key)!.push(plan)
   }
 
-  let mergedCount = 0
-  for (const plans of groups.values()) {
-    if (plans.length < 2) continue
+  return mergeSystemPlanGroups(groups, actorEmail, 'signature')
+}
 
-    const sorted = [...plans].sort((a, b) => {
-      if (a.status === 'ACTIVE' && b.status !== 'ACTIVE') return -1
-      if (a.status !== 'ACTIVE' && b.status === 'ACTIVE') return 1
-      if (Boolean(a.internal_plan_id) !== Boolean(b.internal_plan_id)) {
-        return a.internal_plan_id ? -1 : 1
-      }
-      return String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
-    })
+/**
+ * Merge duplicate system_plans under the same country + operator when plan features match
+ * and the same local retail price appears in each plan name (e.g. INR 299 vs 299.00 INR).
+ */
+export async function aggMergeEquivalentDisplayPlansForProvider(
+  providerId: string,
+  actorEmail: string = 'system-sync',
+): Promise<number> {
+  const mappingsRes = await supabaseRest(
+    `plan_mappings?service_provider_id=eq.${enc(providerId)}&select=system_plan_id`,
+    { cache: 'no-store' },
+  )
+  if (!mappingsRes.ok) return 0
 
-    const target = sorted[0]
-    const sources = sorted.slice(1).map((row) => row.id).filter((id) => id !== target.id)
-    if (!sources.length || !target.internal_plan_id) continue
+  const mappings = (await mappingsRes.json()) as Array<{ system_plan_id?: string | null }>
+  const mappedPlanIds = Array.from(
+    new Set(mappings.map((row) => row.system_plan_id).filter((id): id is string => Boolean(id))),
+  )
+  if (mappedPlanIds.length === 0) return 0
 
-    try {
-      const mergeResult = await aggMergeSystemPlans(target.id, sources, actorEmail)
-      if (mergeResult.success) mergedCount += sources.length
-    } catch (err) {
-      console.error('[Auto-Merge] Failed to merge duplicate system plans:', err)
-    }
-  }
+  const mappedPlans = await fetchSystemPlansByIds(
+    mappedPlanIds,
+    'id,system_operator_id',
+  )
+  const operatorIds = Array.from(
+    new Set(
+      mappedPlans
+        .map((plan) => plan.system_operator_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  )
+  if (operatorIds.length === 0) return 0
 
-  return mergedCount
+  const operatorPlans = await fetchSystemPlansForOperators(
+    operatorIds,
+    'id,system_operator_id,system_plan_name,country_code,validity,data_volume,sms,talktime,plan_type,normalized_signature,status,created_at,internal_plan_id',
+  )
+
+  const groups = groupEquivalentDisplayPlans(operatorPlans)
+  return mergeSystemPlanGroups(groups, actorEmail, 'display-price')
+}
+
+/** Post-sync merge: signature duplicates first, then same country/operator/feature/name-price duplicates. */
+export async function aggMergeDuplicateSystemPlansForProvider(
+  providerId: string,
+  actorEmail: string = 'system-sync',
+): Promise<number> {
+  const signatureMerged = await aggMergeDuplicateSystemPlansBySignatureForProvider(providerId, actorEmail)
+  const displayMerged = await aggMergeEquivalentDisplayPlansForProvider(providerId, actorEmail)
+  return signatureMerged + displayMerged
 }
 
 export async function aggLoadTrustedOperators(): Promise<
