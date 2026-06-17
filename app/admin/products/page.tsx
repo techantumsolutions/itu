@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { Check, ChevronsUpDown, Package, RefreshCcw, Loader2, GitMerge } from 'lucide-react'
+import { Check, ChevronsUpDown, Package, RefreshCcw, Loader2, GitMerge, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -24,6 +24,9 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import type { SystemPlanProviderCostBreakdown } from '@/lib/admin/provider-cost-breakdown'
+import { formatMoney } from '@/lib/admin/provider-pricing-extractor'
 
 type ProductPlan = {
   id: string
@@ -32,6 +35,7 @@ type ProductPlan = {
   operator_name: string
   category: string
   active: boolean
+  provider_count?: number
 }
 
 type CountryOption = {
@@ -135,6 +139,19 @@ function buildQuery(params: Record<string, string | undefined>) {
   return `?${q.toString()}`
 }
 
+function sumProviderFees(rechargeCost: {
+  fees: number | null
+  gatewayCharge: number | null
+  surcharge: number | null
+  tax: number | null
+}): number | null {
+  const parts = [rechargeCost.fees, rechargeCost.gatewayCharge, rechargeCost.surcharge, rechargeCost.tax].filter(
+    (v): v is number => v != null && Number.isFinite(v),
+  )
+  if (parts.length === 0) return null
+  return parts.reduce((sum, n) => sum + n, 0)
+}
+
 
 
 export default function AdminProductsPage() {
@@ -159,6 +176,11 @@ export default function AdminProductsPage() {
   const [merging, setMerging] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
+  const [costDialogOpen, setCostDialogOpen] = useState(false)
+  const [costLoading, setCostLoading] = useState(false)
+  const [costError, setCostError] = useState<string | null>(null)
+  const [costBreakdown, setCostBreakdown] = useState<SystemPlanProviderCostBreakdown | null>(null)
+
   const countryNameMap = useMemo(() => {
     const map = new Map<string, string>()
     for (const c of countryOptions) {
@@ -173,6 +195,28 @@ export default function AdminProductsPage() {
   const selectedPlans = useMemo(() => {
     return plans.filter((p) => selectedIds.includes(p.id))
   }, [plans, selectedIds])
+
+  const openProviderCosts = useCallback(async (planId: string) => {
+    setCostDialogOpen(true)
+    setCostLoading(true)
+    setCostError(null)
+    setCostBreakdown(null)
+    try {
+      const res = await fetch(`/api/admin/lcr/system-plans/${encodeURIComponent(planId)}/provider-costs`, {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error ?? 'Failed to load provider costs')
+      setCostBreakdown(data.breakdown ?? null)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to load provider costs'
+      setCostError(message)
+      toast.error(message)
+    } finally {
+      setCostLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     setPage(1)
@@ -339,11 +383,23 @@ export default function AdminProductsPage() {
     }
   }
 
-  const totalPages = Math.max(1, Math.ceil(plans.length / pageSize))
+  const sortedPlans = useMemo(() => {
+    return [...plans].sort((a, b) => {
+      const countryA = countryNameMap.get(a.country_iso3.toUpperCase()) || countryDisplayName(a.country_iso3) || ''
+      const countryB = countryNameMap.get(b.country_iso3.toUpperCase()) || countryDisplayName(b.country_iso3) || ''
+      
+      const comp = countryA.localeCompare(countryB)
+      if (comp !== 0) return comp
+      
+      return a.plan_name.localeCompare(b.plan_name)
+    })
+  }, [plans, countryNameMap])
+
+  const totalPages = Math.max(1, Math.ceil(sortedPlans.length / pageSize))
   const paginatedPlans = useMemo(() => {
     const start = (page - 1) * pageSize
-    return plans.slice(start, start + pageSize)
-  }, [plans, page, pageSize])
+    return sortedPlans.slice(start, start + pageSize)
+  }, [sortedPlans, page, pageSize])
 
   return (
     <div className="space-y-6">
@@ -413,6 +469,7 @@ export default function AdminProductsPage() {
                 <TableHead className="w-[28%]">Plan name</TableHead>
                 <TableHead className="w-[12%]">Country</TableHead>
                 <TableHead className="w-[24%]">Operator name</TableHead>
+                <TableHead className="w-[10%]">Providers</TableHead>
                 <TableHead className="w-[12%]">Category</TableHead>
                 <TableHead className="w-[12%]">Status</TableHead>
                 <TableHead className="w-[12%] text-right">Action</TableHead>
@@ -447,6 +504,7 @@ export default function AdminProductsPage() {
                     className="h-8 text-xs font-normal"
                   />
                 </TableHead>
+                <TableHead className="py-2"></TableHead>
                 <TableHead className="py-2 font-normal normal-case">
                   <ComboFilter
                     value={categoryFilter}
@@ -474,20 +532,24 @@ export default function AdminProductsPage() {
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                     Loading products…
                   </TableCell>
                 </TableRow>
-              ) : plans.length === 0 ? (
+              ) : sortedPlans.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                     No products match your filters. Sync providers to ingest plans from more countries.
                   </TableCell>
                 </TableRow>
               ) : (
                 paginatedPlans.map((plan) => (
-                  <TableRow key={plan.id}>
-                    <TableCell className="w-[50px]">
+                  <TableRow
+                    key={plan.id}
+                    className="cursor-pointer hover:bg-muted/40"
+                    onClick={() => void openProviderCosts(plan.id)}
+                  >
+                    <TableCell className="w-[50px]" onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={selectedIds.includes(plan.id)}
                         onCheckedChange={(checked) => {
@@ -513,13 +575,16 @@ export default function AdminProductsPage() {
                       )}
                     </TableCell>
                     <TableCell>{plan.operator_name || '—'}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline">{plan.provider_count ?? 0}</Badge>
+                    </TableCell>
                     <TableCell className="capitalize">{plan.category || '—'}</TableCell>
                     <TableCell>
                       <Badge variant={plan.active ? 'default' : 'secondary'}>
                         {plan.active ? 'Active' : 'Inactive'}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex justify-end items-center">
                         {togglingId === plan.id ? (
                           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -537,12 +602,12 @@ export default function AdminProductsPage() {
             </TableBody>
           </Table>
 
-          {plans.length > 0 && (
+          {sortedPlans.length > 0 && (
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-border/40 mt-4">
               {/* Info text */}
               <div className="text-xs text-muted-foreground font-medium">
-                Showing {Math.min((page - 1) * pageSize + 1, plans.length)} to{' '}
-                {Math.min(page * pageSize, plans.length)} of {plans.length} products
+                Showing {Math.min((page - 1) * pageSize + 1, sortedPlans.length)} to{' '}
+                {Math.min(page * pageSize, sortedPlans.length)} of {sortedPlans.length} products
               </div>
 
               {/* Navigation buttons & Rows selector */}
@@ -661,6 +726,156 @@ export default function AdminProductsPage() {
               ) : (
                 'Merge'
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={costDialogOpen} onOpenChange={setCostDialogOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Provider Comparison</DialogTitle>
+            <DialogDescription>
+              Provider pricing for the selected plan only.
+            </DialogDescription>
+          </DialogHeader>
+
+          {costLoading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading provider comparison…
+            </div>
+          ) : costError ? (
+            <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
+              {costError}
+            </div>
+          ) : costBreakdown ? (
+            <div className="space-y-4">
+              <div className="rounded-md border bg-muted/30 p-4 space-y-1">
+                <p className="font-semibold">{costBreakdown.plan?.systemPlanName ?? costBreakdown.systemPlanName}</p>
+                <p className="text-xs text-muted-foreground">
+                  System plan ID: {costBreakdown.plan?.systemPlanId ?? costBreakdown.systemPlanId}
+                </p>
+                <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">System plan price: </span>
+                    <span className="font-medium">
+                      {formatMoney(
+                        costBreakdown.plan?.systemPlanPrice ?? costBreakdown.systemPlanPrice,
+                        costBreakdown.plan?.systemPlanCurrency ?? costBreakdown.systemPlanCurrency,
+                      )}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Status: </span>
+                    <span className="font-medium">{costBreakdown.plan?.status ?? '—'}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Providers: </span>
+                    <span className="font-medium">
+                      {costBreakdown.plan?.providerCount ?? costBreakdown.providers.length}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {costBreakdown.providers.length === 0 ? (
+                <div className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
+                  No provider plan mappings found for this system plan.
+                </div>
+              ) : (
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Provider</TableHead>
+                        <TableHead>Provider Plan Name</TableHead>
+                        <TableHead className="text-right">Recharge Value</TableHead>
+                        <TableHead className="text-right">Provider Cost</TableHead>
+                        <TableHead className="text-right">Fees</TableHead>
+                        <TableHead className="text-right">Tax</TableHead>
+                        <TableHead className="text-right">Recharge Cost</TableHead>
+                        <TableHead>Enabled</TableHead>
+                        <TableHead className="text-right">Priority</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {costBreakdown.providers.map((provider) => {
+                        const currency =
+                          provider.extractedPricing.currency ||
+                          provider.mapping.providerCurrency ||
+                          provider.rawPlanCurrency ||
+                          costBreakdown.plan?.systemPlanCurrency ||
+                          costBreakdown.systemPlanCurrency
+                        return (
+                          <TableRow key={`${provider.providerId}:${provider.providerPlanId}`}>
+                            <TableCell>
+                              <div className="font-medium">{provider.providerName}</div>
+                              <div className="text-xs text-muted-foreground">{provider.providerPlanId}</div>
+                            </TableCell>
+                            <TableCell>{provider.providerPlanName || provider.rawPlanName || '—'}</TableCell>
+                            <TableCell className="text-right">
+                              {formatMoney(provider.providerRechargeValue, currency)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatMoney(provider.rechargeCost.providerCost, currency)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatMoney(
+                                sumProviderFees(provider.rechargeCost),
+                                currency,
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {formatMoney(provider.rechargeCost.tax, currency)}
+                            </TableCell>
+                            <TableCell className="text-right font-medium">
+                              {formatMoney(provider.rechargeCost.totalRechargeCost, currency)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={provider.mapping.enabled ? 'default' : 'secondary'}>
+                                {provider.mapping.enabled ? 'Yes' : 'No'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {provider.mapping.providerPriority ?? '—'}
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+
+              {costBreakdown.providers.some((p) => p.rawData) ? (
+                <Collapsible>
+                  <CollapsibleTrigger className="flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground">
+                    <ChevronDown className="h-3 w-3" />
+                    View raw provider payloads
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-2 pt-2">
+                    {costBreakdown.providers.map((provider) =>
+                      provider.rawData ? (
+                        <div key={`raw-${provider.providerId}:${provider.providerPlanId}`} className="rounded-md border p-3">
+                          <p className="text-xs font-semibold mb-2">
+                            {provider.providerName} · {provider.providerPlanName || provider.providerPlanId}
+                          </p>
+                          <pre className="max-h-40 overflow-auto rounded-md bg-muted p-3 text-[10px] leading-relaxed">
+                            {JSON.stringify(provider.rawData, null, 2)}
+                          </pre>
+                        </div>
+                      ) : null,
+                    )}
+                  </CollapsibleContent>
+                </Collapsible>
+              ) : null}
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCostDialogOpen(false)}>
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

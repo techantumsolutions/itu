@@ -1,7 +1,12 @@
 import { readFileSync, existsSync } from 'fs'
 import { resolve } from 'path'
 import { supabaseRest } from '../lib/db/supabase-rest'
-import { getOrCreateCanonicalCountry } from '../lib/aggregator/country-normalizer'
+import {
+  loadCountryRegistry,
+  lookupCountryInRegistry,
+  logUnknownCountry,
+} from '../lib/aggregator/country-registry'
+import { validateCountriesTable } from '../lib/aggregator/country-startup-validation'
 
 function loadDotEnv() {
   const path = resolve(process.cwd(), '.env')
@@ -24,6 +29,9 @@ function loadDotEnv() {
 async function main() {
   loadDotEnv()
   console.log('Starting Country Normalization & Operator Deduplication Migration (Paginated)...')
+
+  await validateCountriesTable()
+  const countryRegistry = await loadCountryRegistry()
 
   // 1. Fetch all system operators with pagination
   const operators: any[] = []
@@ -56,17 +64,18 @@ async function main() {
   const canonicalCountryMap = new Map<string, string>() // raw -> canonical_id
 
   for (const rawId of uniqueRawCountryIds) {
-    const canonical = await getOrCreateCanonicalCountry({
+    const countryInput = {
       iso2: rawId.length === 2 ? rawId : undefined,
       iso3: rawId.length === 3 ? rawId : undefined,
-    })
+    }
+    const canonical = lookupCountryInRegistry(countryRegistry, countryInput)
 
     if (canonical) {
       canonicalCountryMap.set(rawId, canonical.id)
       console.log(`  Normalized: "${rawId}" -> "${canonical.id}" (${canonical.name})`)
     } else {
-      console.warn(`  Could not normalize country ID: "${rawId}". Defaulting to itself.`)
-      canonicalCountryMap.set(rawId, rawId)
+      logUnknownCountry('migration', countryInput)
+      console.warn(`  Could not resolve country ID: "${rawId}". Leaving operator country unchanged.`)
     }
   }
 

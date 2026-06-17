@@ -297,7 +297,7 @@ export class CatalogIntelligenceEngine {
       }
     }
 
-    const domainRegistryHit = matchOperatorDomainRegistry(input.operatorName, this.domainRegistry)
+    const domainRegistryHit = matchOperatorDomainRegistry(input.operatorName, this.domainRegistry, input.countryCode)
     if (domainRegistryHit?.operatorDomain === 'MOBILE') {
       return {
         domain: 'MOBILE',

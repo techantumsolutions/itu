@@ -10,10 +10,13 @@ import { rowToProviderConfig } from '@/lib/lcr-v2/provider-credentials'
 import { cacheDelByPrefix } from '@/lib/cache/redis'
 import type { AggregatorSyncResult } from '@/lib/aggregator/types'
 import { resolveSyncCountries, type SyncCatalogOptions } from '@/lib/lcr/sync-options'
+import { validateCountriesTable } from '@/lib/aggregator/country-startup-validation'
+import { loadCountryRegistry } from '@/lib/aggregator/country-registry'
 import { runStep1Check } from './stages/step1-check'
 import { runStep2Fetch } from './stages/step2-fetch'
 import { runStep3Countries } from './stages/step3-countries'
 import { runStep4Normalize } from './stages/step4-normalize'
+import { runStep4ApplyMergeHistory } from './stages/step4-apply-merge-history'
 import { runStep5FilterTelecom } from './stages/step5-filter-telecom'
 import { runStep6Merge } from './stages/step6-merge'
 import { runStep7Promote } from './stages/step7-promote'
@@ -24,6 +27,7 @@ export type PipelineStage =
   | 'step2_fetch'
   | 'step3_countries'
   | 'step4_normalize'
+  | 'step4_apply_merge_history'
   | 'step5_filter_telecom'
   | 'step6_merge'
   | 'step7_promote'
@@ -50,6 +54,8 @@ export async function runPipelineStage(
       return runStep3Countries(providerId, config, syncRunId)
     case 'step4_normalize':
       return runStep4Normalize(providerId, config, syncRunId)
+    case 'step4_apply_merge_history':
+      return runStep4ApplyMergeHistory(providerId, config, syncRunId)
     case 'step5_filter_telecom':
       return runStep5FilterTelecom(providerId, config, syncRunId)
     case 'step6_merge':
@@ -78,6 +84,9 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
 
   const syncRunId = await aggStartSyncRun(config.code)
 
+  await validateCountriesTable()
+  await loadCountryRegistry()
+
   await aggInsertSyncLog({
     serviceProviderId: providerId,
     syncType: 'provider',
@@ -92,6 +101,7 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
     'step2_fetch',
     'step3_countries',
     'step4_normalize',
+    'step4_apply_merge_history',
     'step5_filter_telecom',
     'step6_merge',
     'step7_promote',
@@ -162,6 +172,7 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
     const durationMs = Date.now() - new Date(fullSyncStartedAt).getTime()
 
     const step2Data = stageResults['step2_fetch']?.data ?? {}
+    const step3Data = stageResults['step3_countries']?.data ?? {}
     const step4Data = stageResults['step4_normalize']?.data ?? {}
     const step5Data = stageResults['step5_filter_telecom']?.data ?? {}
     const step7Data = stageResults['step7_promote']?.data ?? {}
@@ -172,12 +183,12 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
       providerCode: config.code,
       fetchedRaw: step2Data.fetchedRaw || 0,
       rawOperators: step2Data.rawOperators || 0,
-      normalized: step4Data.plansNormalized || 0,
+      normalized: step3Data.plansNormalized || step3Data.normalized || 0,
       systemOperators: step7Data.promotedOps || 0,
       systemPlans: step7Data.promotedPlans || 0,
       mappedPlans: step7Data.promotedPlans || 0,
       duplicateSuggestions: step8Data.quarantined || 0,
-      skippedOperators: step5Data.inactive || 0,
+      skippedOperators: step4Data.inactive || 0,
       durationMs,
       syncedCountries: resolveSyncCountries(config, options) || [],
     }

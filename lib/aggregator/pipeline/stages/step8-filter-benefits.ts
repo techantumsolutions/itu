@@ -3,9 +3,12 @@ import {
   aggLoadTrustedOperators,
   aggInsertPlanClassificationAudit,
   aggInsertCatalogReviewQueue,
+  aggMergeDuplicateSystemPlansForProvider,
 } from '@/lib/aggregator/repository'
 import { CatalogIntelligenceEngine } from '@/lib/aggregator/catalog-intelligence'
 import { dbUpsertInternalPlanMapping } from '@/lib/uti/repository'
+import { hasExcludedPlanBenefits } from '@/lib/aggregator/telecom-validator'
+import { isRegistryVerifiedSource } from '@/lib/aggregator/pipeline/registry-fast-path'
 
 export async function runStep8FilterBenefits(
   providerId: string,
@@ -33,27 +36,47 @@ export async function runStep8FilterBenefits(
 
     // Check if it has DigitalProduct benefit
     const raw = rawPlan.raw_json || rawPlan
-    const planIntel = catalogEngine.classifyRawPlan({
-      raw,
-      operatorName: raw.operator?.name || raw.operatorName || undefined,
-      countryCode: raw.CountryIso3 || raw.countryIso3 || undefined,
-    })
-    const rawBenefits = raw.Benefits || raw.benefits || raw.BenefitsJson || []
-    let isDigital = false
-    if (Array.isArray(rawBenefits)) {
-      isDigital = rawBenefits.some(b => 
-        b === 'DigitalProduct' || 
-        (typeof b === 'object' && b !== null && (b.type === 'DigitalProduct' || b.Type === 'DigitalProduct'))
+    const excludedBenefit = hasExcludedPlanBenefits(raw)
+    const isExcludedBenefit = excludedBenefit.excluded
+
+    const sysOpRes = await supabaseRest(
+      `system_plans?id=eq.${sysPlanId}&select=system_operator_id&limit=1`,
+      { cache: 'no-store' },
+    )
+    const sysOpRow = ((await sysOpRes.json().catch(() => [])) as any[])[0]
+    let registryVerifiedOperator = false
+    if (sysOpRow?.system_operator_id) {
+      const opRes = await supabaseRest(
+        `system_operators?id=eq.${sysOpRow.system_operator_id}&select=domain_classification_source&limit=1`,
+        { cache: 'no-store' },
       )
+      const opRow = ((await opRes.json().catch(() => [])) as any[])[0]
+      registryVerifiedOperator = isRegistryVerifiedSource(opRow?.domain_classification_source)
     }
+
+    const planIntel = registryVerifiedOperator && !isExcludedBenefit
+      ? {
+          catalogStatus: 'ACTIVE' as const,
+          confidenceLevel: 'HIGH_CONFIDENCE_TELECOM' as const,
+          confidenceScore: 0.95,
+          matchedKeywords: ['registry_verified_operator'],
+          layerScores: {},
+          rejectionReason: null,
+          shouldQuarantine: false,
+        }
+      : catalogEngine.classifyRawPlan({
+          raw,
+          operatorName: raw.operator?.name || raw.operatorName || undefined,
+          countryCode: raw.CountryIso3 || raw.countryIso3 || undefined,
+        })
 
     await supabaseRest(`provider_plans_raw?id=eq.${rawPlanId}`, {
       method: 'PATCH',
       body: JSON.stringify({
-        catalog_status: isDigital ? 'NON_TELECOM' : planIntel.catalogStatus,
-        confidence_level: isDigital ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
-        confidence_score: isDigital ? 0.1 : planIntel.confidenceScore,
-        status: isDigital || planIntel.catalogStatus === 'NON_TELECOM' ? 'non_telecom' : planIntel.catalogStatus.toLowerCase(),
+        catalog_status: isExcludedBenefit ? 'NON_TELECOM' : planIntel.catalogStatus,
+        confidence_level: isExcludedBenefit ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
+        confidence_score: isExcludedBenefit ? 0.1 : planIntel.confidenceScore,
+        status: isExcludedBenefit || planIntel.catalogStatus === 'NON_TELECOM' ? 'non_telecom' : planIntel.catalogStatus.toLowerCase(),
       }),
     }).catch(() => {})
 
@@ -61,43 +84,43 @@ export async function runStep8FilterBenefits(
       providerCode: config.code,
       providerPlanRawId: rawPlanId,
       providerPlanId: rawPlan.provider_plan_id,
-      classification: isDigital ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
-      confidenceLevel: isDigital ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
-      confidenceScore: isDigital ? 0.1 : planIntel.confidenceScore,
-      catalogStatus: isDigital ? 'NON_TELECOM' : planIntel.catalogStatus,
-      matchedKeywords: isDigital ? ['DigitalProduct'] : planIntel.matchedKeywords,
-      confidenceBreakdown: isDigital ? {} : planIntel.layerScores,
-      rejectionReason: isDigital ? 'DIGITAL_PRODUCT_BENEFIT' : (planIntel.rejectionReason ?? null),
+      classification: isExcludedBenefit ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
+      confidenceLevel: isExcludedBenefit ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
+      confidenceScore: isExcludedBenefit ? 0.1 : planIntel.confidenceScore,
+      catalogStatus: isExcludedBenefit ? 'NON_TELECOM' : planIntel.catalogStatus,
+      matchedKeywords: isExcludedBenefit ? [excludedBenefit.reason ?? 'EXCLUDED_BENEFIT'] : planIntel.matchedKeywords,
+      confidenceBreakdown: isExcludedBenefit ? {} : planIntel.layerScores,
+      rejectionReason: isExcludedBenefit ? `EXCLUDED_BENEFIT:${excludedBenefit.reason ?? 'UNKNOWN'}` : (planIntel.rejectionReason ?? null),
     }).catch(() => {})
 
     const systemPatch = {
-      catalog_status: isDigital ? 'NON_TELECOM' : planIntel.catalogStatus,
-      confidence_level: isDigital ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
-      confidence_score: isDigital ? 0.1 : planIntel.confidenceScore,
-      status: isDigital || planIntel.catalogStatus === 'NON_TELECOM' ? 'INACTIVE' : 'ACTIVE',
+      catalog_status: isExcludedBenefit ? 'NON_TELECOM' : planIntel.catalogStatus,
+      confidence_level: isExcludedBenefit ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
+      confidence_score: isExcludedBenefit ? 0.1 : planIntel.confidenceScore,
+      status: isExcludedBenefit || planIntel.catalogStatus === 'NON_TELECOM' ? 'INACTIVE' : 'ACTIVE',
     }
     await supabaseRest(`system_plans?id=eq.${sysPlanId}`, {
       method: 'PATCH',
       body: JSON.stringify(systemPatch),
     }).catch(() => {})
 
-    const isEnabled = !(isDigital || planIntel.catalogStatus === 'NON_TELECOM' || planIntel.catalogStatus === 'QUARANTINED')
+    const isEnabled = !(isExcludedBenefit || planIntel.catalogStatus === 'NON_TELECOM' || planIntel.catalogStatus === 'QUARANTINED')
 
-    if (isDigital || planIntel.catalogStatus === 'NON_TELECOM' || planIntel.catalogStatus === 'QUARANTINED') {
+    if (isExcludedBenefit || planIntel.catalogStatus === 'NON_TELECOM' || planIntel.catalogStatus === 'QUARANTINED') {
       quarantinedPlans++
-      if (isDigital || planIntel.shouldQuarantine) {
+      if (isExcludedBenefit || planIntel.shouldQuarantine) {
         await aggInsertCatalogReviewQueue({
           providerCode: config.code,
           providerPlanRawId: rawPlanId,
           providerPlanId: rawPlan.provider_plan_id,
           entityType: 'plan',
           entityName: rawPlan.provider_plan_name || rawPlan.provider_plan_id,
-          confidenceLevel: isDigital ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
-          confidenceScore: isDigital ? 0.1 : planIntel.confidenceScore,
-          classification: isDigital ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
-          catalogStatus: isDigital ? 'NON_TELECOM' : planIntel.catalogStatus,
+          confidenceLevel: isExcludedBenefit ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
+          confidenceScore: isExcludedBenefit ? 0.1 : planIntel.confidenceScore,
+          classification: isExcludedBenefit ? 'CONFIRMED_NON_TELECOM' : planIntel.confidenceLevel,
+          catalogStatus: isExcludedBenefit ? 'NON_TELECOM' : planIntel.catalogStatus,
           rawPayload: rawPlan.raw_json,
-          notes: isDigital ? 'DIGITAL_PRODUCT_BENEFIT' : (planIntel.rejectionReason ?? null),
+          notes: isExcludedBenefit ? `EXCLUDED_BENEFIT:${excludedBenefit.reason ?? 'UNKNOWN'}` : (planIntel.rejectionReason ?? null),
         }).catch(() => {})
       }
     } else if (planIntel.catalogStatus === 'REVIEW') {
@@ -129,13 +152,21 @@ export async function runStep8FilterBenefits(
     }
   }
 
+  let mergedPlans = 0
+  try {
+    mergedPlans = await aggMergeDuplicateSystemPlansForProvider(providerId, 'system-sync')
+  } catch (mergeErr) {
+    console.error('Failed to merge duplicate system plans:', mergeErr)
+  }
+
   return {
     success: true,
-    message: `Step 8 complete. Soft catalog filtering applied. Active: ${activePlans}, Review: ${reviewPlans}, Quarantined/Non-telecom: ${quarantinedPlans}. No plans were deleted.`,
+    message: `Step 8 complete. Soft catalog filtering applied. Active: ${activePlans}, Review: ${reviewPlans}, Quarantined/Non-telecom: ${quarantinedPlans}. Merged ${mergedPlans} duplicate system plans by signature.`,
     data: {
       quarantined: quarantinedPlans,
       review: reviewPlans,
       active: activePlans,
+      mergedPlans,
     },
   }
 }

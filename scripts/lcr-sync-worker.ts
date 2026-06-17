@@ -4,12 +4,18 @@
  */
 import { Worker } from 'bullmq'
 import { syncProviderCatalog } from '@/lib/lcr/sync-catalog'
+import { validateCountriesTable } from '@/lib/aggregator/country-startup-validation'
 
 const url = process.env.REDIS_URL
 if (!url) {
   console.error('REDIS_URL is required')
   process.exit(1)
 }
+
+await validateCountriesTable().catch((error) => {
+  console.error(error instanceof Error ? error.message : error)
+  process.exit(1)
+})
 
 type JobPayload = { providerId: string }
 

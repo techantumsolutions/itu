@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-rest'
-import { aggListRawOperators, aggListSystemOperators, aggListProviders, aggMergeSystemOperators, aggMergeDuplicateSystemOperators } from '@/lib/aggregator/repository'
-import { getRequestUser } from '@/lib/tickets/auth-headers'
+import { aggListRawOperators, aggListSystemOperators, aggListProviders } from '@/lib/aggregator/repository'
 
 // getNormalizedBaseName has been moved to lib/aggregator/repository.ts
 
@@ -66,32 +65,8 @@ export async function GET(request: Request) {
   const countries = countriesRes?.ok ? (await countriesRes.json() as any[]) : []
   const countryMap = new Map(countries.map(c => [c.id.toUpperCase(), c]))
 
-  // Auto-merge duplicate system operators
-  let mergedAny = false
-  try {
-    const actor = getRequestUser(request)
-    const mergedCount = await aggMergeDuplicateSystemOperators(actor?.email ?? 'system-automerge')
-    if (mergedCount > 0) {
-      mergedAny = true
-    }
-  } catch (err) {
-    console.error(`[Auto-Merge] Failed to merge duplicate system operators:`, err)
-  }
-
-  let finalSystemOperators = systemOperators
-  let finalMappingsRes = mappingsRes
-
-  if (mergedAny) {
-    // Re-fetch system operators and mappings so returned data is updated
-    const [reFetchedSystemOps, reFetchedMappings] = await Promise.all([
-      aggListSystemOperators(listParams),
-      supabaseRest('operator_mappings?select=system_operator_id,service_provider_id&limit=10000', { cache: 'no-store' }).catch(
-        () => null as Response | null,
-      ),
-    ])
-    finalSystemOperators = reFetchedSystemOps
-    finalMappingsRes = reFetchedMappings
-  }
+  const finalSystemOperators = systemOperators
+  const finalMappingsRes = mappingsRes
 
   const systemOperatorMappings = new Map<string, Set<string>>()
   if (finalMappingsRes?.ok) {

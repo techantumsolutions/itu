@@ -1,24 +1,37 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
+import { aggInsertOperatorDomainAudit } from '@/lib/aggregator/repository'
 import {
-  aggLoadCatalogIntelligenceRegistries,
-} from '@/lib/aggregator/repository'
-import { CatalogIntelligenceEngine } from '@/lib/aggregator/catalog-intelligence'
-import { classifyPlanDomain } from '@/lib/aggregator/catalog-intelligence/plan-domain'
-import { resolvePlanServiceDomain } from '@/lib/aggregator/catalog-intelligence/segmentation'
-import {
-  dbUpsertAggCountries,
-  dbUpsertAggOperators,
-  dbUpsertAggPlans,
-  dbReplaceAggPlanBenefits,
-} from '@/lib/db/agg-catalog'
+  createRegistryMatcher,
+  evaluateRegistryFastPath,
+  filterPlansByExcludedBenefits,
+  REGISTRY_DOMAIN_FIELDS,
+  REGISTRY_VERIFIED_SOURCE,
+} from '@/lib/aggregator/pipeline/registry-fast-path'
 import * as countries from 'i18n-iso-countries'
 
-function stringToBigInt(str: string): number {
-  let hash = 0
-  for (let i = 0; i < str.length; i++) {
-    hash = (hash * 33) ^ str.charCodeAt(i)
-  }
-  return Math.abs(hash | 0)
+async function setOperatorAndPlanStatus(
+  opId: string,
+  status: 'active' | 'inactive',
+  operatorPatch: Record<string, unknown> = {},
+) {
+  await supabaseRest(`agg_operators?id=eq.${opId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status, ...operatorPatch }),
+  }).catch(() => {})
+
+  await supabaseRest(`agg_plans?operator_id=eq.${opId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      status,
+      ...(status === 'active'
+        ? {
+            service_domain: 'MOBILE',
+            service_domain_confidence: 99,
+            service_domain_source: REGISTRY_VERIFIED_SOURCE,
+          }
+        : {}),
+    }),
+  }).catch(() => {})
 }
 
 export async function runStep4Normalize(
@@ -26,152 +39,118 @@ export async function runStep4Normalize(
   config: any,
   syncRunId?: string | null
 ): Promise<{ success: boolean; message: string; data?: any }> {
-  const { trustedOperators, domainRegistry, nonTelecomRegistry } = await aggLoadCatalogIntelligenceRegistries().catch(() => ({
-    trustedOperators: [],
-    domainRegistry: [],
-    nonTelecomRegistry: [],
-  }))
-  const catalogEngine = new CatalogIntelligenceEngine(trustedOperators, domainRegistry, nonTelecomRegistry)
+  const registryMatcher = await createRegistryMatcher()
 
-  // Clear previous staging catalog tables for this provider code
-  await supabaseRest(`agg_plans?provider=eq.${config.code}`, { method: 'DELETE' })
-  await supabaseRest(`agg_operators?provider=eq.${config.code}`, { method: 'DELETE' })
+  const opsRes = await supabaseRest(`agg_operators?provider=eq.${config.code}`, { cache: 'no-store' })
+  const aggOps = await opsRes.json().catch(() => []) as any[]
 
-  // Load raw data
-  const opsRes = await supabaseRest(`provider_operator_raw?service_provider_id=eq.${providerId}&select=*`, { cache: 'no-store' })
-  const rawOps = await opsRes.json().catch(() => []) as any[]
+  let activeCount = 0
+  let inactiveCount = 0
+  let excludedBenefitPlans = 0
 
-  const plansRes = await supabaseRest(`provider_plans_raw?provider_id=eq.${providerId}&select=*`, { cache: 'no-store' })
-  const rawPlans = await plansRes.json().catch(() => []) as any[]
+  for (const op of aggOps) {
+    const operatorName = op.operator_name || op.name
+    const countryIso3 = String(op.country_iso3 ?? '').toUpperCase()
+    const countryName = countries.getName(countryIso3, 'en') || undefined
 
-  // First upsert countries to agg_countries to satisfy foreign key constraints
-  const countryMap = new Map<string, { iso3: string; iso2?: string; name: string; raw_response: any }>()
-  for (const op of rawOps) {
-    const rawCountry = op.raw_response_json?.country || op.raw_response_json || {}
-    const iso3 = String(op.iso_code || op.country_code || rawCountry.iso_code || 'UNK').toUpperCase()
-    const code3 = iso3.length === 3 ? iso3 : countries.alpha2ToAlpha3(iso3) || 'UNK'
-    const name = rawCountry.name || countries.getName(code3, 'en') || `Country ${code3}`
-    
-    if (code3 !== 'UNK') {
-      countryMap.set(code3, {
-        iso3: code3,
-        iso2: countries.alpha3ToAlpha2(code3) || undefined,
-        name,
-        raw_response: rawCountry,
-      })
+    const plansRes = await supabaseRest(`agg_plans?operator_id=eq.${op.id}`, { cache: 'no-store' })
+    const aggPlans = await plansRes.json().catch(() => []) as any[]
+
+    const { telecomPlans, excludedPlans } = filterPlansByExcludedBenefits(aggPlans)
+    for (const excludedPlan of excludedPlans) {
+      await supabaseRest(`agg_plans?id=eq.${excludedPlan.id}`, { method: 'DELETE' }).catch(() => {})
+      excludedBenefitPlans++
     }
-  }
-  
-  if (countryMap.size > 0) {
-    await dbUpsertAggCountries(Array.from(countryMap.values()))
-  }
 
-  const validCountries = new Set(countryMap.keys())
-  const operatorDomainByAggId = new Map<number, ReturnType<typeof catalogEngine.evaluateOperatorDomain>>()
-  const operatorPlansByAggId = new Map<number, unknown[]>()
+    if (telecomPlans.length === 0) {
+      await setOperatorAndPlanStatus(op.id, 'inactive', { operator_domain: 'NON_MOBILE' })
+      await aggInsertOperatorDomainAudit({
+        operatorId: String(op.id),
+        operatorName,
+        countryIso3,
+        providerCode: config.code,
+        syncRunId,
+        detectedDomain: 'UNKNOWN',
+        confidence: 0,
+        classificationSource: 'plan_filter',
+        matchedRules: [],
+        matchedKeywords: [],
+        rejectionReason: 'NO_PLANS_AFTER_BENEFIT_FILTER',
+        registryMatch: false,
+        matchMethod: null,
+        telecomScore: 0,
+        decision: 'INACTIVE',
+        domainBreakdown: {},
+      }).catch(() => {})
+      inactiveCount++
+      continue
+    }
 
-  for (const rp of rawPlans) {
-    const rawOp = rawOps.find((o) => o.id === rp.provider_operator_raw_id)
-    if (!rawOp) continue
-    const aggOpId = stringToBigInt(rawOp.provider_operator_id)
-    if (!operatorPlansByAggId.has(aggOpId)) operatorPlansByAggId.set(aggOpId, [])
-    operatorPlansByAggId.get(aggOpId)!.push(rp.raw_json || {})
-  }
+    const fastPath = evaluateRegistryFastPath(operatorName, countryIso3, registryMatcher, countryName)
 
-  const opsInput = rawOps.map((op) => {
-    const iso3 = String(op.iso_code || op.country_code || 'UNK').toUpperCase()
-    const aggOpId = stringToBigInt(op.provider_operator_id)
-    const domainEval = catalogEngine.evaluateOperatorDomain({
-      operatorName: op.provider_operator_name,
-      countryCode: iso3.length === 3 ? iso3 : countries.alpha2ToAlpha3(iso3) || iso3,
-      rawPlans: operatorPlansByAggId.get(aggOpId) || [],
+    if (fastPath.eligible && fastPath.registryMatch) {
+      const registryMatch = fastPath.registryMatch
+      await setOperatorAndPlanStatus(op.id, 'active', REGISTRY_DOMAIN_FIELDS)
+      await aggInsertOperatorDomainAudit({
+        operatorId: String(op.id),
+        operatorName,
+        countryIso3,
+        providerCode: config.code,
+        syncRunId,
+        detectedDomain: 'MOBILE',
+        confidence: 99,
+        classificationSource: REGISTRY_VERIFIED_SOURCE,
+        matchedRules: [`registry_${registryMatch.matchMethod}`],
+        matchedKeywords: [registryMatch.matchedValue, registryMatch.row.operatorName],
+        rejectionReason: fastPath.reason,
+        registryMatch: true,
+        matchMethod: registryMatch.matchMethod,
+        telecomScore: 1,
+        decision: 'ACTIVE',
+        domainBreakdown: {
+          registryOperator: registryMatch.row.operatorName,
+          registryNormalizedName: registryMatch.row.normalizedName,
+        },
+      }).catch(() => {})
+      activeCount++
+      continue
+    }
+
+    await setOperatorAndPlanStatus(op.id, 'inactive', {
+      operator_domain: 'NON_MOBILE',
+      domain_classification_source: 'domain_operator_registry_miss',
     })
-    operatorDomainByAggId.set(aggOpId, domainEval)
-    return {
-      provider: config.code as any,
-      aggregator_operator_id: aggOpId,
-      country_iso3: iso3.length === 3 ? iso3 : countries.alpha2ToAlpha3(iso3) || 'UNK',
-      name: op.provider_operator_name,
-      regions: [],
-      raw_response: op.raw_response_json,
-      service_domain: domainEval.domain,
-      service_domain_confidence: domainEval.confidence,
-      service_domain_source: domainEval.classificationSource,
-      operator_domain: domainEval.domain,
-      operator_domain_confidence: domainEval.confidence,
-      domain_classification_source: domainEval.classificationSource,
-    }
-  }).filter((o) => validCountries.has(o.country_iso3))
-
-  const upsertedOps = await dbUpsertAggOperators(opsInput)
-  const opIdMap = new Map<number, string>()
-  for (const row of upsertedOps ?? []) {
-    opIdMap.set(Number(row.aggregator_operator_id), row.id)
-  }
-
-  let plansUpserted = 0
-  const plansInput = rawPlans.map((rp) => {
-    // Find matching raw operator to get aggregator_operator_id
-    const rawOp = rawOps.find((o) => o.id === rp.provider_operator_raw_id)
-    if (!rawOp) return null
-
-    const aggOpId = stringToBigInt(rawOp.provider_operator_id)
-    const dbOpUuid = opIdMap.get(aggOpId)
-    if (!dbOpUuid) return null
-    const domainEval = operatorDomainByAggId.get(aggOpId)
-    const planDomainEval = classifyPlanDomain(rp.raw_json || {}, rawOp.provider_operator_name)
-    const segment = domainEval
-      ? resolvePlanServiceDomain({ operatorEvaluation: domainEval, planEvaluation: planDomainEval })
-      : null
-
-    return {
-      provider: config.code as any,
-      aggregator_plan_id: stringToBigInt(rp.provider_plan_id),
-      operator_id: dbOpUuid,
-      type: rp.plan_type || 'UNKNOWN',
-      name: rp.provider_plan_name || 'Plan',
-      description: rp.description,
-      retail_amount: rp.amount ? Number(rp.amount) : null,
-      currency_unit: rp.currency,
-      raw_response: rp.raw_json,
-      service_domain: segment?.serviceDomain ?? domainEval?.domain ?? 'UNKNOWN',
-      service_domain_confidence: segment?.confidence ?? domainEval?.confidence ?? 0,
-      service_domain_source: segment?.source ?? domainEval?.classificationSource ?? 'unknown',
-    }
-  }).filter(Boolean) as any[]
-
-  const upsertedPlans = await dbUpsertAggPlans(plansInput)
-  const planIdByAggId = new Map<number, string>()
-  for (const row of upsertedPlans ?? []) {
-    planIdByAggId.set(Number(row.aggregator_plan_id), row.id)
-  }
-
-  // Add benefits
-  for (const rp of rawPlans) {
-    const planDbId = planIdByAggId.get(stringToBigInt(rp.provider_plan_id))
-    if (!planDbId) continue
-
-    const rawBenefits = Array.isArray(rp.benefits_json) ? rp.benefits_json : []
-    const benefits = rawBenefits.map((b: any) => ({
-      type: String(b?.type || b?.benefitType || '').toUpperCase() || 'OTHER',
-      amount_base: Number(b?.amountBase || b?.amount?.base || b?.value || 0),
-      unit: String(b?.unit || ''),
-      additional_information: String(b?.additionalInformation || b?.additional_information || ''),
-      raw_response: b,
-    }))
-
-    try {
-      await dbReplaceAggPlanBenefits(planDbId, benefits)
-    } catch {}
-    plansUpserted++
+    await aggInsertOperatorDomainAudit({
+      operatorId: String(op.id),
+      operatorName,
+      countryIso3,
+      providerCode: config.code,
+      syncRunId,
+      detectedDomain: 'UNKNOWN',
+      confidence: 0,
+      classificationSource: 'domain_operator_registry_miss',
+      matchedRules: [],
+      matchedKeywords: [],
+      rejectionReason: fastPath.blocked
+        ? fastPath.reason
+        : 'NOT_IN_DOMAIN_OPERATOR_REGISTRY',
+      registryMatch: false,
+      matchMethod: null,
+      telecomScore: 0,
+      decision: 'INACTIVE',
+      domainBreakdown: {},
+    }).catch(() => {})
+    inactiveCount++
   }
 
   return {
     success: true,
-    message: `Staging normalization complete. Loaded ${opsInput.length} operators and ${plansUpserted} plans into agg staging tables.`,
+    message: `Step 4 complete. Registry filter: ${activeCount} active, ${inactiveCount} inactive. Removed ${excludedBenefitPlans} excluded-benefit plans.`,
     data: {
-      operatorsNormalized: opsInput.length,
-      plansNormalized: plansUpserted,
+      evaluated: aggOps.length,
+      active: activeCount,
+      inactive: inactiveCount,
+      excludedBenefitPlans,
     },
   }
 }

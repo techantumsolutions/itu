@@ -46,6 +46,7 @@ export type OperatorDomainRegistryMatch = {
   operatorName: string
   operatorDomain: OperatorDomain
   confidence: number
+  countryIso3?: string | null
 }
 
 export type TelecomConfidenceLevel =

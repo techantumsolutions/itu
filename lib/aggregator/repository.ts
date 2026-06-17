@@ -6,6 +6,10 @@ import { isMobileTelecomDomain } from './catalog-intelligence/domain-registries'
 import { loadCatalogIntelligenceCache } from './catalog-intelligence/brand-intelligence'
 import { matchTrustedOperator } from './catalog-intelligence/trust-registry'
 import { OperatorTrustEngine } from './catalog-intelligence/trust-engine'
+import {
+  resolveCountryIso3FromCountryId,
+  upsertOperatorMergeHistory,
+} from './operator-merge-history'
 import type {
   AggregatorProviderRow,
   RawOperatorInput,
@@ -260,26 +264,69 @@ export async function aggUpsertPlanMapping(input: {
   serviceProviderId: string
   providerPlanRawId: string
   systemPlanId: string
+  providerPlanId?: string | null
   matchingScore: number
   matchingReason?: string | null
   isVerified?: boolean
   verifiedBy?: string | null
 }) {
-  const res = await supabaseRest('plan_mappings?on_conflict=service_provider_id,provider_plan_raw_id', {
-    method: 'POST',
-    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
-    body: JSON.stringify({
-      service_provider_id: input.serviceProviderId,
-      provider_plan_raw_id: input.providerPlanRawId,
-      system_plan_id: input.systemPlanId,
-      matching_score: input.matchingScore,
-      matching_reason: input.matchingReason ?? null,
-      is_verified: input.isVerified ?? false,
-      verified_by: input.verifiedBy ?? null,
-    }),
-  })
+  const res = await supabaseRest(
+    'plan_mappings?on_conflict=service_provider_id,provider_plan_raw_id,system_plan_id',
+    {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+      body: JSON.stringify({
+        service_provider_id: input.serviceProviderId,
+        provider_plan_raw_id: input.providerPlanRawId,
+        provider_plan_id: input.providerPlanId ?? null,
+        system_plan_id: input.systemPlanId,
+        matching_score: input.matchingScore,
+        matching_reason: input.matchingReason ?? null,
+        is_verified: input.isVerified ?? false,
+        verified_by: input.verifiedBy ?? null,
+        updated_at: new Date().toISOString(),
+      }),
+    },
+  )
   const rows = await jsonRows(res)
   return rows[0] ?? null
+}
+
+/** Distinct provider count per system plan from plan_mappings. */
+export async function aggCountProvidersBySystemPlanIds(
+  systemPlanIds: string[],
+): Promise<Map<string, number>> {
+  const counts = new Map<string, number>()
+  if (!systemPlanIds.length) return counts
+
+  const uniqueIds = [...new Set(systemPlanIds)]
+  const providerSets = new Map<string, Set<string>>()
+
+  for (let i = 0; i < uniqueIds.length; i += 100) {
+    const chunk = uniqueIds.slice(i, i + 100)
+    const res = await supabaseRest(
+      `plan_mappings?system_plan_id=in.(${chunk.map((id) => encodeURIComponent(id)).join(',')})&select=system_plan_id,service_provider_id&limit=10000`,
+      { cache: 'no-store' },
+    ).catch(() => null)
+    if (!res?.ok) continue
+
+    const rows = (await res.json()) as Array<{
+      system_plan_id?: string
+      service_provider_id?: string
+    }>
+    for (const row of rows) {
+      const planId = row.system_plan_id
+      const providerId = row.service_provider_id
+      if (!planId || !providerId) continue
+      if (!providerSets.has(planId)) providerSets.set(planId, new Set())
+      providerSets.get(planId)!.add(providerId)
+    }
+  }
+
+  for (const [planId, providers] of providerSets.entries()) {
+    counts.set(planId, providers.size)
+  }
+  return counts
 }
 
 export async function aggUpsertDuplicateSuggestion(input: {
@@ -996,6 +1043,20 @@ export async function aggMergeSystemOperators(targetOperatorId: string, sourceOp
       console.error('[Merge] Failed to record alias learning for source operator:', err)
     })
 
+    const countryIso3 = await resolveCountryIso3FromCountryId(targetOperator.country_id)
+    if (countryIso3) {
+      await upsertOperatorMergeHistory({
+        countryIso3,
+        sourceOperatorName: sourceOperator.system_operator_name,
+        targetOperatorName: targetOperator.system_operator_name,
+        mergeReason: 'ADMIN_MERGE',
+        mergedByAdmin: actorEmail,
+        isActive: true,
+      }).catch((err) => {
+        console.error('[Merge] Failed to record operator merge history:', err)
+      })
+    }
+
     // Delete the source operator
     await supabaseRest(`system_operators?id=eq.${encodeURIComponent(sourceId)}`, {
       method: 'DELETE',
@@ -1406,6 +1467,72 @@ export async function aggMergeDuplicateSystemOperators(actorEmail: string = 'sys
   return mergedCount
 }
 
+/** Merge duplicate system_plans that share the same operator + normalized_signature for this provider sync. */
+export async function aggMergeDuplicateSystemPlansForProvider(
+  providerId: string,
+  actorEmail: string = 'system-sync',
+): Promise<number> {
+  const mappingsRes = await supabaseRest(
+    `plan_mappings?service_provider_id=eq.${enc(providerId)}&select=system_plan_id`,
+    { cache: 'no-store' },
+  )
+  if (!mappingsRes.ok) return 0
+
+  const mappings = (await mappingsRes.json()) as Array<{ system_plan_id?: string | null }>
+  const systemPlanIds = Array.from(
+    new Set(mappings.map((row) => row.system_plan_id).filter((id): id is string => Boolean(id))),
+  )
+  if (systemPlanIds.length === 0) return 0
+
+  const systemPlans: any[] = []
+  for (let i = 0; i < systemPlanIds.length; i += 100) {
+    const chunk = systemPlanIds.slice(i, i + 100)
+    const res = await supabaseRest(
+      `system_plans?id=in.(${chunk.map(enc).join(',')})&select=id,system_operator_id,normalized_signature,status,created_at,internal_plan_id`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) continue
+    systemPlans.push(...((await res.json()) as any[]))
+  }
+
+  const groups = new Map<string, any[]>()
+  for (const plan of systemPlans) {
+    const signature = String(plan.normalized_signature ?? '').trim()
+    const operatorId = String(plan.system_operator_id ?? '').trim()
+    if (!signature || !operatorId) continue
+    const key = `${operatorId}:${signature}`
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(plan)
+  }
+
+  let mergedCount = 0
+  for (const plans of groups.values()) {
+    if (plans.length < 2) continue
+
+    const sorted = [...plans].sort((a, b) => {
+      if (a.status === 'ACTIVE' && b.status !== 'ACTIVE') return -1
+      if (a.status !== 'ACTIVE' && b.status === 'ACTIVE') return 1
+      if (Boolean(a.internal_plan_id) !== Boolean(b.internal_plan_id)) {
+        return a.internal_plan_id ? -1 : 1
+      }
+      return String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
+    })
+
+    const target = sorted[0]
+    const sources = sorted.slice(1).map((row) => row.id).filter((id) => id !== target.id)
+    if (!sources.length || !target.internal_plan_id) continue
+
+    try {
+      const mergeResult = await aggMergeSystemPlans(target.id, sources, actorEmail)
+      if (mergeResult.success) mergedCount += sources.length
+    } catch (err) {
+      console.error('[Auto-Merge] Failed to merge duplicate system plans:', err)
+    }
+  }
+
+  return mergedCount
+}
+
 export async function aggLoadTrustedOperators(): Promise<
   Array<{
     normalizedName: string
@@ -1610,10 +1737,10 @@ export async function aggPatchSystemOperatorDomain(
 }
 
 export async function aggLoadOperatorDomainRegistry(): Promise<
-  Array<{ normalizedName: string; operatorName: string; operatorDomain: string; confidence: number }>
+  Array<{ normalizedName: string; operatorName: string; operatorDomain: string; confidence: number; countryIso3?: string | null }>
 > {
   const res = await supabaseRest(
-    'operator_domain_registry?is_verified=eq.true&select=operator_name,normalized_name,operator_domain,confidence',
+    'operator_domain_registry?is_verified=eq.true&select=operator_name,normalized_name,operator_domain,confidence,country_iso3',
     { cache: 'no-store' },
   ).catch(() => null)
   if (!res?.ok) return []
@@ -1623,6 +1750,7 @@ export async function aggLoadOperatorDomainRegistry(): Promise<
     operatorName: String(row.operator_name ?? row.normalized_name ?? ''),
     operatorDomain: String(row.operator_domain ?? 'UNKNOWN'),
     confidence: Number(row.confidence ?? 90),
+    countryIso3: row.country_iso3 ? String(row.country_iso3) : null,
   }))
 }
 
@@ -1646,6 +1774,7 @@ export async function aggLoadNonTelecomOperatorRegistry(): Promise<
 export async function aggInsertOperatorDomainAudit(input: {
   operatorId?: string | null
   operatorName?: string | null
+  countryIso3?: string | null
   providerCode?: string | null
   detectedDomain: string
   confidence: number
@@ -1655,12 +1784,17 @@ export async function aggInsertOperatorDomainAudit(input: {
   syncRunId?: string | null
   rejectionReason?: string | null
   domainBreakdown?: Record<string, unknown>
+  registryMatch?: boolean | null
+  matchMethod?: string | null
+  telecomScore?: number | null
+  decision?: string | null
 }) {
   await supabaseRest('operator_domain_audit_logs', {
     method: 'POST',
     body: JSON.stringify({
       operator_id: input.operatorId ?? null,
       operator_name: input.operatorName ?? null,
+      country_iso3: input.countryIso3 ?? null,
       provider_code: input.providerCode ?? null,
       detected_domain: input.detectedDomain,
       confidence: input.confidence,
@@ -1670,6 +1804,10 @@ export async function aggInsertOperatorDomainAudit(input: {
       sync_run_id: input.syncRunId ?? null,
       rejection_reason: input.rejectionReason ?? null,
       domain_breakdown: input.domainBreakdown ?? {},
+      registry_match: input.registryMatch ?? null,
+      match_method: input.matchMethod ?? null,
+      telecom_score: input.telecomScore ?? null,
+      decision: input.decision ?? null,
     }),
   }).catch(() => {})
 }

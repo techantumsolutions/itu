@@ -36,8 +36,12 @@ import {
   printPipelineReport,
   summarizeDiagnostics,
 } from '@/lib/aggregator/sync-diagnostics'
-import { normalizeCountryIso3 } from '@/lib/lcr/countries'
-import { getOrCreateCanonicalCountry } from '@/lib/aggregator/country-normalizer'
+import {
+  loadCountryRegistry,
+  lookupCountryInRegistry,
+  logUnknownCountry,
+} from '@/lib/aggregator/country-registry'
+import { validateCountriesTable } from '@/lib/aggregator/country-startup-validation'
 import { buildSystemOperatorInput } from '@/lib/aggregator/operator-normalizer'
 import { buildSystemPlanInput, scorePlanCandidate, isValidSystemPlan } from '@/lib/aggregator/plan-normalizer'
 import { validateOperatorTelecomService, validateRawOperatorPlans, extractRawPlanFields } from '@/lib/aggregator/telecom-validator'
@@ -65,7 +69,7 @@ import {
   aggUpsertSystemPlan,
   aggUpsertFilteredOperator,
   aggCleanupSystemOperatorsWithoutPlans,
-  aggMergeDuplicateSystemOperators,
+  aggMergeDuplicateSystemPlansForProvider,
   aggStartSyncRun,
   aggUpdateSyncRun,
   aggInsertClassificationAudit,
@@ -173,6 +177,8 @@ export async function syncAggregatorProvider(
 
   try {
     const diag = createSyncDiagnostics(providerId, config.code)
+    await validateCountriesTable()
+    const countryRegistry = await loadCountryRegistry()
     const dynamicMode = await canUseDynamicClassification().catch(() => false)
     const { trustedOperators, domainRegistry, nonTelecomRegistry } = await aggLoadCatalogIntelligenceRegistries().catch(() => ({
       trustedOperators: [],
@@ -196,14 +202,17 @@ export async function syncAggregatorProvider(
       
       const rawOperatorObj = (plan.raw as any)?.operator ?? {}
       const rawCountryObj = rawOperatorObj?.country ?? {}
-      const canonicalCountry = await getOrCreateCanonicalCountry({
+      const countryInput = {
         countryName: rawCountryObj?.name || (plan.raw as any)?.countryName || (plan.raw as any)?.CountryName,
         iso2: providerCountry.length === 2 ? providerCountry : rawCountryObj?.iso_code || undefined,
         iso3: providerCountry.length === 3 ? providerCountry : rawCountryObj?.iso_code3 || undefined,
-      })
+      }
+      const canonicalCountry = lookupCountryInRegistry(countryRegistry, countryInput)
 
       if (canonicalCountry) {
         plan.countryIso3 = canonicalCountry.id
+      } else {
+        logUnknownCountry(config.code, countryInput)
       }
 
       if (diag.countryMappings.length < 20) {
@@ -791,6 +800,7 @@ export async function syncAggregatorProvider(
           const planMap = await aggUpsertPlanMapping({
             serviceProviderId: providerId,
             providerPlanRawId: rawPlan.id,
+            providerPlanId: plan.providerPlanId,
             systemPlanId: systemPlan.id,
             matchingScore: 95,
             matchingReason: 'Automatic normalized signature match',
@@ -798,12 +808,6 @@ export async function syncAggregatorProvider(
           })
 
           if (planMap?.id) {
-            // Update provider_plan_id on the mapping row
-            await supabaseRest(`plan_mappings?id=eq.${planMap.id}`, {
-              method: 'PATCH',
-              body: JSON.stringify({ provider_plan_id: plan.providerPlanId }),
-            }).catch(() => {})
-
             mappedPlans += 1
           }
 
@@ -858,11 +862,11 @@ export async function syncAggregatorProvider(
       console.error('Failed to cleanup operators without plans:', cleanupErr)
     }
 
-    // Merge duplicate system operators
+    // Merge duplicate system plans by signature for this provider
     try {
-      await aggMergeDuplicateSystemOperators('system-sync')
+      await aggMergeDuplicateSystemPlansForProvider(providerId, 'system-sync')
     } catch (mergeErr) {
-      console.error('Failed to merge duplicate system operators:', mergeErr)
+      console.error('Failed to merge duplicate system plans:', mergeErr)
     }
 
     const durationMs = Date.now() - started
@@ -1083,6 +1087,7 @@ export async function runLocalOperatorSync(providerId?: string) {
                 await aggUpsertPlanMapping({
                   serviceProviderId: provider.id,
                   providerPlanRawId: rawPlan.id,
+                  providerPlanId: String(rawPlan.provider_plan_id ?? planForInternal.providerPlanId ?? ''),
                   systemPlanId: systemPlan.id,
                   matchingScore: 100,
                   matchingReason: 'Local operator sync',

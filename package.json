@@ -11,7 +11,9 @@
     "lcr:worker": "tsx --tsconfig tsconfig.json scripts/lcr-sync-worker.ts",
     "bootstrap:admin": "tsx --tsconfig tsconfig.json scripts/bootstrap-super-admin.ts",
     "db:migrate": "tsx --tsconfig tsconfig.json scripts/db-migrate.ts",
-    "db:deploy": "tsx --tsconfig tsconfig.json scripts/db-deploy.ts"
+    "db:deploy": "tsx --tsconfig tsconfig.json scripts/db-deploy.ts",
+    "db:seed-countries": "tsx --tsconfig tsconfig.json scripts/seed-countries.ts",
+    "telecom:seed-registry": "tsx --tsconfig tsconfig.json scripts/telecom-seed-registry.ts"
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "^5.2.0",
@@ -51,6 +53,7 @@
     "clsx": "^2.1.1",
     "cmdk": "1.1.1",
     "date-fns": "4.1.0",
+    "country-calling-code": "^0.0.3",
     "embla-carousel-react": "8.6.0",
     "i18n-iso-countries": "^7.14.0",
     "input-otp": "1.4.2",

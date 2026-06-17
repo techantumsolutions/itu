@@ -9,6 +9,7 @@ const sections = [
   ['Provider Plans', '/admin/integrations/plans', 'Raw provider plans and unified system plans.'],
   ['Operator Mapping', '/admin/integrations/operator-mapping', 'Manual operator mapping controls.'],
   ['Plan Mapping', '/admin/integrations/plan-mapping', 'Manual plan mapping controls.'],
+  ['Telecom Registry', '/admin/integrations/telecom-registry', 'Global MCC/MNC mobile operators by country (domain_operator_registry).'],
 ] as const
 
 export default function IntegrationsPage() {

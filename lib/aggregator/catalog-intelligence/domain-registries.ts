@@ -79,6 +79,7 @@ export function matchNonTelecomOperator(
 export function matchOperatorDomainRegistry(
   operatorName: string,
   dbMatches: OperatorDomainRegistryMatch[] = [],
+  countryCode?: string | null,
 ): OperatorDomainRegistryMatch | null {
   const explicit = detectExplicitServiceDomain(operatorName)
   if (explicit) return null
@@ -86,7 +87,25 @@ export function matchOperatorDomainRegistry(
   const normalized = normalizeOperatorForRegistry(operatorName)
   if (!normalized) return null
 
-  for (const entry of [...dbMatches, ...BUILTIN_DOMAIN_REGISTRY]) {
+  const country = countryCode?.trim().toUpperCase() ?? ''
+  const scopedMatches = country
+    ? dbMatches.filter((entry) => !entry.countryIso3 || entry.countryIso3.toUpperCase() === country)
+    : dbMatches
+
+  for (const entry of scopedMatches) {
+    if (entry.operatorDomain !== 'MOBILE') continue
+    if (exactMobileBrandMatch(normalized, entry.normalizedName)) return entry
+  }
+
+  if (country) {
+    for (const entry of BUILTIN_DOMAIN_REGISTRY) {
+      if (entry.operatorDomain !== 'MOBILE') continue
+      if (exactMobileBrandMatch(normalized, entry.normalizedName)) return entry
+    }
+    return null
+  }
+
+  for (const entry of [...scopedMatches, ...BUILTIN_DOMAIN_REGISTRY]) {
     if (entry.operatorDomain !== 'MOBILE') continue
     if (exactMobileBrandMatch(normalized, entry.normalizedName)) return entry
   }

@@ -3,7 +3,9 @@ import {
   hasTelecomPositiveSignal,
   hasTelecomNegativeSignal,
   isTelecomPlanRaw,
-  isNonTelecomPlanRaw
+  isNonTelecomPlanRaw,
+  hasExcludedPlanBenefits,
+  isExplicitNonMobileOperatorName,
 } from './telecom-validator'
 
 function mockRawPlan(overrides: any = {}): any {
@@ -40,6 +42,16 @@ describe('Telecom Validator Enhancements', () => {
       expect(isNonTelecomPlanRaw(mockRawPlan({ type: 'GiftCard' }).raw_json).matches).toBe(true)
       expect(isNonTelecomPlanRaw(mockRawPlan({ productName: 'Razer Gold Game credits' }).raw_json).matches).toBe(true)
       expect(isNonTelecomPlanRaw(mockRawPlan({ description: '10GB Data Pack' }).raw_json).matches).toBe(false)
+    })
+
+    it('detects excluded benefit types for digital, tv, utility, and dth plans', () => {
+      expect(hasExcludedPlanBenefits(mockRawPlan({ benefits: ['DigitalProduct'] }).raw_json).excluded).toBe(true)
+      expect(hasExcludedPlanBenefits(mockRawPlan({ benefits: [{ type: 'TV' }] }).raw_json).excluded).toBe(true)
+      expect(hasExcludedPlanBenefits(mockRawPlan({ benefits: [{ type: 'Utility' }] }).raw_json).excluded).toBe(true)
+      expect(hasExcludedPlanBenefits(mockRawPlan({ benefits: [{ type: 'DTH' }] }).raw_json).excluded).toBe(true)
+      expect(hasExcludedPlanBenefits(mockRawPlan({ benefits: [{ type: 'DATA' }] }).raw_json).excluded).toBe(false)
+      expect(isExplicitNonMobileOperatorName('Airtel DTH IND')).toBe(true)
+      expect(isExplicitNonMobileOperatorName('Airtel IND')).toBe(false)
     })
   })
 

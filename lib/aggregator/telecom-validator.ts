@@ -2,9 +2,72 @@ import type { NormalizedPlan } from '@/lib/providers/types'
 import {
   CatalogIntelligenceEngine,
   defaultCatalogIntelligenceEngine,
+  isMobileTelecomDomain,
 } from '@/lib/aggregator/catalog-intelligence'
 import type { OperatorPromotionOutput } from '@/lib/aggregator/catalog-intelligence/types'
+import { detectExplicitServiceDomain } from '@/lib/aggregator/catalog-intelligence/brand-intelligence'
 import { isValidSystemPlan } from './plan-normalizer'
+
+const EXCLUDED_PLAN_BENEFIT_TOKENS = new Set([
+  'DIGITALPRODUCT',
+  'TV',
+  'DTH',
+  'SATELLITE',
+  'CABLE',
+  'IPTV',
+  'UTILITY',
+  'UTILITIES',
+  'ELECTRICITY',
+  'ELECTRIC',
+  'WATER',
+  'GAS',
+  'BILL',
+  'BILLS',
+  'BROADBAND',
+])
+
+function normalizeBenefitToken(value: string): string {
+  return value.trim().toUpperCase().replace(/[\s_-]+/g, '')
+}
+
+function benefitEntryToken(benefit: unknown): string {
+  if (typeof benefit === 'string') return normalizeBenefitToken(benefit)
+  if (typeof benefit === 'object' && benefit !== null) {
+    const row = benefit as Record<string, unknown>
+    return normalizeBenefitToken(
+      String(row.type ?? row.Type ?? row.benefitType ?? row.benefit_type ?? ''),
+    )
+  }
+  return ''
+}
+
+/** Plans with digital/TV/DTH/utility benefit types are excluded from mobile telecom sync. */
+export function hasExcludedPlanBenefits(raw: unknown): { excluded: boolean; reason?: string } {
+  const fields = extractRawPlanFields(raw)
+  for (const benefit of fields.benefits) {
+    const token = benefitEntryToken(benefit)
+    if (token && EXCLUDED_PLAN_BENEFIT_TOKENS.has(token)) {
+      return { excluded: true, reason: token }
+    }
+  }
+  return { excluded: false }
+}
+
+/** Operator names that explicitly indicate DTH/TV/utility (e.g. "Airtel DTH IND"). */
+export function isExplicitNonMobileOperatorName(operatorName: string): boolean {
+  const explicit = detectExplicitServiceDomain(operatorName)
+  return Boolean(explicit && !isMobileTelecomDomain(explicit.domain))
+}
+
+export function shouldBlockOperatorAsNonMobile(
+  operatorName: string,
+  domain: string | null | undefined,
+): boolean {
+  if (isExplicitNonMobileOperatorName(operatorName)) return true
+  const normalizedDomain = String(domain ?? '').toUpperCase()
+  if (!normalizedDomain || normalizedDomain === 'UNKNOWN') return false
+  return !isMobileTelecomDomain(normalizedDomain)
+}
 
 export function hasTelecomPositiveSignal(plan: NormalizedPlan): boolean {
   // Check benefit types first (highly reliable)
@@ -226,11 +289,18 @@ export function isTelecomPlanRaw(raw: any): boolean {
 }
 
 export function isNonTelecomPlanRaw(raw: any): { matches: boolean; category?: string } {
+  const excludedBenefit = hasExcludedPlanBenefits(raw)
+  if (excludedBenefit.excluded) {
+    return { matches: true, category: excludedBenefit.reason ?? 'EXCLUDED_BENEFIT' }
+  }
+
   const fields = extractRawPlanFields(raw)
   const allText = `${fields.description} ${fields.type} ${fields.productName} ${fields.serviceName} ${fields.subserviceName} ${fields.tags.join(' ')}`.toLowerCase()
 
   const nonTelecomTerms = [
     { regex: /\b(digitalproduct|digital\s*product)\b/i, category: 'DIGITAL_PRODUCT_ONLY' },
+    { regex: /\b(dth|satellite|set\s*top|stb|cable\s*tv|iptv)\b/i, category: 'DTH' },
+    { regex: /\b(utility|utilities|electricity|electric\s*bill|water\s*bill|gas\s*bill)\b/i, category: 'UTILITY' },
     { regex: /\b(giftcard|gift\s*card)\b/i, category: 'RETAIL_PROVIDER' },
     { regex: /\b(voucher)\b/i, category: 'RETAIL_PROVIDER' },
     { regex: /\b(coupon)\b/i, category: 'RETAIL_PROVIDER' },

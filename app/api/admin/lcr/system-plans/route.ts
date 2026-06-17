@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server'
-import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { supabaseRest } from '@/lib/db/supabase-rest'
+import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
+import { aggCountProvidersBySystemPlanIds } from '@/lib/aggregator/repository'
 import { normalizeCountryIso3 } from '@/lib/lcr/countries'
 
 function enc(v: string): string {
@@ -71,6 +71,8 @@ export async function GET(request: Request) {
   
   const systemIds = rows.map((row) => row.system_operator_id).filter(Boolean)
   const systemOperatorInfo = await loadSystemOperatorsInfo(systemIds)
+  const planIds = rows.map((row) => row.id).filter(Boolean)
+  const providerCounts = await aggCountProvidersBySystemPlanIds(planIds)
 
   let systemPlans = await Promise.all(
     rows.map(async (row) => {
@@ -108,6 +110,7 @@ export async function GET(request: Request) {
         operator_ref: opId,
         category: row.plan_type || 'Unknown',
         active,
+        provider_count: providerCounts.get(row.id) ?? 0,
       }
     })
   )
