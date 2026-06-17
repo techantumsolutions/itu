@@ -282,12 +282,12 @@ export default function TopupPlanSelectionPage() {
   }, [countryCode, localPhone, setPhoneDetails])
 
   useEffect(() => {
-    // Phone number changed → allow auto-detect to run again.
+    // Phone number or country changed → allow auto-detect to run again.
     setManualOperatorOverride(false)
     setSelectedProviderCode('')
     setResolvedProviderCode(undefined)
     setOperator('')
-  }, [localPhone, setOperator])
+  }, [localPhone, countryCode, setOperator])
 
   useEffect(() => {
     const run = async () => {
@@ -353,18 +353,20 @@ export default function TopupPlanSelectionPage() {
     void loadProviders()
   }, [countryCode])
 
-  // Sync selectedProviderCode with resolvedProviderCode or first provider in list
+  // Sync selectedProviderCode with resolvedProviderCode
   useEffect(() => {
     if (providers.length > 0) {
       const initial =
         resolvedProviderCode && providers.some((m) => m.code === resolvedProviderCode)
           ? resolvedProviderCode
-          : providers[0]!.code
+          : ''
       setSelectedProviderCode(initial)
 
-      const chosen = providers.find((p) => p.code === initial)
-      if (chosen && (!operator || operator === 'Unknown' || operator === '')) {
-        setOperator(chosen.shortName || chosen.name)
+      if (initial) {
+        const chosen = providers.find((p) => p.code === initial)
+        if (chosen && (!operator || operator === 'Unknown' || operator === '')) {
+          setOperator(chosen.shortName || chosen.name)
+        }
       }
     }
   }, [resolvedProviderCode, providers, operator, setOperator])
