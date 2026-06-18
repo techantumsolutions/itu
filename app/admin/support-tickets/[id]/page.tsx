@@ -24,9 +24,10 @@ import {
   apiAdminRespond,
   apiAdminSetStatus,
 } from '@/lib/tickets/client-api'
-import type { TicketAdminDetail, TicketStatus } from '@/lib/tickets/types'
+import type { TicketAdminDetail, TicketStatus, TicketMessage } from '@/lib/tickets/types'
 import { isClientAdminUser } from '@/lib/tickets/auth-headers'
 import { toast } from 'sonner'
+import { io } from 'socket.io-client'
 
 export default function AdminSupportTicketDetailPage() {
   const router = useRouter()
@@ -58,9 +59,9 @@ export default function AdminSupportTicketDetailPage() {
     }
   }, [user, router])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (isInitial = false) => {
     if (!headers || !id) return
-    setLoading(true)
+    if (isInitial) setLoading(true)
     try {
       const t = await apiAdminGetTicket(headers, id)
       setData(t)
@@ -89,8 +90,41 @@ export default function AdminSupportTicketDetailPage() {
   }
 
   useEffect(() => {
-    void load()
+    void load(true)
   }, [load])
+
+  useEffect(() => {
+    if (!id) return
+    const socket = io('http://localhost:3001')
+
+    socket.emit('join', id)
+
+    socket.on('message', (newMessage: TicketMessage) => {
+      setData((prev) => {
+        if (!prev) return prev
+        if (prev.messages.some((m) => m.id === newMessage.id)) return prev
+        return {
+          ...prev,
+          messages: [...prev.messages, newMessage],
+        }
+      })
+    })
+
+    socket.on('status_update', (newStatus: TicketStatus) => {
+      setData((prev) => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          status: newStatus,
+        }
+      })
+      setStatusPick(newStatus)
+    })
+
+    return () => {
+      socket.disconnect()
+    }
+  }, [id])
 
   async function onRespond(e: React.FormEvent) {
     e.preventDefault()
@@ -99,7 +133,6 @@ export default function AdminSupportTicketDetailPage() {
     try {
       await apiAdminRespond(headers, id, reply.trim())
       setReply('')
-      toast.success('Reply sent — status set to In progress (if not resolved)')
       await load()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to send')
@@ -245,6 +278,12 @@ export default function AdminSupportTicketDetailPage() {
               )}
             </section>
           )}
+
+          {/* 3. Original Query / Description */}
+          <section className="rounded-2xl border border-orange-100 bg-orange-50/20 p-5 shadow-elevated-sm space-y-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-orange-800">Original Description</h2>
+            <p className="text-sm text-neutral-800 whitespace-pre-wrap leading-relaxed">{data.description}</p>
+          </section>
 
           {/* 4. Thread (Conversation history) */}
           <section className="space-y-3">

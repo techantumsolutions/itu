@@ -576,6 +576,7 @@ export default function TopupSummaryPage() {
                 providerName: verifyData.providerName || '',
                 rechargeStatus: 'success',
                 errorMessage: '',
+                rewardPointsEarned: verifyData.rewardPointsEarned ?? 0,
               })
               router.push('/topup/success')
             } else {
@@ -583,6 +584,7 @@ export default function TopupSummaryPage() {
                 transactionId: verifyData.transactionId || '',
                 rechargeStatus: 'failed',
                 errorMessage: verifyData.error || 'Recharge processing failed',
+                rewardPointsEarned: verifyData.rewardPointsEarned ?? 0,
               })
               router.push('/topup/failed')
             }

@@ -15,6 +15,7 @@ import { resolveProvider, normalizeCountryToIso3, resolveSystemOperator } from '
 import { executeMappedRecharge } from '@/lib/lcr-v2/execute-provider'
 import { dbGetProvider, dbGetInternalPlan, dbInsertRechargeAttempt, dbUpdateRechargeAttempt } from '@/lib/lcr-v2/recharge-db'
 import { insertDetailedRoutingLog } from '@/lib/routing/repository'
+import { processRewardsForTransaction } from '@/lib/rewards/reward-service'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -42,9 +43,20 @@ export type CheckoutResult = {
   status: 'success' | 'failed'
   error?: string
   hints?: string[]
+  rewardPointsEarned?: number
 }
 
-/** Insert a transaction row (status: pending). */
+/** Sum the reward points earned for a specific transaction from reward_ledger. */
+async function getEarnedPoints(transactionId: string): Promise<number> {
+  const res = await supabaseRest(
+    `reward_ledger?transaction_id=eq.${enc(transactionId)}&select=points`,
+    { cache: 'no-store' }
+  )
+  if (!res.ok) return 0
+  const rows = (await res.json()) as Array<{ points: number }>
+  return rows.reduce((sum, r) => sum + (r.points ?? 0), 0)
+}
+
 async function createTransaction(input: CheckoutInput): Promise<string | null> {
   const res = await supabaseRest('transactions?select=id', {
     method: 'POST',
@@ -215,7 +227,11 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     if (rechargeOrderId) {
       await updateRechargeOrder(rechargeOrderId, { status: 'failed', failure_reason: errMsg })
     }
-    return { ok: false, transactionId, rechargeOrderId: rechargeOrderId ?? undefined, status: 'failed', error: errMsg, hints }
+    await processRewardsForTransaction(transactionId).catch((err) => {
+      console.error('[REWARDS] Failed to process rewards on failed transaction:', err)
+    })
+    const rewardPointsEarned = await getEarnedPoints(transactionId).catch(() => 0)
+    return { ok: false, transactionId, rechargeOrderId: rechargeOrderId ?? undefined, status: 'failed', error: errMsg, hints, rewardPointsEarned }
   }
 
   logHint(`Routing rules processed. Applied rule: ${routingResult.ruleApplied} (Rule Name: ${routingResult.ruleName || 'None'}, Rule ID: ${routingResult.ruleId || 'None'})`)
@@ -289,7 +305,11 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     if (rechargeOrderId) {
       await updateRechargeOrder(rechargeOrderId, { status: 'failed', failure_reason: errMsg })
     }
-    return { ok: false, transactionId, rechargeOrderId: rechargeOrderId ?? undefined, status: 'failed', error: errMsg, hints }
+    await processRewardsForTransaction(transactionId).catch((err) => {
+      console.error('[REWARDS] Failed to process rewards on failed transaction:', err)
+    })
+    const rewardPointsEarned = await getEarnedPoints(transactionId).catch(() => 0)
+    return { ok: false, transactionId, rechargeOrderId: rechargeOrderId ?? undefined, status: 'failed', error: errMsg, hints, rewardPointsEarned }
   }
 
   logHint(`Primary Provider Assigned: ${routingResult.selected.providerName || routingResult.selected.providerId} (Plan SKU: ${routingResult.selected.providerPlanId}, Cost: ${routingResult.selected.price} ${routingResult.selected.currency || 'EUR'})`)
@@ -528,6 +548,13 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
         completed_at: new Date().toISOString(),
       })
 
+      // Award reward points for successful recharge
+      await processRewardsForTransaction(transactionId).catch((err) => {
+        console.error('[REWARDS] Failed to process rewards:', err)
+      })
+
+      const rewardPointsEarned = await getEarnedPoints(transactionId).catch(() => 0)
+
       if (rechargeOrderId) {
         await updateRechargeOrder(rechargeOrderId, {
           status: 'completed',
@@ -551,6 +578,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
         providerCode: candidate.providerCode,
         status: 'success',
         hints,
+        rewardPointsEarned,
       }
     } else {
       logHint(`[Hop ${i + 1}/${chain.length}] Failover triggered due to failure.`)
@@ -642,6 +670,9 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
   if (rechargeOrderId) {
     await updateRechargeOrder(rechargeOrderId, { status: 'failed', failure_reason: errMsg })
   }
-
-  return { ok: false, transactionId, rechargeOrderId: rechargeOrderId ?? undefined, status: 'failed', error: errMsg, hints }
+  await processRewardsForTransaction(transactionId).catch((err) => {
+    console.error('[REWARDS] Failed to process rewards on failed transaction:', err)
+  })
+  const rewardPointsEarned = await getEarnedPoints(transactionId).catch(() => 0)
+  return { ok: false, transactionId, rechargeOrderId: rechargeOrderId ?? undefined, status: 'failed', error: errMsg, hints, rewardPointsEarned }
 }

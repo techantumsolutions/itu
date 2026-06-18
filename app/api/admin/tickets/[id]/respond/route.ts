@@ -3,6 +3,7 @@ import { isAdminRequest } from '@/lib/tickets/auth-headers'
 import { addMessage, bumpToInProgressIfNeeded, getTicketAdmin } from '@/lib/tickets/db-persistence'
 import type { Ticket } from '@/lib/tickets/types'
 import { logAdminActivity } from '@/lib/auth/audit'
+import { notifyNewMessage, notifyStatusUpdate } from '@/lib/tickets/socket-notifier'
 
 type Ctx = { params: Promise<{ id: string }> }
 
@@ -31,10 +32,15 @@ export async function POST(request: Request, context: Ctx) {
     const msg = await addMessage({ ticketId, senderType: 'admin', message })
     await bumpToInProgressIfNeeded(ticketId)
 
+    await notifyNewMessage(ticketId, msg)
+
     const updated = await getTicketAdmin(ticketId)
     if (!updated) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
+
+    await notifyStatusUpdate(ticketId, updated.status)
+
     const ticketOut: Ticket = {
       id: updated.id,
       userId: updated.userId,

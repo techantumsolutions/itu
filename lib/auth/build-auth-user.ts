@@ -12,6 +12,7 @@ export type ProfileRow = {
   admin_permissions?: unknown
   image?: string | null
   is_registered_with_email?: boolean | null
+  reward_points?: number | null
 }
 
 const CANONICAL_SUPER_EMAIL = 'admin@itu.com'
@@ -56,7 +57,7 @@ export function buildUserFromProfile(
     phone: displayPhone,
     countryCode: profile?.country_code ?? undefined,
     country: profile?.country ?? undefined,
-    rewardPoints: 0,
+    rewardPoints: profile?.reward_points ?? 0,
     createdAt: new Date().toISOString(),
     adminPermissions: clientRole === 'admin' ? perms : null,
     appRole,

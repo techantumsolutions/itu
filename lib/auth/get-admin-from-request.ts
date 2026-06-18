@@ -10,7 +10,20 @@ export async function fetchProfileForUser(userId: string): Promise<ProfileRow | 
     )
     if (!res.ok) return null
     const rows = (await res.json()) as ProfileRow[]
-    return rows?.[0] ?? null
+    const profile = rows?.[0] ?? null
+    if (profile) {
+      const pointsRes = await supabaseRest(
+        `reward_accounts?user_id=eq.${encodeURIComponent(userId)}&select=points_balance&limit=1`,
+        { cache: 'no-store' }
+      )
+      if (pointsRes.ok) {
+        const pointsRows = await pointsRes.json().catch(() => [])
+        profile.reward_points = pointsRows[0]?.points_balance ?? 0
+      } else {
+        profile.reward_points = 0
+      }
+    }
+    return profile
   } catch {
     return null
   }

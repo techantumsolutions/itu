@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { useRechargeStore, useAuthStore } from '@/lib/stores'
 import { cn } from '@/lib/utils'
+import { ConfettiCelebration } from '@/components/confetti-celebration'
 
 function RechargeSuccessContent() {
   const router = useRouter()
@@ -54,6 +55,9 @@ function RechargeSuccessContent() {
 
   return (
     <div className="mx-auto w-full max-w-lg px-4 py-12">
+      {isAuthenticated && currentOrder.rewardPointsEarned && currentOrder.rewardPointsEarned > 0 && (
+        <ConfettiCelebration />
+      )}
       <div className="text-center mb-8">
         <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-accent/20">
           <CheckCircle2 className="h-12 w-12 text-accent" />

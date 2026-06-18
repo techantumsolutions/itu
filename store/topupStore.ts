@@ -44,6 +44,7 @@ type TopupSessionState = {
   providerName: string
   rechargeStatus: 'idle' | 'pending' | 'success' | 'failed'
   errorMessage: string
+  rewardPointsEarned: number
 }
 
 type TopupSessionActions = {
@@ -58,6 +59,7 @@ type TopupSessionActions = {
     providerName?: string
     rechargeStatus?: 'idle' | 'pending' | 'success' | 'failed'
     errorMessage?: string
+    rewardPointsEarned?: number
   }) => void
   resetSession: () => void
 }
@@ -77,6 +79,7 @@ const initialState: TopupSessionState = {
   providerName: '',
   rechargeStatus: 'idle',
   errorMessage: '',
+  rewardPointsEarned: 0,
 }
 
 export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
@@ -120,6 +123,7 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
           providerName: result.providerName ?? get().providerName,
           rechargeStatus: result.rechargeStatus ?? get().rechargeStatus,
           errorMessage: result.errorMessage ?? get().errorMessage,
+          rewardPointsEarned: result.rewardPointsEarned ?? get().rewardPointsEarned,
         }),
       resetSession: () => set({ ...initialState }),
     }),
@@ -141,6 +145,7 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
         providerName: s.providerName,
         rechargeStatus: s.rechargeStatus,
         errorMessage: s.errorMessage,
+        rewardPointsEarned: s.rewardPointsEarned,
       }),
     },
   ),

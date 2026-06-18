@@ -1,28 +1,48 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Wallet, Plus, ArrowUpRight, ArrowDownLeft, History, CreditCard, RefreshCw, Loader2 } from 'lucide-react'
+import { Wallet, Plus, ArrowUpRight, ArrowDownLeft, History, CreditCard, RefreshCw, Loader2, Coins } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { useWalletStore } from '@/lib/stores'
+import { useWalletStore, useAuthStore } from '@/lib/stores'
 import { cn } from '@/lib/utils'
+import Link from 'next/link'
 
 const quickAmounts = [10, 25, 50, 100, 250, 500]
 
 export default function AccountWalletPage() {
   const { balance, transactions, topUp, fetchBalance, fetchTransactions, isLoading } = useWalletStore()
+  const { user } = useAuthStore()
   const [topUpAmount, setTopUpAmount] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [rewardPoints, setRewardPoints] = useState(user?.rewardPoints || 0)
+  const [pointsWorth, setPointsWorth] = useState(0)
 
   useEffect(() => {
     void fetchBalance()
     void fetchTransactions()
   }, [fetchBalance, fetchTransactions])
+
+  useEffect(() => {
+    async function fetchPoints() {
+      try {
+        const res = await fetch('/api/account/rewards/history')
+        if (res.ok) {
+          const data = await res.json()
+          setRewardPoints(data.balance ?? 0)
+          setPointsWorth(data.balanceWorth ?? 0)
+        }
+      } catch (e) {
+        console.error('Failed to fetch rewards info:', e)
+      }
+    }
+    void fetchPoints()
+  }, [])
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
@@ -43,20 +63,7 @@ export default function AccountWalletPage() {
 
   const handleTopUpSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setError('')
-    setSuccess('')
-    const amount = parseFloat(topUpAmount)
-    if (!amount || amount <= 0 || isNaN(amount)) {
-      setError('Please enter a valid positive amount.')
-      return
-    }
-    const ok = await topUp(amount)
-    if (ok) {
-      setSuccess(`Successfully added ${formatCurrency(amount)} to your wallet!`)
-      setTopUpAmount('')
-    } else {
-      setError('Failed to process top-up. Please try again.')
-    }
+    setError('Top-up is temporarily disabled.')
   }
 
   const getTransactionIcon = (type: string) => {
@@ -127,7 +134,10 @@ export default function AccountWalletPage() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-neutral-400 text-sm font-medium">Available Balance</p>
-                <p className="text-5xl font-black mt-2 tracking-tight">{formatCurrency(balance)}</p>
+                <p className="text-5xl font-black mt-2 tracking-tight">{formatCurrency(balance + pointsWorth)}</p>
+                <p className="text-neutral-400 text-xs mt-2 font-medium">
+                  {formatCurrency(balance)} wallet balance + {formatCurrency(pointsWorth)} points worth
+                </p>
               </div>
               <div className="h-12 w-12 rounded-2xl bg-white/10 flex items-center justify-center text-amber-400 shadow-inner">
                 <Wallet className="h-6 w-6" />
@@ -175,17 +185,42 @@ export default function AccountWalletPage() {
               </div>
             </CardContent>
           </Card>
+          <Link href="/account/rewards" className="block group">
+            <Card className="rounded-2xl border-neutral-200/60 shadow-sm group-hover:bg-neutral-50/50 transition-colors">
+              <CardContent className="p-4 flex items-center gap-4">
+                <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
+                  <Coins className="h-5 w-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Reward Points</p>
+                    <span className="text-[10px] text-neutral-400 font-normal shrink-0 ml-1 group-hover:text-neutral-600 transition-colors">Details →</span>
+                  </div>
+                  <p className="text-xl font-bold text-neutral-950 mt-0.5 truncate">
+                    {rewardPoints.toLocaleString()} pts
+                  </p>
+                  <p className="text-xs text-emerald-600 font-semibold mt-0.5">
+                    Worth {formatCurrency(pointsWorth)}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">
-        {/* Top Up Form */}
+        {/* Top Up Form - Commented out per request
         <Card className="rounded-2xl border-neutral-200/60 shadow-sm h-fit">
           <CardHeader>
             <CardTitle className="text-lg font-bold">Top Up Wallet</CardTitle>
             <CardDescription>Add funds using simulated payment processing</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs font-medium text-amber-800">
+              Top up is temporarily disabled. You cannot add funds to your wallet at this time.
+            </div>
+
             {error && (
               <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
                 {error}
@@ -212,6 +247,7 @@ export default function AccountWalletPage() {
                     onChange={(e) => setTopUpAmount(e.target.value)}
                     className="pl-7 h-10 rounded-xl"
                     required
+                    disabled={true}
                   />
                 </div>
               </div>
@@ -234,6 +270,7 @@ export default function AccountWalletPage() {
                         'rounded-lg text-xs font-semibold',
                         topUpAmount === amount.toString() && 'bg-neutral-900 text-white hover:bg-neutral-800'
                       )}
+                      disabled={true}
                     >
                       ${amount}
                     </Button>
@@ -243,24 +280,18 @@ export default function AccountWalletPage() {
 
               <Button
                 type="submit"
-                className="w-full h-10 rounded-xl bg-neutral-900 text-white font-semibold hover:bg-neutral-800"
-                disabled={isLoading || !topUpAmount}
+                className="w-full h-10 rounded-xl bg-neutral-200 text-neutral-400 font-semibold cursor-not-allowed"
+                disabled={true}
               >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  'Add Funds'
-                )}
+                Top Up Disabled
               </Button>
             </form>
           </CardContent>
         </Card>
+        */}
 
         {/* Transaction Ledger */}
-        <Card className="md:col-span-2 rounded-2xl border-neutral-200/60 shadow-sm">
+        <Card className="md:col-span-3 rounded-2xl border-neutral-200/60 shadow-sm">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
