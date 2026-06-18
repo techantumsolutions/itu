@@ -49,6 +49,7 @@ import { CatalogIntelligenceEngine, isMobileTelecomDomain, segmentOperatorPlansA
 import type { ServiceDomainSegment } from '@/lib/aggregator/catalog-intelligence/segmentation'
 
 import { extractPlanSignatureParts, sha256 } from '@/lib/aggregator/signature'
+import { wholesaleCostFromNormalizedPlan } from '@/lib/catalog/provider-wholesale-pricing'
 import type { AggregatorSyncResult } from '@/lib/aggregator/types'
 import type { SyncCatalogOptions } from '@/lib/lcr/sync-options'
 import { resolveSyncCountries } from '@/lib/lcr/sync-options'
@@ -681,14 +682,17 @@ export async function syncAggregatorProvider(
         const parts = extractPlanSignatureParts(plan)
         const planIntel = catalogEngine.classifyNormalizedPlan(plan, telecomOperatorName, op.countryCode)
         const planSegment = planSegmentById.get(plan.providerPlanId)
+        const wholesale = wholesaleCostFromNormalizedPlan(plan)
         const rawPlan = await aggUpsertRawPlan({
           providerId,
           providerPlanId: plan.providerPlanId,
           providerOperatorRawId: rawOperator.id,
           providerPlanName: plan.name ?? null,
           providerPlanCode: plan.providerPlanId,
-          amount: plan.retailAmount ?? plan.destinationAmount ?? null,
-          currency: plan.retailCurrency ?? null,
+          amount: wholesale.wholesaleAmount,
+          currency: wholesale.wholesaleCurrency,
+          destinationAmount: wholesale.destinationAmount,
+          destinationCurrency: wholesale.destinationCurrency,
           validity: plan.validityDays ? `${plan.validityDays}D` : null,
           talktime: parts.talktime || null,
           dataVolume: parts.data || null,

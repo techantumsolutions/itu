@@ -5,6 +5,7 @@ import { sha256 } from '@/lib/aggregator/signature'
 import { resolveSyncCountries, type SyncCatalogOptions } from '@/lib/lcr/sync-options'
 import { resolvePlanCountryCode } from '@/lib/aggregator/plan-country-resolver'
 import { normalizeCountryIso3 } from '@/lib/lcr/countries'
+import { wholesaleCostFromNormalizedPlan } from '@/lib/catalog/provider-wholesale-pricing'
 
 function rawOperatorFromPlan(plan: any) {
   const raw: any = plan.raw ?? {}
@@ -77,14 +78,18 @@ export async function runStep2Fetch(
       operatorCountryIso3,
     })
 
+    const wholesale = wholesaleCostFromNormalizedPlan(plan)
+
     const rawPlan = await aggUpsertRawPlan({
       providerId,
       providerPlanId: plan.providerPlanId,
       providerOperatorRawId: dbOpId,
       providerPlanName: plan.name ?? null,
       providerPlanCode: plan.providerPlanId,
-      amount: plan.retailAmount ?? plan.destinationAmount ?? null,
-      currency: plan.retailCurrency ?? null,
+      amount: wholesale.wholesaleAmount,
+      currency: wholesale.wholesaleCurrency,
+      destinationAmount: wholesale.destinationAmount,
+      destinationCurrency: wholesale.destinationCurrency,
       validity: plan.validityDays ? `${plan.validityDays}D` : null,
       talktime: null,
       dataVolume: null,

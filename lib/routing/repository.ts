@@ -1,4 +1,7 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
+import { mergeRoutingLogPricing, parseRoutingLogStatus } from '@/lib/routing/log-pricing'
+import { planMappingPricingKey } from '@/lib/catalog/provider-wholesale-pricing'
+import { batchResolvePlanMappingPricing } from '@/lib/routing/plan-mapping-pricing'
 import type {
   LcrEngineSettings,
   ProviderPriorityRow,
@@ -296,26 +299,145 @@ export async function listRoutingLogs(filters: {
   }
 
   const rows = (await res.json()) as Record<string, unknown>[]
-  const logs: RoutingLogRow[] = rows.map((row) => {
-    const prov = row.lcr_providers as { code?: string; name?: string } | null
-    return {
-      id: String(row.id),
-      transactionId: row.transaction_id != null ? String(row.transaction_id) : null,
-      countryId: row.country_id != null ? String(row.country_id) : null,
-      operatorId: row.operator_id != null ? String(row.operator_id) : null,
-      productId: row.product_id != null ? String(row.product_id) : null,
-      providerId: row.provider_id != null ? String(row.provider_id) : null,
-      providerCode: prov?.code,
-      providerName: prov?.name,
-      routingType: String(row.routing_type ?? 'LCR') as 'RULE' | 'LCR',
-      providerCost: row.provider_cost != null ? Number(row.provider_cost) : null,
-      fallbackUsed: Boolean(row.fallback_used),
-      status: String(row.status ?? 'SELECTED'),
-      createdAt: String(row.created_at ?? ''),
-    }
-  })
+  const logs = rows.map((row) => mapRoutingLogRow(row))
 
   return { logs, total: totalCount > 0 ? totalCount : logs.length }
+}
+
+function mapRoutingLogRow(row: Record<string, unknown>): RoutingLogRow {
+  const prov = row.lcr_providers as { code?: string; name?: string } | null
+  const status = String(row.status ?? 'SELECTED')
+  const pricing = mergeRoutingLogPricing({
+    providerCost: row.provider_cost != null ? Number(row.provider_cost) : null,
+    providerId: row.provider_id != null ? String(row.provider_id) : null,
+    providerName: prov?.name,
+    status,
+  })
+
+  return {
+    id: String(row.id),
+    transactionId: row.transaction_id != null ? String(row.transaction_id) : null,
+    countryId: row.country_id != null ? String(row.country_id) : null,
+    operatorId: row.operator_id != null ? String(row.operator_id) : null,
+    productId: row.product_id != null ? String(row.product_id) : null,
+    providerId: row.provider_id != null ? String(row.provider_id) : null,
+    providerCode: prov?.code,
+    providerName: prov?.name,
+    routingType: String(row.routing_type ?? 'LCR') as RoutingLogRow['routingType'],
+    providerCost: pricing.providerCost,
+    providerCurrency: pricing.providerCurrency,
+    userAmount: pricing.userAmount,
+    userCurrency: pricing.userCurrency,
+    fallbackUsed: Boolean(row.fallback_used),
+    status,
+    createdAt: String(row.created_at ?? ''),
+  }
+}
+
+export async function enrichRoutingLogsWithPricing<T extends RoutingLogRow>(logs: T[]): Promise<T[]> {
+  const transactionIds = Array.from(
+    new Set(logs.map((log) => log.transactionId).filter((id): id is string => Boolean(id))),
+  )
+
+  const attemptByRef = new Map<
+    string,
+    {
+      send_amount: number | null
+      currency: string | null
+      routing_decision: unknown
+      selected_provider_id: string | null
+      selected_provider_plan_id: string | null
+    }
+  >()
+  const transactionById = new Map<string, { amount: number | null; currency: string | null }>()
+
+  if (transactionIds.length) {
+    for (let i = 0; i < transactionIds.length; i += 50) {
+      const chunk = transactionIds.slice(i, i + 50)
+      const [attemptRes, txRes] = await Promise.all([
+        supabaseRest(
+          `lcr_v2_recharge_attempts?distributor_ref=in.(${chunk.map(enc).join(',')})&select=distributor_ref,send_amount,currency,routing_decision,selected_provider_id,selected_provider_plan_id`,
+          { cache: 'no-store' },
+        ),
+        supabaseRest(
+          `transactions?id=in.(${chunk.map(enc).join(',')})&select=id,amount,currency`,
+          { cache: 'no-store' },
+        ),
+      ])
+
+      if (attemptRes.ok) {
+        const rows = (await attemptRes.json()) as Array<{
+          distributor_ref: string
+          send_amount: number | null
+          currency: string | null
+          routing_decision: unknown
+          selected_provider_id: string | null
+          selected_provider_plan_id: string | null
+        }>
+        for (const row of rows) {
+          attemptByRef.set(row.distributor_ref, row)
+        }
+      }
+
+      if (txRes.ok) {
+        const rows = (await txRes.json()) as Array<{ id: string; amount: number | null; currency: string | null }>
+        for (const row of rows) {
+          transactionById.set(row.id, { amount: row.amount, currency: row.currency })
+        }
+      }
+    }
+  }
+
+  const planMappingLookups = logs
+    .map((log) => {
+      const attempt = log.transactionId ? attemptByRef.get(log.transactionId) : undefined
+      const providerId = log.providerId ?? attempt?.selected_provider_id ?? null
+      const providerPlanId = attempt?.selected_provider_plan_id ?? null
+      if (!log.productId || !providerId) return null
+      return { planId: log.productId, providerId, providerPlanId }
+    })
+    .filter((row): row is { planId: string; providerId: string; providerPlanId: string | null } => Boolean(row))
+
+  const wholesaleByKey = await batchResolvePlanMappingPricing(planMappingLookups)
+
+  return logs.map((log) => {
+    const attempt = log.transactionId ? attemptByRef.get(log.transactionId) : undefined
+    const tx = log.transactionId ? transactionById.get(log.transactionId) : undefined
+    const providerId = log.providerId ?? attempt?.selected_provider_id ?? null
+    const providerPlanId = attempt?.selected_provider_plan_id ?? null
+    const resolvedWholesale =
+      log.productId && providerId
+        ? wholesaleByKey.get(planMappingPricingKey(log.productId, providerId, providerPlanId)) ??
+          wholesaleByKey.get(planMappingPricingKey(log.productId, providerId, null))
+        : undefined
+
+    const pricing = mergeRoutingLogPricing(
+      {
+        providerCost: resolvedWholesale?.wholesaleAmount ?? log.providerCost ?? null,
+        providerId,
+        providerName: log.providerName,
+        status: (log as RoutingLogRow & { routingLogStatus?: string }).routingLogStatus ?? log.status,
+      },
+      {
+        userAmount: attempt?.send_amount ?? tx?.amount ?? log.userAmount ?? null,
+        userCurrency: attempt?.currency ?? tx?.currency ?? log.userCurrency ?? null,
+        providerCost: resolvedWholesale?.wholesaleAmount ?? log.providerCost ?? null,
+        routingDecision: attempt?.routing_decision,
+        providerCurrency: resolvedWholesale?.wholesaleCurrency ?? log.providerCurrency ?? null,
+      },
+    )
+
+    return {
+      ...log,
+      providerId: providerId ?? log.providerId,
+      userAmount: pricing.userAmount,
+      userCurrency: pricing.userCurrency,
+      providerCost: pricing.providerCost,
+      providerCurrency: pricing.providerCurrency,
+      providerDestinationAmount: resolvedWholesale?.destinationAmount ?? null,
+      providerDestinationCurrency: resolvedWholesale?.destinationCurrency ?? null,
+    }
+  })
 }
 
 export async function getMappingCount(internalPlanId: string): Promise<number> {
@@ -349,6 +471,12 @@ export async function insertDetailedRoutingLog(input: {
   selectedProvider?: string | null
   attemptNumber?: number
   providerCost?: number
+  providerCurrency?: string | null
+  userAmount?: number | null
+  userCurrency?: string | null
+  providerPlanId?: string | null
+  providerDestinationAmount?: number | null
+  providerDestinationCurrency?: string | null
   providerPriority?: number
   executionResult: string
   failureReason?: string | null
@@ -363,6 +491,12 @@ export async function insertDetailedRoutingLog(input: {
     routingRuleProvider: input.routingRuleProvider ?? null,
     attemptNumber: input.attemptNumber ?? null,
     providerPriority: input.providerPriority ?? null,
+    providerCurrency: input.providerCurrency ?? null,
+    providerPlanId: input.providerPlanId ?? null,
+    providerDestinationAmount: input.providerDestinationAmount ?? null,
+    providerDestinationCurrency: input.providerDestinationCurrency ?? null,
+    userAmount: input.userAmount ?? null,
+    userCurrency: input.userCurrency ?? null,
     failureReason: input.failureReason ?? null,
     responseCode: input.responseCode ?? null,
     responseMessage: input.responseMessage ?? null,
@@ -397,17 +531,6 @@ export async function insertDetailedRoutingLog(input: {
   }
 }
 
-function parseRoutingLogStatus(status: string): Record<string, unknown> {
-  try {
-    if (status && status.startsWith('{')) {
-      return JSON.parse(status) as Record<string, unknown>
-    }
-  } catch {
-    /* ignore */
-  }
-  return { event: status }
-}
-
 export async function listRoutingLogsForTransaction(transactionId: string): Promise<RoutingLogRow[]> {
   const res = await supabaseRest(
     `routing_logs?transaction_id=eq.${enc(transactionId)}&select=*,lcr_providers(code,name)&order=created_at.asc`,
@@ -415,24 +538,7 @@ export async function listRoutingLogsForTransaction(transactionId: string): Prom
   )
   if (!res.ok) return []
   const rows = (await res.json()) as Record<string, unknown>[]
-  return rows.map((row) => {
-    const prov = row.lcr_providers as { code?: string; name?: string } | null
-    return {
-      id: String(row.id),
-      transactionId: row.transaction_id != null ? String(row.transaction_id) : null,
-      countryId: row.country_id != null ? String(row.country_id) : null,
-      operatorId: row.operator_id != null ? String(row.operator_id) : null,
-      productId: row.product_id != null ? String(row.product_id) : null,
-      providerId: row.provider_id != null ? String(row.provider_id) : null,
-      providerCode: prov?.code,
-      providerName: prov?.name,
-      routingType: String(row.routing_type ?? 'LCR') as 'RULE' | 'LCR',
-      providerCost: row.provider_cost != null ? Number(row.provider_cost) : null,
-      fallbackUsed: Boolean(row.fallback_used),
-      status: String(row.status ?? 'SELECTED'),
-      createdAt: String(row.created_at ?? ''),
-    }
-  })
+  return rows.map((row) => mapRoutingLogRow(row))
 }
 
 export type RoutingAuditDetail = {
@@ -440,10 +546,15 @@ export type RoutingAuditDetail = {
   distributor_ref: string
   internal_plan_id: string | null
   status: 'success' | 'failed'
+  send_amount?: number | null
+  user_currency?: string | null
+  provider_cost?: number | null
+  provider_currency?: string | null
   routing_decision: Record<string, unknown>
   attempts: Array<{
     providerName: string
     cost: number | null
+    currency?: string | null
     source: 'RULE' | 'LCR'
     ok: boolean
     error?: string
@@ -477,6 +588,7 @@ export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingA
       providerId: string
       providerName: string
       costPrice: number | null
+      currency: string | null
       margin: number | null
       priority: number | null
       eligibility: boolean
@@ -486,6 +598,10 @@ export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingA
 
   const attempts: RoutingAuditDetail['attempts'] = []
   let success = false
+  let userAmount: number | null = null
+  let userCurrency: string | null = null
+  let providerCost: number | null = null
+  let providerCurrency: string | null = null
 
   for (const row of parsed) {
     const { log, meta, event } = row
@@ -504,6 +620,7 @@ export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingA
         providerId: log.providerId,
         providerName: log.providerName || log.providerCode || log.providerId,
         costPrice: log.providerCost,
+        currency: log.providerCurrency ?? (typeof meta.providerCurrency === 'string' ? meta.providerCurrency : null),
         margin: null,
         priority: typeof meta.providerPriority === 'number' ? meta.providerPriority : null,
         eligibility: event === 'LCR_PROVIDER_DISCOVERED',
@@ -540,9 +657,14 @@ export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingA
       success = true
       routingDecisionReason = 'RECHARGE_SUCCESS'
       selectedProvider = log.providerName || log.providerCode || log.providerId || selectedProvider
+      providerCost = log.providerCost ?? providerCost
+      providerCurrency = log.providerCurrency ?? providerCurrency
+      userAmount = log.userAmount ?? userAmount
+      userCurrency = log.userCurrency ?? userCurrency
       attempts.push({
         providerName: log.providerName || log.providerCode || '—',
         cost: log.providerCost,
+        currency: log.providerCurrency ?? (typeof meta.providerCurrency === 'string' ? meta.providerCurrency : null),
         source: meta.routingRuleMatched === 'Yes' ? 'RULE' : 'LCR',
         ok: true,
       })
@@ -552,6 +674,7 @@ export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingA
       attempts.push({
         providerName: log.providerName || log.providerCode || '—',
         cost: log.providerCost,
+        currency: log.providerCurrency ?? (typeof meta.providerCurrency === 'string' ? meta.providerCurrency : null),
         source: event === 'RULE_PROVIDER_FAILED' || meta.routingRuleMatched === 'Yes' ? 'RULE' : 'LCR',
         ok: false,
         error: typeof meta.failureReason === 'string' ? meta.failureReason : event,
@@ -581,6 +704,10 @@ export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingA
     distributor_ref: transactionId,
     internal_plan_id: first.productId,
     status: success ? 'success' : 'failed',
+    send_amount: userAmount,
+    user_currency: userCurrency,
+    provider_cost: providerCost,
+    provider_currency: providerCurrency,
     routing_decision: {
       routing_strategy: routingStrategy,
       routing_rule_matched: routingRuleMatched,

@@ -161,6 +161,8 @@ export async function aggUpsertRawPlan(input: RawPlanInput) {
       service_domain_confidence: input.serviceDomainConfidence ?? null,
       service_domain_source: input.serviceDomainSource ?? null,
       country_code: input.countryCode ?? 'UNK',
+      destination_amount: input.destinationAmount ?? null,
+      destination_currency: input.destinationCurrency ?? null,
       fetched_at: new Date().toISOString(),
     }),
   })
@@ -1622,7 +1624,7 @@ async function aggMergeDuplicateSystemPlansBySignatureForProvider(
   for (const plan of systemPlans) {
     const signature = String(plan.normalized_signature ?? '').trim()
     const operatorId = String(plan.system_operator_id ?? '').trim()
-    const countryCode = String(plan.country_code ?? 'UNK').trim().toUpperCase() || 'UNK'
+    const countryCode = (String(plan.country_code ?? 'UNK').trim().toUpperCase()) || 'UNK'
     if (!signature || !operatorId) continue
     const key = `${countryCode}:${operatorId}:${signature}`
     if (!groups.has(key)) groups.set(key, [])

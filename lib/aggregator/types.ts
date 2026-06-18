@@ -68,6 +68,8 @@ export type RawPlanInput = {
   serviceDomainConfidence?: number | null
   serviceDomainSource?: string | null
   countryCode?: string | null
+  destinationAmount?: number | null
+  destinationCurrency?: string | null
 }
 
 export type SystemOperatorInput = {

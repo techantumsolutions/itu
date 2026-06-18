@@ -219,7 +219,7 @@ export async function recordPlanMergeHistoryFromSystemMerge(
       systemOperatorMergeKey: targetContext.operatorMergeKey,
       sourcePlanSignature: sourceSignature,
       targetPlanSignature: targetSignature,
-      sourcePlanName: String(sourcePlan.system_plan_name ?? '').trim() || sourceSignature,
+      sourcePlanName: (String(sourcePlan.system_plan_name ?? '').trim()) || sourceSignature,
       targetPlanName: targetPlanName || targetSignature,
       mergeReason: 'ADMIN_MERGE',
       mergedByAdmin: mergedByAdmin ?? null,

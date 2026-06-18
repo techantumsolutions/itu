@@ -30,7 +30,7 @@ export function buildUserFromProfile(
   profile: ProfileRow | null,
 ): User {
   const email = (profile?.email ?? authUser.email ?? '').trim()
-  const name = (profile?.name ?? (authUser.user_metadata?.name as string) ?? '').trim() || 'User'
+  const name = ((profile?.name ?? (authUser.user_metadata?.name as string) ?? '').trim()) || 'User'
   const appRole = normalizeAppRole(profile?.app_role ?? null, email)
   const perms = normalizePermissionsJson(profile?.admin_permissions ?? null)
 

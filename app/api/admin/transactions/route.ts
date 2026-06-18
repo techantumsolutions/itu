@@ -35,7 +35,7 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url)
   const status = (url.searchParams.get('status') ?? '').trim()
-  const limit = Math.min(Number(url.searchParams.get('limit') ?? '100') || 100, 500)
+  const limit = Math.min((Number(url.searchParams.get('limit') ?? '100')) || 100, 500)
   const statusFilter = status && status !== 'all' ? `status=eq.${encodeURIComponent(status)}&` : ''
 
   const res = await supabaseRest(

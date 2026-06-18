@@ -18,7 +18,7 @@ export function matchTrustedOperator(
 ): any | null {
   const normalized = normalizeOperatorForRegistry(operatorName)
   if (!normalized) return null
-  const country = (countryCode ?? '*').trim().toUpperCase() || '*'
+  const country = ((countryCode ?? '*').trim().toUpperCase()) || '*'
 
   const pool = dbMatches && dbMatches.length > 0 ? dbMatches : testTrustedOperators
 

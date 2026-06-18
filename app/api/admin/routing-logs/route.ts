@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
-import { listRoutingLogs } from '@/lib/routing/repository'
+import { listRoutingLogs, enrichRoutingLogsWithPricing } from '@/lib/routing/repository'
 
 export async function GET(request: Request) {
   if (!(await adminCanUseFeature(request, 'routing', { allowLegacyHeader: true }))) {
@@ -68,7 +68,12 @@ export async function GET(request: Request) {
     let ruleProvider: string | null = null
     let resolvedProviderName: string | undefined = finalLog.providerName
     let resolvedProviderCode: string | undefined = finalLog.providerCode
+    let resolvedProviderId: string | null = finalLog.providerId ?? null
     let resolvedCost: number | null = null
+    let resolvedProviderCurrency: string | null = null
+    let resolvedUserAmount: number | null = null
+    let resolvedUserCurrency: string | null = null
+    let resolvedStatus = finalLog.status
     let outcomeStatus = 'processing'
 
     for (const log of sortedTxLogs) {
@@ -81,10 +86,20 @@ export async function GET(request: Request) {
         if (parsed.attemptNumber && parsed.attemptNumber > maxAttempt) {
           maxAttempt = parsed.attemptNumber
         }
+        if (typeof parsed.providerCurrency === 'string' && parsed.providerCurrency) {
+          resolvedProviderCurrency = String(parsed.providerCurrency).toUpperCase()
+        }
+        if (typeof parsed.providerCost === 'number' && Number.isFinite(parsed.providerCost)) {
+          resolvedCost = parsed.providerCost
+        }
 
         // Keep the latest non-null provider cost and identity from the same routing/attempt event.
         if (log.providerCost != null) {
           resolvedCost = log.providerCost
+          resolvedProviderCurrency = log.providerCurrency ?? resolvedProviderCurrency
+          resolvedUserAmount = log.userAmount ?? resolvedUserAmount
+          resolvedUserCurrency = log.userCurrency ?? resolvedUserCurrency
+          if (log.providerId) resolvedProviderId = log.providerId
           if (log.providerName || log.providerCode) {
             resolvedProviderName = log.providerName ?? resolvedProviderName
             resolvedProviderCode = log.providerCode ?? resolvedProviderCode
@@ -93,14 +108,20 @@ export async function GET(request: Request) {
           resolvedProviderName = log.providerName ?? resolvedProviderName
           resolvedProviderCode = log.providerCode ?? resolvedProviderCode
         }
+        if (log.providerId && !resolvedProviderId) resolvedProviderId = log.providerId
         
         const event = parsed.event
         if (event === 'RECHARGE_SUCCESS') {
           outcomeStatus = 'success'
           finalLog = log
+          resolvedStatus = log.status
           resolvedProviderName = log.providerName ?? resolvedProviderName
           resolvedProviderCode = log.providerCode ?? resolvedProviderCode
+          resolvedProviderId = log.providerId ?? resolvedProviderId
           resolvedCost = log.providerCost ?? resolvedCost
+          resolvedProviderCurrency = log.providerCurrency ?? resolvedProviderCurrency
+          resolvedUserAmount = log.userAmount ?? resolvedUserAmount
+          resolvedUserCurrency = log.userCurrency ?? resolvedUserCurrency
         } else if (
           event === 'RECHARGE_FAILED' ||
           event === 'MAX_RETRY_EXCEEDED' ||
@@ -110,6 +131,7 @@ export async function GET(request: Request) {
         ) {
           outcomeStatus = 'failed'
           finalLog = log
+          resolvedStatus = log.status
         }
       } else {
         // Legacy status handling
@@ -127,12 +149,17 @@ export async function GET(request: Request) {
       countryId: finalLog.countryId,
       operatorId: finalLog.operatorId,
       productId: finalLog.productId,
+      providerId: resolvedProviderId,
       providerCode: resolvedProviderCode,
       providerName: resolvedProviderName,
       routingType: ruleMatched === 'Yes' ? 'RULE' : 'LCR',
       providerCost: resolvedCost,
+      providerCurrency: resolvedProviderCurrency,
+      userAmount: resolvedUserAmount,
+      userCurrency: resolvedUserCurrency,
       fallbackUsed: maxAttempt > 1,
       status: outcomeStatus,
+      routingLogStatus: resolvedStatus,
       createdAt: finalLog.createdAt,
       metadata: {
         routingStrategy: strategy,
@@ -164,6 +191,7 @@ export async function GET(request: Request) {
 
   const total = groupedLogs.length
   const paginated = groupedLogs.slice(offset, offset + limit)
+  const enriched = await enrichRoutingLogsWithPricing(paginated)
 
-  return NextResponse.json({ logs: paginated, total, limit, offset })
+  return NextResponse.json({ logs: enriched, total, limit, offset })
 }

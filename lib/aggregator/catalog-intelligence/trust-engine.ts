@@ -29,7 +29,7 @@ export class OperatorTrustEngine {
       }
     }
 
-    const country = (countryCode ?? '*').trim().toUpperCase() || '*'
+    const country = ((countryCode ?? '*').trim().toUpperCase()) || '*'
     const reasons: string[] = []
     let score = 0
     let matchSource = 'UNKNOWN'

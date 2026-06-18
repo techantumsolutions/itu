@@ -932,7 +932,7 @@ export default function OperatorsPage() {
                         <TableCell>
                           <div className="flex flex-col gap-0.5">
                             <span className="font-semibold text-sm text-foreground">
-                              {countryNameMap.get(String(row.countryCode ?? '').trim().toUpperCase()) || '—'}
+                              {countryNameMap.get((String(row.countryCode ?? '').trim().toUpperCase())) || '—'}
                             </span>
                             <span className="text-[10px] text-muted-foreground font-mono font-medium">
                               {String(row.countryCode ?? '—').toUpperCase()}
@@ -1114,7 +1114,7 @@ export default function OperatorsPage() {
                   <div key={op.id} className="flex justify-between items-center text-xs px-2 py-1 bg-background border rounded-sm">
                     <span className="font-semibold truncate max-w-[220px]">{op.system_operator_name}</span>
                     <Badge variant="outline" className="font-mono scale-90">
-                      {countryNameMap.get(String(op.country_id ?? '').trim().toUpperCase()) || op.country_id}
+                      {countryNameMap.get((String(op.country_id ?? '').trim().toUpperCase())) || op.country_id}
                     </Badge>
                   </div>
                 ))}
@@ -1129,7 +1129,7 @@ export default function OperatorsPage() {
                 <SelectContent>
                   {selectedOperators.map((op) => (
                     <SelectItem key={op.id} value={op.id}>
-                      {op.system_operator_name} ({countryNameMap.get(String(op.country_id ?? '').trim().toUpperCase()) || op.country_id})
+                      {op.system_operator_name} ({countryNameMap.get((String(op.country_id ?? '').trim().toUpperCase())) || op.country_id})
                     </SelectItem>
                   ))}
                 </SelectContent>

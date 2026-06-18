@@ -269,7 +269,7 @@ function StoreBadgeLink({
 }
 
 function LandingAppDownloadSection({ promo }: { promo: AppPromoContent }) {
-  const bg = (promo.backgroundGradient ?? '').trim() || 'from-[#e4ecf4] via-[#eef3f8] to-[#f2f6fb]'
+  const bg = ((promo.backgroundGradient ?? '').trim()) || 'from-[#e4ecf4] via-[#eef3f8] to-[#f2f6fb]'
   const visual = (promo.sectionImage ?? '').trim()
 
   return (
@@ -467,7 +467,7 @@ export default function HomePage() {
       const fb = FALLBACK_OPERATOR_LOGOS[i % FALLBACK_OPERATOR_LOGOS.length]!
       return {
         src: src || fb.src,
-        alt: (x.alt ?? '').trim() || fb.alt,
+        alt: ((x.alt ?? '').trim()) || fb.alt,
       }
     })
     return mapped.length ? mapped : FALLBACK_OPERATOR_LOGOS

@@ -221,7 +221,7 @@ export function groupEquivalentDisplayPlans(plans: SystemPlanMergeRow[]): Map<st
 
   for (const plan of plans) {
     const operatorId = String(plan.system_operator_id ?? '').trim()
-    const countryCode = String(plan.country_code ?? 'UNK').trim().toUpperCase() || 'UNK'
+    const countryCode = (String(plan.country_code ?? 'UNK').trim().toUpperCase()) || 'UNK'
     if (!operatorId) continue
 
     const featureKey = buildPlanFeatureKey(plan)

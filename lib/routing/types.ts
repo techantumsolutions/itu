@@ -48,6 +48,9 @@ export type RoutingLogRow = {
   providerName?: string
   routingType: RoutingType
   providerCost: number | null
+  providerCurrency?: string | null
+  userAmount?: number | null
+  userCurrency?: string | null
   fallbackUsed: boolean
   status: string
   createdAt: string

@@ -9,6 +9,8 @@ import {
   insertDetailedRoutingLog,
 } from '@/lib/routing/repository'
 import { dbGetInternalPlan } from '@/lib/lcr-v2/recharge-db'
+import { planMappingPricingKey } from '@/lib/catalog/provider-wholesale-pricing'
+import { batchResolvePlanMappingPricing } from '@/lib/routing/plan-mapping-pricing'
 import type {
   LcrEngineSettings,
   RoutingProviderCandidate,
@@ -135,6 +137,26 @@ async function loadCandidates(productId: string): Promise<{
   )
   if (!mapRes.ok) throw new Error(await mapRes.text())
   const mappings = (await mapRes.json()) as MappingRow[]
+
+  if (mappings.length) {
+    const wholesaleByKey = await batchResolvePlanMappingPricing(
+      mappings.map((mapping) => ({
+        planId: productId,
+        providerId: mapping.provider_id,
+        providerPlanId: mapping.provider_plan_id,
+      })),
+    )
+    for (const mapping of mappings) {
+      const resolved =
+        wholesaleByKey.get(
+          planMappingPricingKey(productId, mapping.provider_id, mapping.provider_plan_id),
+        ) ?? wholesaleByKey.get(planMappingPricingKey(productId, mapping.provider_id, null))
+      if (resolved?.wholesaleAmount != null) {
+        mapping.provider_price = resolved.wholesaleAmount
+        mapping.provider_currency = resolved.wholesaleCurrency
+      }
+    }
+  }
 
   const providersRes = await supabaseRest(
     `lcr_providers?select=id,code,name,is_active,priority,status,supported_countries`,

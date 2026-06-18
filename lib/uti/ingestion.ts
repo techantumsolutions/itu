@@ -4,6 +4,7 @@ import { getConnector } from '@/lib/providers/registry'
 import { fingerprintPlan } from '@/lib/uti/normalize'
 import type { SyncCatalogOptions } from '@/lib/lcr/sync-options'
 import { resolveSyncCountries } from '@/lib/lcr/sync-options'
+import { wholesaleCostFromNormalizedPlan } from '@/lib/catalog/provider-wholesale-pricing'
 import {
   dbCreateInternalPlan,
   dbEnqueuePlanReview,
@@ -83,13 +84,15 @@ export async function ingestProviderPlans(config: ProviderConfig, options?: Sync
       if (!existing && internal) createdInternalPlans += 1
       if (!internal?.id) continue
 
+      const wholesale = wholesaleCostFromNormalizedPlan(p)
+
       // Map provider plan -> internal plan
       await dbUpsertInternalPlanMapping({
         internalPlanId: internal.id,
         providerId: config.id,
         providerPlanId: p.providerPlanId,
-        providerPrice: p.retailAmount,
-        providerCurrency: p.retailCurrency,
+        providerPrice: wholesale.wholesaleAmount ?? 0,
+        providerCurrency: wholesale.wholesaleCurrency ?? p.retailCurrency,
         providerPriority: config.priority,
         margin: 0,
         enabled: true,

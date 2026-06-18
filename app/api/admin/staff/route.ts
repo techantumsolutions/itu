@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     permissions?: Record<string, unknown>
   } | null
   const email = (body?.email ?? '').trim().toLowerCase()
-  const name = (body?.name ?? '').trim() || email.split('@')[0] || 'Admin'
+  const name = ((body?.name ?? '').trim()) || email.split('@')[0] || 'Admin'
   if (!email) {
     return NextResponse.json({ error: 'email is required' }, { status: 400 })
   }

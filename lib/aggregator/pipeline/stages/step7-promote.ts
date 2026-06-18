@@ -14,6 +14,7 @@ import {
   shouldBlockOperatorAsNonMobile,
 } from '@/lib/aggregator/telecom-validator'
 import { buildSystemPlanInput } from '@/lib/aggregator/plan-normalizer'
+import { resolveWholesalePricing } from '@/lib/catalog/provider-wholesale-pricing'
 import { createOrGetInternalPlan } from '@/lib/aggregator/sync-service'
 import { OperatorTrustEngine } from '@/lib/aggregator/catalog-intelligence/trust-engine'
 import { dbUpsertInternalPlanMapping } from '@/lib/uti/repository'
@@ -109,6 +110,25 @@ async function promoteOperatorPlans(input: {
     const rawPlanEntry = resolveRawPlanForAggPlan(plan, input.rawPlanByAggId)
     const providerPlanId = rawPlanEntry?.provider_plan_id ?? String(plan.aggregator_plan_id)
 
+    const wholesale = rawPlanEntry
+      ? resolveWholesalePricing({
+          rawJson: rawPlanEntry.raw_json,
+          amount: rawPlanEntry.amount,
+          currency: rawPlanEntry.currency,
+          destinationAmount: rawPlanEntry.destination_amount,
+          destinationCurrency: rawPlanEntry.destination_currency,
+          retailAmount: plan.retail_amount,
+          retailCurrency: plan.currency_unit,
+        })
+      : resolveWholesalePricing({
+          rawJson: plan.raw_response,
+          retailAmount: plan.retail_amount,
+          retailCurrency: plan.currency_unit,
+        })
+
+    const mappedWholesaleAmount = wholesale.wholesaleAmount ?? plan.retail_amount ?? 0
+    const mappedWholesaleCurrency = wholesale.wholesaleCurrency ?? plan.currency_unit ?? 'USD'
+
     const fields = extractRawPlanFields(plan.raw_response)
     const serviceStr = fields.serviceName || (plan.type === 'DATA' || String(plan.type).toUpperCase().includes('DATA') ? 'Data' : 'Mobile')
     const subserviceStr = fields.subserviceName || undefined
@@ -129,8 +149,12 @@ async function promoteOperatorPlans(input: {
       planType: plan.type,
       benefits: [],
       requiredFields: [],
-      retailAmount: plan.retail_amount || 0,
-      retailCurrency: plan.currency_unit || 'USD',
+      retailAmount: mappedWholesaleAmount,
+      retailCurrency: mappedWholesaleCurrency,
+      wholesaleAmount: wholesale.wholesaleAmount ?? undefined,
+      wholesaleCurrency: wholesale.wholesaleCurrency ?? undefined,
+      destinationAmount: wholesale.destinationAmount ?? undefined,
+      destinationUnit: wholesale.destinationCurrency ?? undefined,
       raw: plan.raw_response || {},
     } as any
 
@@ -177,8 +201,8 @@ async function promoteOperatorPlans(input: {
       internalPlanId: internal.plan.id,
       providerId: input.providerId,
       providerPlanId,
-      providerPrice: plan.retail_amount ?? 0,
-      providerCurrency: plan.currency_unit || 'USD',
+      providerPrice: mappedWholesaleAmount,
+      providerCurrency: mappedWholesaleCurrency,
       providerPriority: input.config.priority ?? 100,
       margin: 0,
       enabled: true,

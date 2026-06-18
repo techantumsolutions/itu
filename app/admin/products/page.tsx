@@ -470,7 +470,7 @@ export default function AdminProductsPage() {
                 <TableHead className="w-[28%]">Plan name</TableHead>
                 <TableHead className="w-[12%]">Country</TableHead>
                 <TableHead className="w-[24%]">Operator name</TableHead>
-                <TableHead className="w-[10%]">Providers</TableHead>
+                {/* <TableHead className="w-[10%]">Providers</TableHead> */}
                 <TableHead className="w-[12%]">Category</TableHead>
                 <TableHead className="w-[12%]">Status</TableHead>
                 <TableHead className="w-[12%] text-right">Action</TableHead>
@@ -576,9 +576,9 @@ export default function AdminProductsPage() {
                       )}
                     </TableCell>
                     <TableCell>{plan.operator_name || '—'}</TableCell>
-                    <TableCell>
+                    {/* <TableCell>
                       <Badge variant="outline">{plan.provider_count ?? 0}</Badge>
-                    </TableCell>
+                    </TableCell> */}
                     <TableCell className="capitalize">{plan.category || '—'}</TableCell>
                     <TableCell>
                       <Badge variant={plan.active ? 'default' : 'secondary'}>
@@ -735,9 +735,9 @@ export default function AdminProductsPage() {
       <Dialog open={costDialogOpen} onOpenChange={setCostDialogOpen}>
         <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Provider Comparison</DialogTitle>
+            <DialogTitle>Plan details &amp; provider mapping</DialogTitle>
             <DialogDescription>
-              Provider pricing for the selected plan only.
+              System plan information and provider pricing for the selected plan.
             </DialogDescription>
           </DialogHeader>
 
@@ -752,12 +752,26 @@ export default function AdminProductsPage() {
             </div>
           ) : costBreakdown ? (
             <div className="space-y-4">
-              <div className="rounded-md border bg-muted/30 p-4 space-y-1">
-                <p className="font-semibold">{costBreakdown.plan?.systemPlanName ?? costBreakdown.systemPlanName}</p>
-                <p className="text-xs text-muted-foreground">
-                  System plan ID: {costBreakdown.plan?.systemPlanId ?? costBreakdown.systemPlanId}
-                </p>
-                <div className="pt-2 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+              <div className="rounded-md border bg-muted/30 p-4 space-y-3">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">System plan</p>
+                  <p className="font-semibold text-base mt-1">
+                    {costBreakdown.plan?.systemPlanName ?? costBreakdown.systemPlanName}
+                  </p>
+                </div>
+                {costBreakdown.plan?.description ? (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">Description</p>
+                    <p className="text-sm mt-0.5 whitespace-pre-wrap">{costBreakdown.plan.description}</p>
+                  </div>
+                ) : null}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+                  {costBreakdown.plan?.validity ? (
+                    <div>
+                      <span className="text-muted-foreground">Validity: </span>
+                      <span className="font-medium">{costBreakdown.plan.validity}</span>
+                    </div>
+                  ) : null}
                   <div>
                     <span className="text-muted-foreground">System plan price: </span>
                     <span className="font-medium">
@@ -778,6 +792,9 @@ export default function AdminProductsPage() {
                     </span>
                   </div>
                 </div>
+                <p className="text-xs text-muted-foreground pt-1 border-t border-border/50">
+                  System plan ID: {costBreakdown.plan?.systemPlanId ?? costBreakdown.systemPlanId}
+                </p>
               </div>
 
               {costBreakdown.providers.length === 0 ? (

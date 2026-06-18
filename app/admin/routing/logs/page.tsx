@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { formatMoney } from '@/lib/routing/log-pricing'
 
 type LogRow = {
   id: string
@@ -27,6 +28,9 @@ type LogRow = {
   providerName?: string
   routingType: 'RULE' | 'LCR'
   providerCost: number | null
+  providerCurrency?: string | null
+  userAmount?: number | null
+  userCurrency?: string | null
   fallbackUsed: boolean
   status: string
   createdAt: string
@@ -40,7 +44,7 @@ type LogRow = {
 }
 
 const GRID_TEMPLATE_COLUMNS =
-  'minmax(140px, 1.4fr) minmax(110px, 1.1fr) minmax(60px, 0.6fr) minmax(90px, 0.9fr) minmax(80px, 0.8fr) minmax(60px, 0.6fr) minmax(110px, 1.1fr) minmax(100px, 1fr) minmax(110px, 1.1fr) minmax(70px, 0.7fr) minmax(120px, 1.2fr) minmax(70px, 0.7fr) minmax(95px, 0.95fr)'
+  'minmax(140px, 1.4fr) minmax(110px, 1.1fr) minmax(60px, 0.6fr) minmax(90px, 0.9fr) minmax(80px, 0.8fr) minmax(60px, 0.6fr) minmax(110px, 1.1fr) minmax(100px, 1fr) minmax(110px, 1.1fr) minmax(70px, 0.7fr) minmax(120px, 1.2fr) minmax(95px, 0.95fr) minmax(95px, 0.95fr) minmax(70px, 0.7fr)'
 
 
 type Provider = { id: string; code: string; name: string }
@@ -189,7 +193,7 @@ export default function RoutingLogsPage() {
 
           <Table className="w-full overflow-x-auto">
             <TableHeader>
-              <TableRow className="grid w-full gap-2 items-center px-4" style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}>
+              <TableRow className="grid w-full gap-4 items-center px-4" style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}>
                 <TableHead className="flex items-center">Time</TableHead>
                 <TableHead className="flex items-center">Transaction</TableHead>
                 <TableHead className="flex items-center">Country</TableHead>
@@ -201,20 +205,21 @@ export default function RoutingLogsPage() {
                 <TableHead className="flex items-center">Rule Provider</TableHead>
                 <TableHead className="flex items-center">Attempts</TableHead>
                 <TableHead className="flex items-center">Provider</TableHead>
-                <TableHead className="flex items-center">Cost</TableHead>
+                <TableHead className="flex items-center">User paid</TableHead>
+                <TableHead className="flex items-center">Provider cost</TableHead>
                 <TableHead className="flex items-center">Status</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={13} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={14} className="py-8 text-center text-muted-foreground">
                     Loading…
                   </TableCell>
                 </TableRow>
               ) : logs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={13} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={14} className="py-8 text-center text-muted-foreground">
                     No routing logs yet.
                   </TableCell>
                 </TableRow>
@@ -230,34 +235,35 @@ export default function RoutingLogsPage() {
                   const totalAttempts = log.metadata?.totalAttempts ?? (log.fallbackUsed ? '> 1' : '1')
 
                   return (
-                    <tr key={log.id} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                      <td colSpan={13} className="p-0">
+                    <TableRow key={log.id} className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                      <div className="p-0">
                         {/* Summary Header Row */}
-                        <div 
+                        <div
                           className="flex items-center w-full cursor-pointer p-4 select-none hover:bg-muted/50" 
                           onClick={() => toggleExpand(log.transactionId)}
                         >
-                          <div className="grid w-full items-center text-sm gap-2" style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}>
+                          <div className="grid w-full items-center text-sm gap-1" style={{ gridTemplateColumns: GRID_TEMPLATE_COLUMNS }}>
                             <div className="flex items-center gap-1">
                               {isExpanded ? <ChevronDown className="size-4 shrink-0 text-muted-foreground" /> : <ChevronRight className="size-4 shrink-0 text-muted-foreground" />}
                               <span>{new Date(log.createdAt).toLocaleString()}</span>
                             </div>
-                            <div className="font-mono text-xs truncate" title={log.transactionId ?? ''}>{log.transactionId ?? '—'}</div>
-                            <div>{log.countryId ?? '—'}</div>
-                            <div className="truncate" title={log.operatorId ?? ''}>{log.operatorId ?? '—'}</div>
-                            <div className="font-mono text-xs truncate" title={log.productId ?? ''}>{log.productId ?? '—'}</div>
-                            <div>
+                            <TableCell className="font-mono text-xs truncate" title={log.transactionId ?? ''}>{log.transactionId ?? '—'}</TableCell>
+                            <TableCell>{log.countryId ?? '—'}</TableCell>
+                            <TableCell className="truncate" title={log.operatorId ?? ''}>{log.operatorId ?? '—'}</TableCell>
+                            <TableCell className="font-mono text-xs truncate" title={log.productId ?? ''}>{log.productId ?? '—'}</TableCell>
+                            <TableCell>
                               <Badge variant={log.routingType === 'RULE' ? 'default' : 'secondary'}>{log.routingType}</Badge>
-                            </div>
-                            <div className="font-semibold text-primary">{strategy}</div>
-                            <div>
+                            </TableCell>
+                            <TableCell className="font-semibold text-primary">{strategy}</TableCell>
+                            <TableCell className='text-center'>
                               <Badge variant={ruleMatched === 'Yes' ? 'default' : 'outline'}>{ruleMatched}</Badge>
-                            </div>
-                            <div className="truncate" title={ruleProvider}>{ruleProvider}</div>
-                            <div className="font-semibold">{totalAttempts}</div>
-                            <div>{log.providerName ?? log.providerCode ?? '—'}</div>
-                            <div>{log.providerCost != null ? log.providerCost.toFixed(2) : '—'}</div>
-                            <div>
+                            </TableCell>
+                            <TableCell className="truncate text-center" title={ruleProvider}>{ruleProvider}</TableCell>
+                            <TableCell className="font-semibold text-center">{totalAttempts}</TableCell>
+                            <TableCell className="text-center">{log.providerName ?? log.providerCode ?? '—'}</TableCell>
+                            <TableCell className="text-xs text-center">{formatMoney(log.userAmount, log.userCurrency)}</TableCell>
+                            <TableCell className="text-xs text-center">{formatMoney(log.providerCost, log.providerCurrency)}</TableCell>
+                            <TableCell className="text-center">
                               <Badge 
                                 variant={
                                   log.status === 'success' || log.status === 'completed' 
@@ -269,7 +275,7 @@ export default function RoutingLogsPage() {
                               >
                                 {log.status}
                               </Badge>
-                            </div>
+                            </TableCell>
                           </div>
                         </div>
 
@@ -283,10 +289,18 @@ export default function RoutingLogsPage() {
                             ) : (
                               <div className="space-y-6">
                                 {/* Header Summary */}
-                                <div className="grid grid-cols-2 gap-4 md:grid-cols-5 bg-card p-4 rounded-lg border text-sm shadow-sm">
+                                <div className="grid grid-cols-2 gap-4 md:grid-cols-6 bg-card p-4 rounded-lg border text-sm shadow-sm">
                                   <div>
                                     <div className="text-muted-foreground text-xs">Routing Strategy</div>
                                     <div className="font-semibold text-primary">{detail.routing_decision?.routing_strategy ?? detail.routing_decision?.routingStrategy ?? '—'}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-muted-foreground text-xs">User paid</div>
+                                    <div className="font-semibold">{formatMoney(detail.send_amount, detail.user_currency)}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-muted-foreground text-xs">Provider cost</div>
+                                    <div className="font-semibold">{formatMoney(detail.provider_cost, detail.provider_currency)}</div>
                                   </div>
                                   <div>
                                     <div className="text-muted-foreground text-xs">Rule Matched</div>
@@ -357,6 +371,7 @@ export default function RoutingLogsPage() {
                                             const providerName = ev.providerName || ev.providerId || ev.provider || '—'
                                             const isEligible = ev.eligibility ?? ev.eligible ?? false
                                             const cost = ev.costPrice ?? ev.cost
+                                            const currency = ev.currency
                                             const margin = ev.margin
                                             const priority = ev.priority
                                             const reason = ev.filterReason ?? ev.reason
@@ -383,7 +398,7 @@ export default function RoutingLogsPage() {
                                                   </div>
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-2 mt-1 text-muted-foreground">
-                                                  <div>Cost: <span className="font-medium text-foreground">{cost != null && cost !== Infinity ? cost.toFixed(2) : 'N/A'}</span></div>
+                                                  <div>Cost: <span className="font-medium text-foreground">{formatMoney(cost, ev.currency)}</span></div>
                                                   <div>Margin: <span className="font-medium text-foreground">{margin != null ? `${margin}%` : 'N/A'}</span></div>
                                                 </div>
                                                 {!isEligible && reason && (
@@ -425,7 +440,7 @@ export default function RoutingLogsPage() {
                                               </div>
                                               <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground">
                                                 <div>Source: <span className="font-medium text-foreground">{hop.source}</span></div>
-                                                <div>Cost: <span className="font-medium text-foreground">{hop.cost != null ? hop.cost.toFixed(2) : '—'}</span></div>
+                                                <div>Cost: <span className="font-medium text-foreground">{formatMoney(hop.cost, hop.currency)}</span></div>
                                               </div>
                                               {!hop.ok && (
                                                 <div className="text-[10px] text-destructive bg-rose-50/50 p-2 rounded border border-rose-100 mt-1 font-mono">
@@ -448,8 +463,8 @@ export default function RoutingLogsPage() {
                             )}
                           </div>
                         )}
-                      </td>
-                    </tr>
+                      </div>
+                    </TableRow>
                   )
                 })
               )}

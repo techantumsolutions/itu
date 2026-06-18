@@ -36,7 +36,7 @@ async function geoFromIpApi(ip: string): Promise<{ country: string | null; curre
   const data = (await res.json()) as IpApiResponse
   const country = normalizeCountryCode(data.country_code ?? null)
   const currency = normalizeCurrencyCode(data.currency ?? null)
-  const language = (data.languages ?? '').split(',')[0]?.trim() || null
+  const language = ((data.languages ?? '').split(',')[0]?.trim()) || null
   return { country, currency, language }
 }
 

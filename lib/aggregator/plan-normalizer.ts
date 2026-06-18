@@ -2,6 +2,7 @@ import type { NormalizedBenefit, NormalizedPlan } from '@/lib/providers/types'
 import { extractPlanSignatureParts, normalizedPlanSignature, slugify } from '@/lib/aggregator/signature'
 import type { DuplicateCandidate, SystemPlanInput } from '@/lib/aggregator/types'
 import { classifyPlan } from '@/lib/aggregator/plan-classifier'
+import { wholesaleCostFromNormalizedPlan } from '@/lib/catalog/provider-wholesale-pricing'
 
 
 function formatBenefitAmount(benefit: NormalizedBenefit | undefined): string | null {
@@ -39,13 +40,14 @@ export function buildSystemPlanInput(
 ): SystemPlanInput {
   const parts = extractPlanSignatureParts(params.plan)
   const name = systemPlanName(params.plan)
+  const wholesale = wholesaleCostFromNormalizedPlan(params.plan)
   return {
     systemOperatorId: params.systemOperatorId,
     internalPlanId: params.internalPlanId ?? null,
     systemPlanName: name,
     slug: slugify(name),
-    amount: params.plan.retailAmount ?? params.plan.destinationAmount ?? null,
-    currency: params.plan.retailCurrency ?? null,
+    amount: wholesale.wholesaleAmount ?? params.plan.destinationAmount ?? null,
+    currency: wholesale.wholesaleCurrency ?? params.plan.destinationUnit ?? null,
     validity: params.plan.validityDays ? `${params.plan.validityDays}D` : null,
     talktime: parts.talktime || null,
     dataVolume: parts.data || null,
