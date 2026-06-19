@@ -37,6 +37,7 @@ import { ItuLogoMark } from '@/components/itu-logo-mark'
 import { FooterPaymentLogos } from '@/components/footer-payment-logos'
 import { TargetedAdBanner } from '@/components/targeted-ad-banner'
 import { CMSTypographyScope } from '@/components/cms-typography-scope'
+import { AdManager } from '@/components/ui/ads/ad-manager'
 
 const navLinks = [
   { href: '/', label: 'Home', match: (p: string) => p === '/' },
@@ -639,6 +640,8 @@ export default function PublicLayout({
         )}
       >
         {pathname === '/' && <TargetedAdBanner />}
+        <AdManager placement="global_popup" country={regionCode} />
+        <AdManager placement="global_scroll" country={regionCode} />
         {pathname === '/' ? (
           children
         ) : pathname.startsWith('/account') ? (
