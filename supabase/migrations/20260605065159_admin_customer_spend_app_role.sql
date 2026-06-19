@@ -1,0 +1,2 @@
+-- Placeholder: this version was applied directly on some databases before 20260605121857.
+-- Schema changes live in 20260605121857_admin_customer_spend_app_role.sql.

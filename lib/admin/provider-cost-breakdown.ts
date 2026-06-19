@@ -1,12 +1,14 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { extractPricingFromRaw } from '@/lib/admin/provider-pricing-extractor'
 import { resolveWholesalePricing } from '@/lib/catalog/provider-wholesale-pricing'
+import { resolveRawPlanForMapping } from '@/lib/aggregator/plan-mapping-reconciliation'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
 }
 
 type PlanMappingRow = {
+  id: string
   service_provider_id: string
   provider_plan_raw_id?: string | null
   provider_plan_id?: string | null
@@ -29,6 +31,8 @@ type RawPlanRow = {
   raw_json?: unknown
   amount?: number | null
   currency?: string | null
+  destination_amount?: number | null
+  destination_currency?: string | null
   provider_plan_name?: string | null
 }
 
@@ -116,7 +120,7 @@ function buildRechargeCost(input: {
   }
 }
 
-/** Provider comparison scoped strictly to plan_mappings → provider_plans_raw for one system plan. */
+/** Provider comparison for one system plan using stable provider_plan_id keys. */
 export async function loadSystemPlanProviderCostBreakdown(
   systemPlanId: string,
 ): Promise<SystemPlanProviderCostBreakdown | null> {
@@ -152,7 +156,7 @@ export async function loadSystemPlanProviderCostBreakdown(
   }
 
   const planMappingsRes = await supabaseRest(
-    `plan_mappings?system_plan_id=eq.${enc(systemPlanId)}&select=service_provider_id,provider_plan_raw_id,provider_plan_id,matching_score,matching_reason,is_verified`,
+    `plan_mappings?system_plan_id=eq.${enc(systemPlanId)}&select=id,service_provider_id,provider_plan_raw_id,provider_plan_id,matching_score,matching_reason,is_verified`,
     { cache: 'no-store' },
   )
   if (!planMappingsRes.ok) {
@@ -168,26 +172,6 @@ export async function loadSystemPlanProviderCostBreakdown(
     }
   }
 
-  const rawIds = [
-    ...new Set(planMappings.map((m) => m.provider_plan_raw_id).filter((id): id is string => Boolean(id))),
-  ]
-
-  const rawById = new Map<string, RawPlanRow>()
-  if (rawIds.length > 0) {
-    for (let i = 0; i < rawIds.length; i += 100) {
-      const chunk = rawIds.slice(i, i + 100)
-      const rawRes = await supabaseRest(
-        `provider_plans_raw?id=in.(${chunk.map(enc).join(',')})&select=id,provider_id,provider_plan_id,raw_json,amount,currency,destination_amount,destination_currency,provider_plan_name`,
-        { cache: 'no-store' },
-      )
-      if (!rawRes.ok) continue
-      const rawRows = (await rawRes.json()) as RawPlanRow[]
-      for (const row of rawRows) {
-        if (row.id) rawById.set(row.id, row)
-      }
-    }
-  }
-
   type ResolvedMapping = {
     providerId: string
     providerPlanId: string
@@ -198,13 +182,18 @@ export async function loadSystemPlanProviderCostBreakdown(
 
   const resolvedMappings: ResolvedMapping[] = []
   for (const mapping of planMappings) {
-    const rawPlan = mapping.provider_plan_raw_id ? rawById.get(mapping.provider_plan_raw_id) ?? null : null
     const providerId = mapping.service_provider_id
-    const providerPlanId =
-      mapping.provider_plan_id?.trim() ||
-      rawPlan?.provider_plan_id?.trim() ||
-      ''
+    const providerPlanId = mapping.provider_plan_id?.trim() || ''
     if (!providerId || !providerPlanId) continue
+
+    const rawPlan = (await resolveRawPlanForMapping({
+      mappingId: mapping.id,
+      serviceProviderId: providerId,
+      providerPlanId,
+      providerPlanRawId: mapping.provider_plan_raw_id,
+      autoReconnect: true,
+    })) as RawPlanRow | null
+
     resolvedMappings.push({
       providerId,
       providerPlanId,
@@ -301,10 +290,16 @@ export async function loadSystemPlanProviderCostBreakdown(
     return a.providerName.localeCompare(b.providerName)
   })
 
+  const activeProviderCount = new Set(
+    planMappings
+      .filter((m) => m.service_provider_id && m.provider_plan_id?.trim())
+      .map((m) => m.service_provider_id),
+  ).size
+
   return {
     plan: {
       ...planMeta,
-      providerCount: new Set(providers.map((p) => p.providerId)).size,
+      providerCount: activeProviderCount,
     },
     providers,
     ...planMeta,

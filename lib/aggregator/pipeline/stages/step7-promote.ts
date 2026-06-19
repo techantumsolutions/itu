@@ -4,9 +4,16 @@ import {
   aggUpsertSystemOperator,
   aggUpsertOperatorMapping,
   aggUpsertSystemPlan,
-  aggUpsertPlanMapping,
+  aggRepairOrUpsertPlanMapping,
+  aggRepairStalePlanMappingsForAllActiveProviders,
   aggInsertOperatorDomainAudit,
 } from '@/lib/aggregator/repository'
+import {
+  buildProviderRawPlanIndex,
+  calculateStep7SyncHealth,
+  reconcileAllActiveSystemPlanMappings,
+  type ProviderRawPlanSnapshot,
+} from '@/lib/aggregator/plan-mapping-reconciliation'
 import { CatalogIntelligenceEngine } from '@/lib/aggregator/catalog-intelligence'
 import { buildSystemOperatorInput } from '@/lib/aggregator/operator-normalizer'
 import {
@@ -78,6 +85,13 @@ async function promoteOperatorPlans(input: {
   telecomPlans: any[]
   displayOperatorName: string
   rawPlanByAggId: Map<number, RawPlanAggLookup>
+  mappingStats: {
+    repaired: number
+    created: number
+    synced: number
+  }
+  rawIndex: Map<string, ProviderRawPlanSnapshot>
+  providerActive: boolean
 }): Promise<{ promoted: number; skippedCrossCountry: number }> {
   let promotedPlans = 0
   let skippedCrossCountryPlans = 0
@@ -172,26 +186,34 @@ async function promoteOperatorPlans(input: {
     if (!systemPlan?.id) continue
     promotedPlans++
 
-    const rawPlanId = rawPlanEntry?.id
-    if (rawPlanId) {
-      await aggUpsertPlanMapping({
+    const rawPlanId = rawPlanEntry?.id ?? null
+    if (providerPlanId) {
+      const mappingResult = await aggRepairOrUpsertPlanMapping({
         serviceProviderId: input.providerId,
-        providerPlanRawId: rawPlanId,
-        providerPlanId,
         systemPlanId: systemPlan.id,
+        providerPlanId,
+        providerPlanRawId: rawPlanId,
         matchingScore: 100,
         matchingReason: isRegistryVerifiedOperator(input.op)
           ? 'Registry fast path promotion'
           : 'Promoted step staging match',
         isVerified: isRegistryVerifiedOperator(input.op),
         countryCode: planCountry,
+        providerPriority: input.config.priority ?? 100,
+        providerActive: input.providerActive,
+        rawIndex: input.rawIndex,
       }).catch((err) => {
         console.error(
-          `[Step7] Failed plan_mappings upsert for provider_plan_id=${providerPlanId}:`,
+          `[Step7] Failed plan_mappings repair for provider_plan_id=${providerPlanId}:`,
           err,
         )
+        return null
       })
-    } else {
+
+      if (mappingResult?.action === 'repaired') input.mappingStats.repaired++
+      else if (mappingResult?.action === 'created') input.mappingStats.created++
+      else if (mappingResult?.action === 'synced') input.mappingStats.synced++
+    } else if (!rawPlanId) {
       console.warn(
         `[Step7] No provider_plans_raw row for aggregator_plan_id=${plan.aggregator_plan_id} (provider=${input.config.code})`,
       )
@@ -205,7 +227,7 @@ async function promoteOperatorPlans(input: {
       providerCurrency: mappedWholesaleCurrency,
       providerPriority: input.config.priority ?? 100,
       margin: 0,
-      enabled: true,
+      enabled: input.providerActive,
     }).catch((err) => {
       console.error('Failed to upsert internal_plan_provider_mapping in promote stage:', err)
     })
@@ -229,11 +251,13 @@ export async function runStep7Promote(
 
   const rawPlanByAggId = await buildRawPlanLookupByAggId(providerId, async (offset, limit) => {
     const res = await supabaseRest(
-      `provider_plans_raw?provider_id=eq.${providerId}&select=id,provider_plan_id&limit=${limit}&offset=${offset}`,
+      `provider_plans_raw?provider_id=eq.${providerId}&select=id,provider_plan_id,amount,currency,destination_amount,destination_currency,raw_json&order=fetched_at.desc&limit=${limit}&offset=${offset}`,
       { cache: 'no-store' },
     )
-    return (await res.json().catch(() => [])) as Array<{ id: string; provider_plan_id: string }>
+    return (await res.json().catch(() => [])) as RawPlanAggLookup[]
   })
+  const rawIndex = await buildProviderRawPlanIndex(providerId)
+  const providerActive = config.is_active !== false
 
   const opsRes = await supabaseRest(`agg_operators?provider=eq.${config.code}&status=eq.active`, { cache: 'no-store' })
   const aggOps = await opsRes.json().catch(() => []) as any[]
@@ -243,6 +267,7 @@ export async function runStep7Promote(
   let skippedCrossCountryPlans = 0
   let registryPromotedOps = 0
   let skippedNonMobile = 0
+  const mappingStats = { repaired: 0, created: 0, synced: 0 }
 
   for (const op of aggOps) {
     const operatorName = op.name || op.operator_name
@@ -402,6 +427,9 @@ export async function runStep7Promote(
       telecomPlans,
       displayOperatorName,
       rawPlanByAggId,
+      mappingStats,
+      rawIndex,
+      providerActive,
     })
     promotedPlans += planResult.promoted
     skippedCrossCountryPlans += planResult.skippedCrossCountry
@@ -420,15 +448,65 @@ export async function runStep7Promote(
     }
   }
 
+  const activePlanReconciliation = await reconcileAllActiveSystemPlanMappings()
+  const allProviderReconciliation = await aggRepairStalePlanMappingsForAllActiveProviders()
+  const syncHealth = await calculateStep7SyncHealth()
+  const providerLabel = config.name || config.code || providerId
+
+  console.log(
+    [
+      '[Step7 Mapping Validation]',
+      `Provider=${providerLabel}`,
+      `Promoted plans=${promotedPlans}`,
+      `Promotion repaired=${mappingStats.repaired}`,
+      `Promotion created=${mappingStats.created}`,
+      `Promotion pricing synced=${mappingStats.synced}`,
+      `Active-plan reconciliation raw fixed=${activePlanReconciliation.staleRawIdsFixed}`,
+      `Active-plan pricing synced=${activePlanReconciliation.pricingSynced}`,
+      `All-provider raw fixed=${allProviderReconciliation.totals.staleRawIdsFixed}`,
+      `All-provider pricing synced=${allProviderReconciliation.totals.pricingSynced}`,
+      `Missing mappings=${allProviderReconciliation.totals.missingMappings}`,
+      `[Step7 Sync Health]`,
+      `total_system_plans=${syncHealth.totalSystemPlans}`,
+      `active_system_plans=${syncHealth.activeSystemPlans}`,
+      `mapped_system_plans=${syncHealth.mappedSystemPlans}`,
+      `healthy_system_plans=${syncHealth.healthySystemPlans}`,
+      `health_ratio=${(syncHealth.healthRatio * 100).toFixed(1)}%`,
+      `status=${syncHealth.status}`,
+    ].join('\n'),
+  )
+
+  if (syncHealth.status === 'WARNING') {
+    console.warn(
+      `[Step7 Sync Health] WARNING: healthy_system_plans (${syncHealth.healthySystemPlans}) is below 95% of active_system_plans (${syncHealth.activeSystemPlans})`,
+    )
+  }
+
+  if (allProviderReconciliation.totals.missingMappings > 0) {
+    console.warn(
+      `[Step7 Mapping Validation] ${allProviderReconciliation.totals.missingMappings} mapping(s) could not be linked to a current provider_plans_raw row`,
+    )
+  }
+
   return {
     success: true,
-    message: `Promotion complete. Promoted ${promotedOps} operators (${registryPromotedOps} registry fast path) and ${promotedPlans} system plans. Skipped ${skippedNonMobile} non-mobile operators and ${skippedCrossCountryPlans} cross-country plans.`,
+    message: `Promotion complete. Promoted ${promotedOps} operators (${registryPromotedOps} registry fast path) and ${promotedPlans} system plans. Skipped ${skippedNonMobile} non-mobile operators and ${skippedCrossCountryPlans} cross-country plans.${syncHealth.status === 'WARNING' ? ' Sync health WARNING (<95% mapped plans have live raw links).' : ''}`,
     data: {
       promotedOps,
       promotedPlans,
       registryPromotedOps,
       skippedNonMobile,
       skippedCrossCountryPlans,
+      mappingValidation: {
+        existingMappingsRepaired: mappingStats.repaired,
+        newMappingsCreated: mappingStats.created,
+        promotionPricingSynced: mappingStats.synced,
+        activePlanReconciliation,
+        allProviderReconciliation: allProviderReconciliation.totals,
+        staleRawIdsFixed: allProviderReconciliation.totals.staleRawIdsFixed,
+        missingMappings: allProviderReconciliation.totals.missingMappings,
+      },
+      syncHealth,
     },
   }
 }

@@ -203,6 +203,10 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
         plans_fetched: finalResult.normalized,
         plans_accepted: finalResult.systemPlans,
         plans_rejected: finalResult.normalized - finalResult.systemPlans,
+        error_message:
+          step7Data.syncHealth?.status === 'WARNING'
+            ? `Mapping health warning: ${step7Data.syncHealth.healthySystemPlans}/${step7Data.syncHealth.activeSystemPlans} active plans have live raw links`
+            : null,
       }).catch(() => {})
     }
 

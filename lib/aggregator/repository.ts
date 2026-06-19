@@ -52,15 +52,14 @@ export function isMissingAggregatorSchemaError(error: unknown): boolean {
 
 let aggregatorSchemaReady: boolean | null = null
 
-/** True when multi_provider_aggregator_schema tables exist (cached for process lifetime). */
+/** True when multi_provider_aggregator_schema tables exist (positive result cached for process lifetime). */
 export async function isAggregatorSchemaReady(): Promise<boolean> {
-  if (aggregatorSchemaReady != null) return aggregatorSchemaReady
+  if (aggregatorSchemaReady === true) return true
   try {
     const res = await supabaseRest('provider_operator_raw?select=id&limit=1', { cache: 'no-store' })
-    aggregatorSchemaReady = res.ok
-    return aggregatorSchemaReady
+    if (res.ok) aggregatorSchemaReady = true
+    return res.ok
   } catch {
-    aggregatorSchemaReady = false
     return false
   }
 }
@@ -303,7 +302,163 @@ export async function aggUpsertPlanMapping(input: {
   return rows[0] ?? null
 }
 
-/** Distinct provider count per system plan from plan_mappings. */
+export type PlanMappingRepairAction = 'repaired' | 'created' | 'unchanged' | 'synced'
+
+/**
+ * Self-healing plan_mappings keyed by stable identity:
+ * system_plan_id + service_provider_id + provider_plan_id.
+ * Refreshes provider_plan_raw_id and syncs pricing every call.
+ */
+export async function aggRepairOrUpsertPlanMapping(input: {
+  serviceProviderId: string
+  systemPlanId: string
+  providerPlanId: string
+  providerPlanRawId?: string | null
+  matchingScore: number
+  matchingReason?: string | null
+  isVerified?: boolean
+  verifiedBy?: string | null
+  countryCode?: string | null
+  providerPriority?: number
+  providerActive?: boolean
+  rawIndex?: Map<string, import('@/lib/aggregator/plan-mapping-reconciliation').ProviderRawPlanSnapshot>
+}): Promise<{ mapping: Record<string, unknown> | null; action: PlanMappingRepairAction }> {
+  const {
+    buildProviderRawPlanIndex,
+    resolveLatestRawPlan,
+    syncPlanMappingPricingAndAvailability,
+  } = await import('@/lib/aggregator/plan-mapping-reconciliation')
+
+  const providerPlanId = input.providerPlanId?.trim()
+  if (!providerPlanId) {
+    return { mapping: null, action: 'unchanged' }
+  }
+
+  const rawIndex =
+    input.rawIndex ?? (await buildProviderRawPlanIndex(input.serviceProviderId))
+  const resolvedRaw = resolveLatestRawPlan(input.serviceProviderId, providerPlanId, rawIndex)
+  const nextRawId = resolvedRaw?.id ?? input.providerPlanRawId ?? null
+
+  const findRes = await supabaseRest(
+    `plan_mappings?system_plan_id=eq.${enc(input.systemPlanId)}&service_provider_id=eq.${enc(input.serviceProviderId)}&provider_plan_id=eq.${enc(providerPlanId)}&limit=1`,
+    { cache: 'no-store' },
+  )
+  if (!findRes.ok) throw new Error(await findRes.text())
+  const existing = ((await findRes.json()) as Array<Record<string, unknown>>)[0]
+
+  let mapping = existing ?? null
+  let action: PlanMappingRepairAction = 'unchanged'
+
+  if (existing?.id) {
+    const currentRawId = existing.provider_plan_raw_id as string | null | undefined
+    const needsRawRepair =
+      nextRawId != null && (currentRawId == null || currentRawId !== nextRawId)
+
+    if (needsRawRepair) {
+      const patchRes = await supabaseRest(`plan_mappings?id=eq.${enc(String(existing.id))}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({
+          provider_plan_raw_id: nextRawId,
+          updated_at: new Date().toISOString(),
+        }),
+      })
+      if (!patchRes.ok) throw new Error(await patchRes.text())
+      mapping = ((await patchRes.json()) as Array<Record<string, unknown>>)[0] ?? existing
+      action = 'repaired'
+    }
+  } else {
+    const res = await supabaseRest('plan_mappings', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        service_provider_id: input.serviceProviderId,
+        system_plan_id: input.systemPlanId,
+        provider_plan_id: providerPlanId,
+        provider_plan_raw_id: nextRawId,
+        matching_score: input.matchingScore,
+        matching_reason: input.matchingReason ?? null,
+        is_verified: input.isVerified ?? false,
+        verified_by: input.verifiedBy ?? null,
+        country_code: input.countryCode ?? 'UNK',
+        updated_at: new Date().toISOString(),
+      }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const rows = (await res.json()) as Array<Record<string, unknown>>
+    mapping = rows[0] ?? null
+    action = 'created'
+  }
+
+  if (resolvedRaw) {
+    await syncPlanMappingPricingAndAvailability({
+      serviceProviderId: input.serviceProviderId,
+      systemPlanId: input.systemPlanId,
+      providerPlanId,
+      rawPlan: resolvedRaw,
+      providerPriority: input.providerPriority,
+      providerActive: input.providerActive,
+    })
+    if (action === 'unchanged') action = 'synced'
+  }
+
+  return { mapping, action }
+}
+
+export type PlanMappingValidationStats = {
+  staleRawIdsFixed: number
+  missingMappings: number
+  pricingSynced: number
+  mappingsProcessed: number
+  availabilityUpdated: number
+}
+
+/** Repair all plan_mappings for one provider using stable provider_plan_id keys. */
+export async function aggRepairStalePlanMappingsForProvider(
+  providerId: string,
+  options?: { providerPriority?: number; providerActive?: boolean },
+): Promise<PlanMappingValidationStats> {
+  const { reconcilePlanMappingsForProvider } = await import(
+    '@/lib/aggregator/plan-mapping-reconciliation'
+  )
+  const stats = await reconcilePlanMappingsForProvider({
+    providerId,
+    providerPriority: options?.providerPriority,
+    providerActive: options?.providerActive,
+  })
+  return {
+    staleRawIdsFixed: stats.staleRawIdsFixed,
+    missingMappings: stats.missingMappings,
+    pricingSynced: stats.pricingSynced,
+    mappingsProcessed: stats.mappingsProcessed,
+    availabilityUpdated: stats.availabilityUpdated,
+  }
+}
+
+/** Run provider-level reconciliation for every active LCR provider. */
+export async function aggRepairStalePlanMappingsForAllActiveProviders(): Promise<{
+  byProvider: Record<string, PlanMappingValidationStats>
+  totals: PlanMappingValidationStats
+}> {
+  const { reconcilePlanMappingsForAllActiveProviders } = await import(
+    '@/lib/aggregator/plan-mapping-reconciliation'
+  )
+  const { byProvider, totals } = await reconcilePlanMappingsForAllActiveProviders()
+  const mapStats = (s: typeof totals): PlanMappingValidationStats => ({
+    staleRawIdsFixed: s.staleRawIdsFixed,
+    missingMappings: s.missingMappings,
+    pricingSynced: s.pricingSynced,
+    mappingsProcessed: s.mappingsProcessed,
+    availabilityUpdated: s.availabilityUpdated,
+  })
+  return {
+    byProvider: Object.fromEntries(
+      Object.entries(byProvider).map(([id, stats]) => [id, mapStats(stats)]),
+    ),
+    totals: mapStats(totals),
+  }
+}
+
 export async function aggCountProvidersBySystemPlanIds(
   systemPlanIds: string[],
 ): Promise<Map<string, number>> {

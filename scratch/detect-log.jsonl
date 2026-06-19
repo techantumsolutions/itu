@@ -178,3 +178,5 @@
 {"time":"2026-06-16T05:21:41.591Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
 {"time":"2026-06-16T05:21:41.872Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919010567939","Items":[{"ProviderCode":"RJIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
 {"time":"2026-06-16T05:21:42.100Z","event":"ding_match","matchedOperator":{"id":"8519ff43-de75-4deb-a0d7-52ea06eea090","code":"8519ff43-de75-4deb-a0d7-52ea06eea090","name":"Reliance IND","shortName":"Reliance IND","countryCode":"IND2","countryIso3":"IND","logo":null}}
+{"time":"2026-06-19T06:18:40.154Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-19T06:18:40.377Z","event":"dtone_error","error":"fetch failed"}
