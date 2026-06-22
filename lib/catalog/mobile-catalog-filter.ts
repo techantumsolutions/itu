@@ -13,5 +13,8 @@ export function isMobileCatalogPlan(row: {
   service_domain?: string | null
 }): boolean {
   if (String(row.status ?? 'ACTIVE').toUpperCase() !== 'ACTIVE') return false
-  return isMobileTelecomDomain(row.service_domain)
+  const domain = String(row.service_domain ?? '').trim().toUpperCase()
+  // Match aggListSystemPlans mobileCatalogOnly: MOBILE or legacy null/unknown rows.
+  if (!domain || domain === 'UNKNOWN') return true
+  return isMobileTelecomDomain(domain)
 }

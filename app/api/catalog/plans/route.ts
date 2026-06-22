@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { cacheGetJson, cacheSetJson } from '@/lib/cache/redis'
 import { rateLimit } from '@/lib/security/rate-limit'
 import { aggListSystemPlans } from '@/lib/aggregator/repository'
+import { isMobileCatalogPlan } from '@/lib/catalog/mobile-catalog-filter'
+import { filterWebsiteEligibleSystemPlans } from '@/lib/catalog/website-plan-eligibility'
 
 export async function GET(request: Request) {
   const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'anonymous'
@@ -24,8 +26,14 @@ export async function GET(request: Request) {
     offset: Number.isFinite(offset) ? offset : 0,
     mobileCatalogOnly: true,
   })
+  const activeMobilePlans = rows.filter((row: { status?: string; service_domain?: string }) =>
+    isMobileCatalogPlan(row),
+  )
+  const eligibleRows = operatorId
+    ? await filterWebsiteEligibleSystemPlans(activeMobilePlans, operatorId)
+    : activeMobilePlans
   const payload = {
-    plans: rows.map((row: any) => ({
+    plans: eligibleRows.map((row: any) => ({
       id: row.id,
       operatorId: row.system_operator_id,
       name: row.system_plan_name,
@@ -39,7 +47,7 @@ export async function GET(request: Request) {
       description: row.description,
       status: row.status,
     })),
-    pagination: { limit: Number.isFinite(limit) ? limit : 50, offset: Number.isFinite(offset) ? offset : 0, returned: rows.length },
+    pagination: { limit: Number.isFinite(limit) ? limit : 50, offset: Number.isFinite(offset) ? offset : 0, returned: eligibleRows.length },
   }
   await cacheSetJson(cacheKey, payload, 300)
   return NextResponse.json(payload)

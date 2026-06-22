@@ -143,4 +143,12 @@ export type AggregatorSyncResult = {
   syncedCountries?: string[]
   warnings?: string[]
   diagnostics?: Record<string, unknown>
+  verificationDashboard?: {
+    totalSystemPlans: number
+    duplicatePlansFound: number
+    duplicatePlansMerged: number
+    activePlans: number
+    inactivePlans: number
+    websiteEligiblePlans: number
+  }
 }

@@ -20,6 +20,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { OperatorsMarquee } from '@/components/operators-marquee'
+import { AdManager } from '@/components/ui/ads/ad-manager'
 
 import { useTopupStore } from '@/store/topupStore'
 
@@ -498,6 +499,9 @@ export default function HomePage() {
 
   return (
     <div className="flex flex-col">
+      <div className="container mx-auto px-4 max-w-6xl mt-4">
+        <AdManager placement="home_hero" />
+      </div>
       {/* Hero — CMS background, overlay, copy; nav reads transparent until scroll */}
       <section
         className={cn(

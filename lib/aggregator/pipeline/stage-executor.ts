@@ -20,7 +20,9 @@ import { runStep4ApplyMergeHistory } from './stages/step4-apply-merge-history'
 import { runStep5FilterTelecom } from './stages/step5-filter-telecom'
 import { runStep6Merge } from './stages/step6-merge'
 import { runStep7Promote } from './stages/step7-promote'
+import { runStep7MergeDuplicates } from './stages/step7-merge-duplicates'
 import { runStep8FilterBenefits } from './stages/step8-filter-benefits'
+import { calculateSyncVerificationDashboard } from './sync-verification'
 
 export type PipelineStage =
   | 'step1_check'
@@ -31,6 +33,7 @@ export type PipelineStage =
   | 'step5_filter_telecom'
   | 'step6_merge'
   | 'step7_promote'
+  | 'step7_merge_duplicates'
   | 'step8_filter_benefits'
 
 export async function runPipelineStage(
@@ -62,6 +65,8 @@ export async function runPipelineStage(
       return runStep6Merge(providerId, config, syncRunId)
     case 'step7_promote':
       return runStep7Promote(providerId, config, syncRunId)
+    case 'step7_merge_duplicates':
+      return runStep7MergeDuplicates(providerId, config, syncRunId)
     case 'step8_filter_benefits':
       return runStep8FilterBenefits(providerId, config, syncRunId)
     default:
@@ -105,6 +110,7 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
     'step5_filter_telecom',
     'step6_merge',
     'step7_promote',
+    'step7_merge_duplicates',
     'step8_filter_benefits',
   ]
 
@@ -176,7 +182,15 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
     const step4Data = stageResults['step4_normalize']?.data ?? {}
     const step5Data = stageResults['step5_filter_telecom']?.data ?? {}
     const step7Data = stageResults['step7_promote']?.data ?? {}
+    const step75Data = stageResults['step7_merge_duplicates']?.data ?? {}
     const step8Data = stageResults['step8_filter_benefits']?.data ?? {}
+
+    const verificationDashboard = await calculateSyncVerificationDashboard({
+      duplicatePlansMerged: Number(step75Data.mergedPlans ?? step75Data.mergedCount ?? 0),
+    }).catch((err) => {
+      console.warn('[Sync] verification dashboard failed:', err)
+      return null
+    })
 
     const finalResult: AggregatorSyncResult = {
       providerId,
@@ -191,6 +205,7 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
       skippedOperators: step4Data.inactive || 0,
       durationMs,
       syncedCountries: resolveSyncCountries(config, options) || [],
+      verificationDashboard: verificationDashboard ?? undefined,
     }
 
     if (syncRunId) {
@@ -203,6 +218,23 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
         plans_fetched: finalResult.normalized,
         plans_accepted: finalResult.systemPlans,
         plans_rejected: finalResult.normalized - finalResult.systemPlans,
+        error_message:
+          step7Data.syncHealth?.status === 'WARNING'
+            ? `Mapping health warning: ${step7Data.syncHealth.healthySystemPlans}/${step7Data.syncHealth.activeSystemPlans} active plans have live raw links`
+            : null,
+      }).catch(() => {})
+    }
+
+    if (verificationDashboard) {
+      await aggInsertSyncLog({
+        serviceProviderId: providerId,
+        syncType: 'provider',
+        stage: 'sync_verification',
+        status: 'SUCCESS',
+        startedAt: new Date().toISOString(),
+        finishedAt: new Date().toISOString(),
+        duplicateCount: verificationDashboard.duplicatePlansMerged,
+        metadata: { verificationDashboard, syncRunId },
       }).catch(() => {})
     }
 
@@ -225,7 +257,11 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
         createdCount: finalResult.systemPlans,
         mappedCount: finalResult.systemOperators,
         duplicateCount: finalResult.duplicateSuggestions,
-        metadata: finalResult,
+        metadata: {
+          ...finalResult,
+          verificationDashboard,
+          duplicatePlansMerged: step75Data.mergedPlans ?? step75Data.mergedCount ?? 0,
+        },
       }).catch(() => {}),
       cacheDelByPrefix('catalog:').catch(() => 0),
       cacheDelByPrefix('aggregator:').catch(() => 0),

@@ -3,13 +3,11 @@ import {
   aggLoadTrustedOperators,
   aggInsertPlanClassificationAudit,
   aggInsertCatalogReviewQueue,
-  aggMergeDuplicateSystemPlansForProvider,
 } from '@/lib/aggregator/repository'
-import { applyPlanMergeHistoryForProvider } from '@/lib/aggregator/plan-merge-history'
-import { applyOperatorMergeHistoryAtSystemLevel } from '@/lib/aggregator/operator-merge-history'
 import { CatalogIntelligenceEngine } from '@/lib/aggregator/catalog-intelligence'
 import { dbUpsertInternalPlanMapping } from '@/lib/uti/repository'
 import { hasExcludedPlanBenefits } from '@/lib/aggregator/telecom-validator'
+import { deactivateSystemPlansWithoutMappings } from '@/lib/aggregator/pipeline/deactivate-unmapped-system-plans'
 import { isRegistryVerifiedSource } from '@/lib/aggregator/pipeline/registry-fast-path'
 
 export async function runStep8FilterBenefits(
@@ -17,6 +15,16 @@ export async function runStep8FilterBenefits(
   config: any,
   syncRunId?: string | null
 ): Promise<{ success: boolean; message: string; data?: any }> {
+  const unmappedDeactivation = await deactivateSystemPlansWithoutMappings().catch((err) => {
+    console.warn('[Step8] deactivateSystemPlansWithoutMappings failed:', err)
+    return { scanned: 0, deactivated: 0 }
+  })
+  if (unmappedDeactivation.deactivated > 0) {
+    console.log(
+      `[Step8] Deactivated ${unmappedDeactivation.deactivated} system plan(s) with NO_PROVIDER_MAPPING`,
+    )
+  }
+
   const trustedOperators = await aggLoadTrustedOperators().catch(() => [])
   const catalogEngine = new CatalogIntelligenceEngine(trustedOperators)
   const mappingsRes = await supabaseRest(`plan_mappings?service_provider_id=eq.${providerId}&select=system_plan_id,provider_plan_raw_id`, { cache: 'no-store' })
@@ -154,39 +162,14 @@ export async function runStep8FilterBenefits(
     }
   }
 
-  let mergedPlans = 0
-  let historyMergedPlans = 0
-  let historyMergedOperators = 0
-  try {
-    mergedPlans = await aggMergeDuplicateSystemPlansForProvider(providerId, 'system-sync')
-  } catch (mergeErr) {
-    console.error('Failed to merge duplicate system plans:', mergeErr)
-  }
-
-  try {
-    const operatorHistoryResult = await applyOperatorMergeHistoryAtSystemLevel(providerId, 'system-sync')
-    historyMergedOperators = operatorHistoryResult.merged
-  } catch (operatorHistoryErr) {
-    console.error('Failed to apply operator merge history at system level:', operatorHistoryErr)
-  }
-
-  try {
-    const historyResult = await applyPlanMergeHistoryForProvider(providerId, 'system-sync')
-    historyMergedPlans = historyResult.merged
-  } catch (historyErr) {
-    console.error('Failed to apply plan merge history:', historyErr)
-  }
-
   return {
     success: true,
-    message: `Step 8 complete. Soft catalog filtering applied. Active: ${activePlans}, Review: ${reviewPlans}, Quarantined/Non-telecom: ${quarantinedPlans}. Merged ${mergedPlans} duplicate system plans (signature + display-price). Reapplied ${historyMergedOperators} operator and ${historyMergedPlans} plan merge-history rules.`,
+    message: `Step 8 complete. Soft catalog filtering applied. Active: ${activePlans}, Review: ${reviewPlans}, Quarantined/Non-telecom: ${quarantinedPlans}.`,
     data: {
       quarantined: quarantinedPlans,
       review: reviewPlans,
       active: activePlans,
-      mergedPlans,
-      historyMergedOperators,
-      historyMergedPlans,
+      unmappedDeactivation,
     },
   }
 }

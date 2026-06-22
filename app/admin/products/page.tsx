@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Check, ChevronsUpDown, Package, RefreshCcw, Loader2, GitMerge, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -155,6 +156,7 @@ function sumProviderFees(rechargeCost: {
 
 
 export default function AdminProductsPage() {
+  const router = useRouter()
   const [plans, setPlans] = useState<ProductPlan[]>([])
   const [countryOptions, setCountryOptions] = useState<CountryOption[]>([])
   const [planNameFilter, setPlanNameFilter] = useState('')
@@ -163,7 +165,7 @@ export default function AdminProductsPage() {
   const [operatorFilter, setOperatorFilter] = useState('')
   const [debouncedOperator, setDebouncedOperator] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('active')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -252,7 +254,8 @@ export default function AdminProductsPage() {
       toast.error('Please select a target plan')
       return
     }
-    const sourcePlanIds = selectedIds.filter((id) => id !== targetPlanId)
+    const mergeTargetId = targetPlanId
+    const sourcePlanIds = selectedIds.filter((id) => id !== mergeTargetId)
     if (sourcePlanIds.length === 0) {
       toast.error('At least one source plan must be merged')
       return
@@ -265,20 +268,34 @@ export default function AdminProductsPage() {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          targetPlanId,
+          targetPlanId: mergeTargetId,
           sourcePlanIds,
         }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error ?? 'Merge failed')
 
+      const returnedTargetId =
+        typeof data.targetId === 'string'
+          ? data.targetId
+          : typeof data.targetPlanId === 'string'
+            ? data.targetPlanId
+            : mergeTargetId
+
+      if (!returnedTargetId) {
+        console.warn('Missing target id')
+        toast.error('Merge completed but target plan id was missing from the response')
+        return
+      }
+
       toast.success('Plans merged successfully')
+      router.refresh()
+      await load()
       setMergeDialogOpen(false)
       setSelectedIds([])
       setTargetPlanId('')
-      await load()
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to merge plans')
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : 'Failed to merge plans')
     } finally {
       setMerging(false)
     }
@@ -506,7 +523,7 @@ export default function AdminProductsPage() {
                   />
                 </TableHead>
                 <TableHead className="py-2"></TableHead>
-                <TableHead className="py-2 font-normal normal-case">
+                <TableHead className="py-2 font-normal hidden normal-case">
                   <ComboFilter
                     value={categoryFilter}
                     onValueChange={setCategoryFilter}
@@ -818,14 +835,7 @@ export default function AdminProductsPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {costBreakdown.providers.map((provider) => {
-                        const currency =
-                          provider.extractedPricing.currency ||
-                          provider.mapping.providerCurrency ||
-                          provider.rawPlanCurrency ||
-                          costBreakdown.plan?.systemPlanCurrency ||
-                          costBreakdown.systemPlanCurrency
-                        return (
+                      {costBreakdown.providers.map((provider) => (
                           <TableRow key={`${provider.providerId}:${provider.providerPlanId}`}>
                             <TableCell>
                               <div className="font-medium">{provider.providerName}</div>
@@ -833,22 +843,28 @@ export default function AdminProductsPage() {
                             </TableCell>
                             <TableCell>{provider.providerPlanName || provider.rawPlanName || '—'}</TableCell>
                             <TableCell className="text-right">
-                              {formatMoney(provider.providerRechargeValue, currency)}
+                              {formatMoney(
+                                provider.providerRechargeValue,
+                                provider.rechargeValueCurrency,
+                              )}
                             </TableCell>
                             <TableCell className="text-right">
-                              {formatMoney(provider.rechargeCost.providerCost, currency)}
+                              {provider.mapping.providerCostDisplay}
                             </TableCell>
                             <TableCell className="text-right">
                               {formatMoney(
                                 sumProviderFees(provider.rechargeCost),
-                                currency,
+                                provider.rechargeCostCurrency,
                               )}
                             </TableCell>
                             <TableCell className="text-right">
-                              {formatMoney(provider.rechargeCost.tax, currency)}
+                              {formatMoney(
+                                provider.rechargeCost.tax,
+                                provider.rechargeCostCurrency,
+                              )}
                             </TableCell>
                             <TableCell className="text-right font-medium">
-                              {formatMoney(provider.rechargeCost.totalRechargeCost, currency)}
+                              {provider.rechargeCostDisplay}
                             </TableCell>
                             <TableCell>
                               <Badge variant={provider.mapping.enabled ? 'default' : 'secondary'}>
@@ -859,8 +875,7 @@ export default function AdminProductsPage() {
                               {provider.mapping.providerPriority ?? '—'}
                             </TableCell>
                           </TableRow>
-                        )
-                      })}
+                      ))}
                     </TableBody>
                   </Table>
                 </div>

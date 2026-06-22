@@ -276,6 +276,13 @@ export default function OperatorsPage() {
       message: '',
     },
     {
+      key: 'step7_merge_duplicates',
+      label: 'Step 7.5: Merge Duplicate Plans',
+      description: 'Auto-merge duplicate system_plans by signature and recharge identity before final validation.',
+      status: 'idle',
+      message: '',
+    },
+    {
       key: 'step8_filter_benefits',
       label: 'Step 8: Plan Benefit Filtering',
       description: 'Clean promoted system_plans that do not contain mobile/data benefits.',

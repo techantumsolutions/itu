@@ -19,7 +19,8 @@ import type {
 } from '@/lib/aggregator/types'
 import {
   groupEquivalentDisplayPlans,
-  pickMergeTargetPlan,
+  groupPlansByDisplayName,
+  pickCanonicalMergeTargetPlan,
   type SystemPlanMergeRow,
 } from '@/lib/aggregator/plan-display-merge'
 
@@ -52,15 +53,14 @@ export function isMissingAggregatorSchemaError(error: unknown): boolean {
 
 let aggregatorSchemaReady: boolean | null = null
 
-/** True when multi_provider_aggregator_schema tables exist (cached for process lifetime). */
+/** True when multi_provider_aggregator_schema tables exist (positive result cached for process lifetime). */
 export async function isAggregatorSchemaReady(): Promise<boolean> {
-  if (aggregatorSchemaReady != null) return aggregatorSchemaReady
+  if (aggregatorSchemaReady === true) return true
   try {
     const res = await supabaseRest('provider_operator_raw?select=id&limit=1', { cache: 'no-store' })
-    aggregatorSchemaReady = res.ok
-    return aggregatorSchemaReady
+    if (res.ok) aggregatorSchemaReady = true
+    return res.ok
   } catch {
-    aggregatorSchemaReady = false
     return false
   }
 }
@@ -303,7 +303,163 @@ export async function aggUpsertPlanMapping(input: {
   return rows[0] ?? null
 }
 
-/** Distinct provider count per system plan from plan_mappings. */
+export type PlanMappingRepairAction = 'repaired' | 'created' | 'unchanged' | 'synced'
+
+/**
+ * Self-healing plan_mappings keyed by stable identity:
+ * system_plan_id + service_provider_id + provider_plan_id.
+ * Refreshes provider_plan_raw_id and syncs pricing every call.
+ */
+export async function aggRepairOrUpsertPlanMapping(input: {
+  serviceProviderId: string
+  systemPlanId: string
+  providerPlanId: string
+  providerPlanRawId?: string | null
+  matchingScore: number
+  matchingReason?: string | null
+  isVerified?: boolean
+  verifiedBy?: string | null
+  countryCode?: string | null
+  providerPriority?: number
+  providerActive?: boolean
+  rawIndex?: Map<string, import('@/lib/aggregator/plan-mapping-reconciliation').ProviderRawPlanSnapshot>
+}): Promise<{ mapping: Record<string, unknown> | null; action: PlanMappingRepairAction }> {
+  const {
+    buildProviderRawPlanIndex,
+    resolveLatestRawPlan,
+    syncPlanMappingPricingAndAvailability,
+  } = await import('@/lib/aggregator/plan-mapping-reconciliation')
+
+  const providerPlanId = input.providerPlanId?.trim()
+  if (!providerPlanId) {
+    return { mapping: null, action: 'unchanged' }
+  }
+
+  const rawIndex =
+    input.rawIndex ?? (await buildProviderRawPlanIndex(input.serviceProviderId))
+  const resolvedRaw = resolveLatestRawPlan(input.serviceProviderId, providerPlanId, rawIndex)
+  const nextRawId = resolvedRaw?.id ?? input.providerPlanRawId ?? null
+
+  const findRes = await supabaseRest(
+    `plan_mappings?system_plan_id=eq.${enc(input.systemPlanId)}&service_provider_id=eq.${enc(input.serviceProviderId)}&provider_plan_id=eq.${enc(providerPlanId)}&limit=1`,
+    { cache: 'no-store' },
+  )
+  if (!findRes.ok) throw new Error(await findRes.text())
+  const existing = ((await findRes.json()) as Array<Record<string, unknown>>)[0]
+
+  let mapping = existing ?? null
+  let action: PlanMappingRepairAction = 'unchanged'
+
+  if (existing?.id) {
+    const currentRawId = existing.provider_plan_raw_id as string | null | undefined
+    const needsRawRepair =
+      nextRawId != null && (currentRawId == null || currentRawId !== nextRawId)
+
+    if (needsRawRepair) {
+      const patchRes = await supabaseRest(`plan_mappings?id=eq.${enc(String(existing.id))}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({
+          provider_plan_raw_id: nextRawId,
+          updated_at: new Date().toISOString(),
+        }),
+      })
+      if (!patchRes.ok) throw new Error(await patchRes.text())
+      mapping = ((await patchRes.json()) as Array<Record<string, unknown>>)[0] ?? existing
+      action = 'repaired'
+    }
+  } else {
+    const res = await supabaseRest('plan_mappings', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        service_provider_id: input.serviceProviderId,
+        system_plan_id: input.systemPlanId,
+        provider_plan_id: providerPlanId,
+        provider_plan_raw_id: nextRawId,
+        matching_score: input.matchingScore,
+        matching_reason: input.matchingReason ?? null,
+        is_verified: input.isVerified ?? false,
+        verified_by: input.verifiedBy ?? null,
+        country_code: input.countryCode ?? 'UNK',
+        updated_at: new Date().toISOString(),
+      }),
+    })
+    if (!res.ok) throw new Error(await res.text())
+    const rows = (await res.json()) as Array<Record<string, unknown>>
+    mapping = rows[0] ?? null
+    action = 'created'
+  }
+
+  if (resolvedRaw) {
+    await syncPlanMappingPricingAndAvailability({
+      serviceProviderId: input.serviceProviderId,
+      systemPlanId: input.systemPlanId,
+      providerPlanId,
+      rawPlan: resolvedRaw,
+      providerPriority: input.providerPriority,
+      providerActive: input.providerActive,
+    })
+    if (action === 'unchanged') action = 'synced'
+  }
+
+  return { mapping, action }
+}
+
+export type PlanMappingValidationStats = {
+  staleRawIdsFixed: number
+  missingMappings: number
+  pricingSynced: number
+  mappingsProcessed: number
+  availabilityUpdated: number
+}
+
+/** Repair all plan_mappings for one provider using stable provider_plan_id keys. */
+export async function aggRepairStalePlanMappingsForProvider(
+  providerId: string,
+  options?: { providerPriority?: number; providerActive?: boolean },
+): Promise<PlanMappingValidationStats> {
+  const { reconcilePlanMappingsForProvider } = await import(
+    '@/lib/aggregator/plan-mapping-reconciliation'
+  )
+  const stats = await reconcilePlanMappingsForProvider({
+    providerId,
+    providerPriority: options?.providerPriority,
+    providerActive: options?.providerActive,
+  })
+  return {
+    staleRawIdsFixed: stats.staleRawIdsFixed,
+    missingMappings: stats.missingMappings,
+    pricingSynced: stats.pricingSynced,
+    mappingsProcessed: stats.mappingsProcessed,
+    availabilityUpdated: stats.availabilityUpdated,
+  }
+}
+
+/** Run provider-level reconciliation for every active LCR provider. */
+export async function aggRepairStalePlanMappingsForAllActiveProviders(): Promise<{
+  byProvider: Record<string, PlanMappingValidationStats>
+  totals: PlanMappingValidationStats
+}> {
+  const { reconcilePlanMappingsForAllActiveProviders } = await import(
+    '@/lib/aggregator/plan-mapping-reconciliation'
+  )
+  const { byProvider, totals } = await reconcilePlanMappingsForAllActiveProviders()
+  const mapStats = (s: typeof totals): PlanMappingValidationStats => ({
+    staleRawIdsFixed: s.staleRawIdsFixed,
+    missingMappings: s.missingMappings,
+    pricingSynced: s.pricingSynced,
+    mappingsProcessed: s.mappingsProcessed,
+    availabilityUpdated: s.availabilityUpdated,
+  })
+  return {
+    byProvider: Object.fromEntries(
+      Object.entries(byProvider).map(([id, stats]) => [id, mapStats(stats)]),
+    ),
+    totals: mapStats(totals),
+  }
+}
+
 export async function aggCountProvidersBySystemPlanIds(
   systemPlanIds: string[],
 ): Promise<Map<string, number>> {
@@ -1580,8 +1736,8 @@ async function mergeSystemPlanGroups(
   for (const plans of groups.values()) {
     if (plans.length < 2) continue
 
-    const target = pickMergeTargetPlan(plans)
-    if (!target?.id || !target.internal_plan_id) continue
+    const target = pickCanonicalMergeTargetPlan(plans)
+    if (!target?.id) continue
 
     const sources = plans
       .map((row) => row.id)
@@ -1596,6 +1752,40 @@ async function mergeSystemPlanGroups(
     }
   }
   return mergedCount
+}
+
+function normalizeValidityKey(value: string | null | undefined): string {
+  return String(value ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+}
+
+function normalizeDestinationAmount(value: unknown): string | null {
+  const amount = Number(value)
+  if (!Number.isFinite(amount) || amount <= 0) return null
+  return String(Number(amount.toFixed(4)))
+}
+
+async function loadRawDestinationByIds(
+  rawIds: string[],
+): Promise<Map<string, number | null>> {
+  const map = new Map<string, number | null>()
+  if (!rawIds.length) return map
+
+  for (let i = 0; i < rawIds.length; i += 100) {
+    const chunk = rawIds.slice(i, i + 100)
+    const res = await supabaseRest(
+      `provider_plans_raw?id=in.(${chunk.map(enc).join(',')})&select=id,destination_amount`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) continue
+    const rows = (await res.json()) as Array<{ id?: string; destination_amount?: number | null }>
+    for (const row of rows) {
+      if (row.id) map.set(row.id, row.destination_amount ?? null)
+    }
+  }
+  return map
 }
 
 /** Merge duplicate system_plans that share the same operator + normalized_signature for this provider sync. */
@@ -1626,12 +1816,129 @@ async function aggMergeDuplicateSystemPlansBySignatureForProvider(
     const operatorId = String(plan.system_operator_id ?? '').trim()
     const countryCode = (String(plan.country_code ?? 'UNK').trim().toUpperCase()) || 'UNK'
     if (!signature || !operatorId) continue
-    const key = `${countryCode}:${operatorId}:${signature}`
+    const key = `${countryCode}:${operatorId}:${providerId}:${signature}`
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(plan)
   }
 
   return mergeSystemPlanGroups(groups, actorEmail, 'signature')
+}
+
+/**
+ * Merge duplicate system_plans with the same country, operator, recharge value,
+ * validity, and provider_plan_id for this provider sync.
+ */
+async function aggMergeDuplicateSystemPlansByRechargeIdentityForProvider(
+  providerId: string,
+  actorEmail: string = 'system-sync',
+): Promise<number> {
+  const mappingsRes = await supabaseRest(
+    `plan_mappings?service_provider_id=eq.${enc(providerId)}&select=system_plan_id,provider_plan_id,provider_plan_raw_id`,
+    { cache: 'no-store' },
+  )
+  if (!mappingsRes.ok) return 0
+
+  const mappings = (await mappingsRes.json()) as Array<{
+    system_plan_id?: string | null
+    provider_plan_id?: string | null
+    provider_plan_raw_id?: string | null
+  }>
+  if (!mappings.length) return 0
+
+  const systemPlanIds = Array.from(
+    new Set(mappings.map((row) => row.system_plan_id).filter((id): id is string => Boolean(id))),
+  )
+  if (!systemPlanIds.length) return 0
+
+  const systemPlans = await fetchSystemPlansByIds(
+    systemPlanIds,
+    'id,system_operator_id,country_code,validity,normalized_signature,status,created_at,internal_plan_id,system_plan_name',
+  )
+  const planById = new Map(systemPlans.map((plan) => [plan.id, plan]))
+
+  const rawIds = Array.from(
+    new Set(
+      mappings
+        .map((row) => row.provider_plan_raw_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  )
+  const rawDestinationById = await loadRawDestinationByIds(rawIds)
+
+  const groups = new Map<string, SystemPlanMergeRow[]>()
+  for (const mapping of mappings) {
+    const planId = mapping.system_plan_id
+    const providerPlanId = mapping.provider_plan_id?.trim()
+    if (!planId || !providerPlanId) continue
+
+    const plan = planById.get(planId)
+    if (!plan) continue
+
+    const operatorId = String(plan.system_operator_id ?? '').trim()
+    const countryCode = (String(plan.country_code ?? 'UNK').trim().toUpperCase()) || 'UNK'
+    const validity = normalizeValidityKey(plan.validity)
+    if (!operatorId || !validity) continue
+
+    const destinationAmount = normalizeDestinationAmount(
+      mapping.provider_plan_raw_id
+        ? rawDestinationById.get(mapping.provider_plan_raw_id)
+        : null,
+    )
+    if (!destinationAmount) continue
+
+    const key = `${countryCode}:${operatorId}:${providerId}:${destinationAmount}:${validity}:${providerPlanId}`
+    if (!groups.has(key)) groups.set(key, [])
+    const bucket = groups.get(key)!
+    if (!bucket.some((row) => row.id === plan.id)) bucket.push(plan)
+  }
+
+  return mergeSystemPlanGroups(groups, actorEmail, 'recharge-identity')
+}
+
+async function loadOperatorPlansForProviderMerge(
+  providerId: string,
+  select: string,
+): Promise<SystemPlanMergeRow[]> {
+  const mappingsRes = await supabaseRest(
+    `plan_mappings?service_provider_id=eq.${enc(providerId)}&select=system_plan_id`,
+    { cache: 'no-store' },
+  )
+  if (!mappingsRes.ok) return []
+
+  const mappings = (await mappingsRes.json()) as Array<{ system_plan_id?: string | null }>
+  const mappedPlanIds = Array.from(
+    new Set(mappings.map((row) => row.system_plan_id).filter((id): id is string => Boolean(id))),
+  )
+  if (!mappedPlanIds.length) return []
+
+  const mappedPlans = await fetchSystemPlansByIds(mappedPlanIds, 'id,system_operator_id')
+  const operatorIds = Array.from(
+    new Set(
+      mappedPlans
+        .map((plan) => plan.system_operator_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  )
+  if (!operatorIds.length) return []
+
+  return fetchSystemPlansForOperators(operatorIds, select)
+}
+
+/**
+ * Merge duplicate system_plans with identical country, operator, display name, amount, and currency.
+ */
+async function aggMergeDuplicateSystemPlansByDisplayNameForProvider(
+  providerId: string,
+  actorEmail: string = 'system-sync',
+): Promise<number> {
+  const operatorPlans = await loadOperatorPlansForProviderMerge(
+    providerId,
+    'id,system_operator_id,system_plan_name,country_code,amount,currency,validity,data_volume,sms,talktime,plan_type,normalized_signature,status,created_at,internal_plan_id',
+  )
+  if (!operatorPlans.length) return 0
+
+  const groups = groupPlansByDisplayName(operatorPlans)
+  return mergeSystemPlanGroups(groups, actorEmail, 'display-name')
 }
 
 /**
@@ -1642,48 +1949,26 @@ export async function aggMergeEquivalentDisplayPlansForProvider(
   providerId: string,
   actorEmail: string = 'system-sync',
 ): Promise<number> {
-  const mappingsRes = await supabaseRest(
-    `plan_mappings?service_provider_id=eq.${enc(providerId)}&select=system_plan_id`,
-    { cache: 'no-store' },
+  const operatorPlans = await loadOperatorPlansForProviderMerge(
+    providerId,
+    'id,system_operator_id,system_plan_name,country_code,amount,currency,validity,data_volume,sms,talktime,plan_type,normalized_signature,status,created_at,internal_plan_id',
   )
-  if (!mappingsRes.ok) return 0
-
-  const mappings = (await mappingsRes.json()) as Array<{ system_plan_id?: string | null }>
-  const mappedPlanIds = Array.from(
-    new Set(mappings.map((row) => row.system_plan_id).filter((id): id is string => Boolean(id))),
-  )
-  if (mappedPlanIds.length === 0) return 0
-
-  const mappedPlans = await fetchSystemPlansByIds(
-    mappedPlanIds,
-    'id,system_operator_id',
-  )
-  const operatorIds = Array.from(
-    new Set(
-      mappedPlans
-        .map((plan) => plan.system_operator_id)
-        .filter((id): id is string => Boolean(id)),
-    ),
-  )
-  if (operatorIds.length === 0) return 0
-
-  const operatorPlans = await fetchSystemPlansForOperators(
-    operatorIds,
-    'id,system_operator_id,system_plan_name,country_code,validity,data_volume,sms,talktime,plan_type,normalized_signature,status,created_at,internal_plan_id',
-  )
+  if (!operatorPlans.length) return 0
 
   const groups = groupEquivalentDisplayPlans(operatorPlans)
   return mergeSystemPlanGroups(groups, actorEmail, 'display-price')
 }
 
-/** Post-sync merge: signature duplicates first, then same country/operator/feature/name-price duplicates. */
+/** Post-sync merge: signature, recharge identity, display name, then display-price duplicates. */
 export async function aggMergeDuplicateSystemPlansForProvider(
   providerId: string,
   actorEmail: string = 'system-sync',
 ): Promise<number> {
   const signatureMerged = await aggMergeDuplicateSystemPlansBySignatureForProvider(providerId, actorEmail)
+  const rechargeMerged = await aggMergeDuplicateSystemPlansByRechargeIdentityForProvider(providerId, actorEmail)
+  const displayNameMerged = await aggMergeDuplicateSystemPlansByDisplayNameForProvider(providerId, actorEmail)
   const displayMerged = await aggMergeEquivalentDisplayPlansForProvider(providerId, actorEmail)
-  return signatureMerged + displayMerged
+  return signatureMerged + rechargeMerged + displayNameMerged + displayMerged
 }
 
 export async function aggLoadTrustedOperators(): Promise<

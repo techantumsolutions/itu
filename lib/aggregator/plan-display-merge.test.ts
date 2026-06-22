@@ -4,6 +4,7 @@ import {
   extractDisplayPriceFromName,
   extractPriceMentionsFromName,
   groupEquivalentDisplayPlans,
+  groupPlansByDisplayName,
   normalizeDisplayAmount,
   pickMergeTargetPlan,
 } from './plan-display-merge'
@@ -150,5 +151,32 @@ describe('plan-display-merge', () => {
       },
     ])
     expect(target?.id).toBe('b')
+  })
+
+  it('groups plans with identical display name, amount, and currency', () => {
+    const planA = {
+      id: 'a',
+      system_operator_id: 'op-1',
+      country_code: 'IND',
+      system_plan_name: 'INR 979:UL Calls+2 GB Day/84D',
+      amount: 12.14,
+      currency: 'EUR',
+      normalized_signature: 'sig-a',
+      created_at: '2026-01-01',
+    }
+    const planB = {
+      id: 'b',
+      system_operator_id: 'op-1',
+      country_code: 'IND',
+      system_plan_name: 'INR 979:UL Calls+2 GB Day/84D',
+      amount: 12.14,
+      currency: 'EUR',
+      normalized_signature: 'sig-b',
+      created_at: '2026-01-02',
+    }
+
+    const groups = groupPlansByDisplayName([planA, planB])
+    expect([...groups.values()].filter((group) => group.length > 1)).toHaveLength(1)
+    expect([...groups.values()][0]?.map((p) => p.id).sort()).toEqual(['a', 'b'])
   })
 })

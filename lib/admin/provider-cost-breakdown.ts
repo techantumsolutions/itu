@@ -1,12 +1,18 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { extractPricingFromRaw } from '@/lib/admin/provider-pricing-extractor'
 import { resolveWholesalePricing } from '@/lib/catalog/provider-wholesale-pricing'
+import {
+  resolveProviderWholesaleCost,
+  resolveRechargeCostDisplay,
+} from '@/lib/admin/resolve-provider-wholesale-cost'
+import { resolveRawPlanForMapping } from '@/lib/aggregator/plan-mapping-reconciliation'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
 }
 
 type PlanMappingRow = {
+  id: string
   service_provider_id: string
   provider_plan_raw_id?: string | null
   provider_plan_id?: string | null
@@ -29,6 +35,8 @@ type RawPlanRow = {
   raw_json?: unknown
   amount?: number | null
   currency?: string | null
+  destination_amount?: number | null
+  destination_currency?: string | null
   provider_plan_name?: string | null
 }
 
@@ -39,6 +47,8 @@ export type ProviderRechargeCost = {
   surcharge: number | null
   tax: number | null
   totalRechargeCost: number | null
+  /** Fees, tax, and surcharges in destination / country currency (excludes wholesale provider cost). */
+  totalLocalRechargeCost: number | null
 }
 
 export type ProviderCostBreakdownItem = {
@@ -48,9 +58,18 @@ export type ProviderCostBreakdownItem = {
   providerPlanId: string
   providerPlanName: string | null
   providerRechargeValue: number | null
+  /** Face value / destination currency (country currency, e.g. INR). */
+  rechargeValueCurrency: string | null
+  /** Wholesale / send currency ITU pays the provider (e.g. EUR). */
+  providerCostCurrency: string | null
+  /** Country currency for fees, tax, and total recharge cost. */
+  rechargeCostCurrency: string | null
+  /** Display-only recharge cost (fallback chain). */
+  rechargeCostDisplay: string
   mapping: {
     providerPrice: number | null
     providerCurrency: string | null
+    providerCostDisplay: string
     margin: number | null
     providerPriority: number | null
     enabled: boolean
@@ -104,7 +123,9 @@ function buildRechargeCost(input: {
   const gatewayCharge = input.extractedPricing.platformMarkup ?? null
   const surcharge = input.extractedPricing.markup ?? null
   const tax = input.extractedPricing.tax ?? null
-  const totalRechargeCost = sumNumbers([providerCost, fees, gatewayCharge, surcharge, tax])
+  const localParts = [fees, gatewayCharge, surcharge, tax]
+  const totalLocalRechargeCost = sumNumbers(localParts)
+  const totalRechargeCost = sumNumbers([providerCost, ...localParts])
 
   return {
     providerCost,
@@ -113,10 +134,11 @@ function buildRechargeCost(input: {
     surcharge,
     tax,
     totalRechargeCost,
+    totalLocalRechargeCost,
   }
 }
 
-/** Provider comparison scoped strictly to plan_mappings → provider_plans_raw for one system plan. */
+/** Provider comparison for one system plan using stable provider_plan_id keys. */
 export async function loadSystemPlanProviderCostBreakdown(
   systemPlanId: string,
 ): Promise<SystemPlanProviderCostBreakdown | null> {
@@ -152,7 +174,7 @@ export async function loadSystemPlanProviderCostBreakdown(
   }
 
   const planMappingsRes = await supabaseRest(
-    `plan_mappings?system_plan_id=eq.${enc(systemPlanId)}&select=service_provider_id,provider_plan_raw_id,provider_plan_id,matching_score,matching_reason,is_verified`,
+    `plan_mappings?system_plan_id=eq.${enc(systemPlanId)}&select=id,service_provider_id,provider_plan_raw_id,provider_plan_id,matching_score,matching_reason,is_verified`,
     { cache: 'no-store' },
   )
   if (!planMappingsRes.ok) {
@@ -168,26 +190,6 @@ export async function loadSystemPlanProviderCostBreakdown(
     }
   }
 
-  const rawIds = [
-    ...new Set(planMappings.map((m) => m.provider_plan_raw_id).filter((id): id is string => Boolean(id))),
-  ]
-
-  const rawById = new Map<string, RawPlanRow>()
-  if (rawIds.length > 0) {
-    for (let i = 0; i < rawIds.length; i += 100) {
-      const chunk = rawIds.slice(i, i + 100)
-      const rawRes = await supabaseRest(
-        `provider_plans_raw?id=in.(${chunk.map(enc).join(',')})&select=id,provider_id,provider_plan_id,raw_json,amount,currency,destination_amount,destination_currency,provider_plan_name`,
-        { cache: 'no-store' },
-      )
-      if (!rawRes.ok) continue
-      const rawRows = (await rawRes.json()) as RawPlanRow[]
-      for (const row of rawRows) {
-        if (row.id) rawById.set(row.id, row)
-      }
-    }
-  }
-
   type ResolvedMapping = {
     providerId: string
     providerPlanId: string
@@ -198,13 +200,18 @@ export async function loadSystemPlanProviderCostBreakdown(
 
   const resolvedMappings: ResolvedMapping[] = []
   for (const mapping of planMappings) {
-    const rawPlan = mapping.provider_plan_raw_id ? rawById.get(mapping.provider_plan_raw_id) ?? null : null
     const providerId = mapping.service_provider_id
-    const providerPlanId =
-      mapping.provider_plan_id?.trim() ||
-      rawPlan?.provider_plan_id?.trim() ||
-      ''
+    const providerPlanId = mapping.provider_plan_id?.trim() || ''
     if (!providerId || !providerPlanId) continue
+
+    const rawPlan = (await resolveRawPlanForMapping({
+      mappingId: mapping.id,
+      serviceProviderId: providerId,
+      providerPlanId,
+      providerPlanRawId: mapping.provider_plan_raw_id,
+      autoReconnect: true,
+    })) as RawPlanRow | null
+
     resolvedMappings.push({
       providerId,
       providerPlanId,
@@ -238,6 +245,13 @@ export async function loadSystemPlanProviderCostBreakdown(
     ({ providerId, providerPlanId, rawPlan, matchingScore, isVerified }) => {
       const provider = providerMap.get(providerId)
       const rawData = rawPlan?.raw_json ?? null
+      const extractedPricing = extractPricingFromRaw(rawData)
+
+      const wholesaleCost = resolveProviderWholesaleCost(rawPlan)
+      const rechargeCostResolved = resolveRechargeCostDisplay(rawPlan)
+      const providerPrice = wholesaleCost.amount
+      const providerCostCurrency = wholesaleCost.currency
+
       const wholesale = resolveWholesalePricing({
         rawJson: rawData,
         amount: rawPlan?.amount ?? null,
@@ -245,27 +259,27 @@ export async function loadSystemPlanProviderCostBreakdown(
         destinationAmount: rawPlan?.destination_amount ?? null,
         destinationCurrency: rawPlan?.destination_currency ?? null,
       })
-      const extractedPricing = extractPricingFromRaw(rawData)
 
-      const rawAmount = wholesale.wholesaleAmount ?? rawPlan?.amount ?? null
-      const rawCurrency = wholesale.wholesaleCurrency ?? rawPlan?.currency ?? null
+      const rawAmount = providerPrice ?? wholesale.wholesaleAmount ?? rawPlan?.amount ?? null
+      const rawCurrency = providerCostCurrency ?? wholesale.wholesaleCurrency ?? rawPlan?.currency ?? null
+      const rechargeCost = buildRechargeCost({ extractedPricing, rawAmount: rawAmount ?? null })
 
-      if (!extractedPricing.currency && rawCurrency) {
-        extractedPricing.currency = rawCurrency
-      }
-      if (extractedPricing.providerCost == null && rawAmount != null) {
-        extractedPricing.providerCost = rawAmount
-      }
+      const destinationCurrency =
+        wholesale.destinationCurrency ??
+        rawPlan?.destination_currency ??
+        (extractedPricing.basePrice != null ? extractedPricing.currency : null) ??
+        planMeta.systemPlanCurrency ??
+        null
 
-      const providerCurrency = rawCurrency ?? extractedPricing.currency ?? null
-      const providerPrice = wholesale.wholesaleAmount ?? extractedPricing.providerCost ?? rawAmount ?? null
-      const rechargeCost = buildRechargeCost({ extractedPricing, rawAmount })
+      const rechargeValueCurrency = destinationCurrency
+      const rechargeCostCurrency = destinationCurrency ?? providerCostCurrency
+
       const providerRechargeValue =
         wholesale.destinationAmount ??
         rawPlan?.destination_amount ??
         extractedPricing.basePrice ??
         extractedPricing.finalPrice ??
-        providerPrice
+        null
 
       return {
         providerId,
@@ -274,9 +288,14 @@ export async function loadSystemPlanProviderCostBreakdown(
         providerPlanId,
         providerPlanName: rawPlan?.provider_plan_name ?? null,
         providerRechargeValue,
+        rechargeValueCurrency,
+        providerCostCurrency,
+        rechargeCostCurrency,
+        rechargeCostDisplay: rechargeCostResolved.display,
         mapping: {
           providerPrice,
-          providerCurrency,
+          providerCurrency: providerCostCurrency,
+          providerCostDisplay: wholesaleCost.display,
           margin: extractedPricing.margin ?? null,
           providerPriority: provider?.priority ?? null,
           enabled: provider?.is_active !== false,
@@ -301,10 +320,16 @@ export async function loadSystemPlanProviderCostBreakdown(
     return a.providerName.localeCompare(b.providerName)
   })
 
+  const activeProviderCount = new Set(
+    planMappings
+      .filter((m) => m.service_provider_id && m.provider_plan_id?.trim())
+      .map((m) => m.service_provider_id),
+  ).size
+
   return {
     plan: {
       ...planMeta,
-      providerCount: new Set(providers.map((p) => p.providerId)).size,
+      providerCount: activeProviderCount,
     },
     providers,
     ...planMeta,

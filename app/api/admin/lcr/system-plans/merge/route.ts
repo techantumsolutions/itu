@@ -70,10 +70,14 @@ export async function POST(request: Request) {
     await logAdminActivity({
       action: 'Merge System Plans',
       pageName: 'Integrations',
-      details: { targetId, sourceIds },
+      details: { targetId: targetPlanId, sourceIds: sourcePlanIds },
     })
 
-    return NextResponse.json(result)
+    return NextResponse.json({
+      success: true,
+      targetId: targetPlanId,
+      ...result,
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown merge error'
     console.error('Merge system plans failed:', message)
