@@ -5,7 +5,8 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { isAggregatorSchemaReady } from '@/lib/aggregator/repository'
 import { aggListSystemOperators, aggListSystemPlans } from '@/lib/aggregator/repository'
-import { isMobileCatalogOperator } from '@/lib/catalog/mobile-catalog-filter'
+import { isMobileCatalogOperator, isMobileCatalogPlan } from '@/lib/catalog/mobile-catalog-filter'
+import { filterWebsiteEligibleSystemPlans } from '@/lib/catalog/website-plan-eligibility'
 import { dbFetchCountries, dbFetchOperators, dbFetchPlans, pickOperatorForPhone } from '@/lib/db/catalog'
 import {
   countryDisplayName,
@@ -726,7 +727,9 @@ export async function fetchPublicPlans(input: {
         offset: 0,
         mobileCatalogOnly: true,
       })) as Record<string, unknown>[]
-      if (rows.length) plans = rows.map((r) => systemPlanToPublic(r, operatorId))
+      const activeMobilePlans = rows.filter((row) => isMobileCatalogPlan(row as { status?: string; service_domain?: string }))
+      const eligibleRows = await filterWebsiteEligibleSystemPlans(activeMobilePlans, operatorId)
+      if (eligibleRows.length) plans = eligibleRows.map((r) => systemPlanToPublic(r, operatorId))
     }
   }
 

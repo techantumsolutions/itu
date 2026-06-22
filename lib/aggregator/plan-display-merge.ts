@@ -205,6 +205,8 @@ export type SystemPlanMergeRow = {
   system_operator_id?: string | null
   system_plan_name?: string | null
   country_code?: string | null
+  amount?: number | null
+  currency?: string | null
   validity?: string | null
   data_volume?: string | null
   sms?: string | null
@@ -214,6 +216,43 @@ export type SystemPlanMergeRow = {
   status?: string | null
   created_at?: string | null
   internal_plan_id?: string | null
+}
+
+function normalizePlanDisplayName(name: string | null | undefined): string {
+  return String(name ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+}
+
+function normalizePlanAmountKey(amount: number | null | undefined): string {
+  const value = Number(amount ?? 0)
+  if (!Number.isFinite(value)) return '0'
+  return String(Number(value.toFixed(4)))
+}
+
+/**
+ * Group plans with the same country, operator, display name, amount, and currency.
+ * Catches duplicates that differ only by normalized_signature or sparse feature columns.
+ */
+export function groupPlansByDisplayName(plans: SystemPlanMergeRow[]): Map<string, SystemPlanMergeRow[]> {
+  const groups = new Map<string, SystemPlanMergeRow[]>()
+
+  for (const plan of plans) {
+    const operatorId = String(plan.system_operator_id ?? '').trim()
+    const countryCode = (String(plan.country_code ?? 'UNK').trim().toUpperCase()) || 'UNK'
+    const name = normalizePlanDisplayName(plan.system_plan_name)
+    if (!operatorId || !name) continue
+
+    const amount = normalizePlanAmountKey(plan.amount)
+    const currency = String(plan.currency ?? '').trim().toUpperCase() || 'UNK'
+    const key = `${countryCode}:${operatorId}:${name}:${amount}:${currency}`
+    if (!groups.has(key)) groups.set(key, [])
+    const bucket = groups.get(key)!
+    if (!bucket.some((row) => row.id === plan.id)) bucket.push(plan)
+  }
+
+  return groups
 }
 
 export function groupEquivalentDisplayPlans(plans: SystemPlanMergeRow[]): Map<string, SystemPlanMergeRow[]> {
@@ -256,6 +295,19 @@ export function pickMergeTargetPlan(plans: SystemPlanMergeRow[]): SystemPlanMerg
     const bName = String(b.system_plan_name ?? '').length
     if (aName !== bName) return aName - bName
     return String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
+  })
+
+  return sorted[0] ?? null
+}
+
+/** Auto-merge canonical: keep the oldest system_plan record. */
+export function pickCanonicalMergeTargetPlan(plans: SystemPlanMergeRow[]): SystemPlanMergeRow | null {
+  if (plans.length < 2) return null
+
+  const sorted = [...plans].sort((a, b) => {
+    const created = String(a.created_at ?? '').localeCompare(String(b.created_at ?? ''))
+    if (created !== 0) return created
+    return String(a.id ?? '').localeCompare(String(b.id ?? ''))
   })
 
   return sorted[0] ?? null

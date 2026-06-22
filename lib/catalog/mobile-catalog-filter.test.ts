@@ -12,6 +12,7 @@ describe('mobile-catalog-filter', () => {
 
   it('allows only ACTIVE plans with service_domain MOBILE', () => {
     expect(isMobileCatalogPlan({ status: 'ACTIVE', service_domain: 'MOBILE' })).toBe(true)
+    expect(isMobileCatalogPlan({ status: 'ACTIVE', service_domain: null })).toBe(true)
     expect(isMobileCatalogPlan({ status: 'ACTIVE', service_domain: 'OTT' })).toBe(false)
     expect(isMobileCatalogPlan({ status: 'INACTIVE', service_domain: 'MOBILE' })).toBe(false)
   })

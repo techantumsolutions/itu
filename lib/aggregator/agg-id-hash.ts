@@ -10,12 +10,17 @@ export function stringToBigInt(str: string): number {
 export type RawPlanAggLookup = {
   id: string
   provider_plan_id: string
+  amount?: number | null
+  currency?: string | null
+  destination_amount?: number | null
+  destination_currency?: string | null
+  raw_json?: unknown
 }
 
 /** Map agg_plans.aggregator_plan_id → provider_plans_raw row. */
 export async function buildRawPlanLookupByAggId(
   providerId: string,
-  fetchPage: (offset: number, limit: number) => Promise<Array<{ id: string; provider_plan_id: string }>>,
+  fetchPage: (offset: number, limit: number) => Promise<RawPlanAggLookup[]>,
 ): Promise<Map<number, RawPlanAggLookup>> {
   const map = new Map<number, RawPlanAggLookup>()
   const limit = 1000
