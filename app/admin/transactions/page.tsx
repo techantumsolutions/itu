@@ -27,8 +27,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Search, Filter, Download, MoreHorizontal, Eye, RefreshCw } from 'lucide-react'
+import { Search, Filter, Download, MoreHorizontal, Eye, RefreshCw, RotateCcw } from 'lucide-react'
 import { useAuthStore } from '@/lib/stores'
+import { toast } from 'sonner'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 type AdminTransaction = {
   id: string
@@ -40,6 +49,18 @@ type AdminTransaction = {
   description: string
   metadata: Record<string, any>
   createdAt: string
+  user?: {
+    name: string
+    email: string
+  }
+  rechargeDetails?: {
+    productName: string
+    skuCode: string
+    provider: string
+    operatorName: string
+    status: string
+    phoneNumber?: string
+  } | null
 }
 
 export default function AdminTransactionsPage() {
@@ -50,6 +71,10 @@ export default function AdminTransactionsPage() {
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailModel, setDetailModel] = useState<TransactionDetailModel | null>(null)
   const [transactions, setTransactions] = useState<AdminTransaction[]>([])
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
+  const [refundDialogOpen, setRefundDialogOpen] = useState(false)
+  const [refundTransaction, setRefundTransaction] = useState<AdminTransaction | null>(null)
+  const [refunding, setRefunding] = useState(false)
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -58,7 +83,62 @@ export default function AdminTransactionsPage() {
       .then((r) => r.json())
       .then((data) => setTransactions(Array.isArray(data?.transactions) ? data.transactions : []))
       .catch(() => setTransactions([]))
-  }, [statusFilter])
+  }, [statusFilter, refreshTrigger])
+
+  const handleRefundConfirm = async () => {
+    if (!refundTransaction) return
+    setRefunding(true)
+    try {
+      const res = await fetch('/api/admin/transactions/refund', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transactionId: refundTransaction.id }),
+      })
+      const data = await res.json()
+      if (res.ok && data.ok) {
+        toast.success('Refund credited to user wallet successfully!')
+        setRefundDialogOpen(false)
+        setRefreshTrigger((prev) => prev + 1)
+      } else {
+        toast.error(data.error || 'Failed to process refund')
+      }
+    } catch (e) {
+      toast.error('Network error during refund processing')
+    } finally {
+      setRefunding(false)
+    }
+  }
+
+  const getPlanName = (order: AdminTransaction) => {
+    if (order.type === 'topup') return 'Wallet Top-up'
+    if (order.type === 'refund') return 'Wallet Refund'
+    if (order.type === 'commission') return 'Commission Credit'
+    return order.rechargeDetails?.productName && order.rechargeDetails.productName !== '—'
+      ? order.rechargeDetails.productName
+      : order.metadata?.productName || order.rechargeDetails?.skuCode || order.metadata?.plan_id || 'Recharge Plan'
+  }
+
+  const getProviderName = (order: AdminTransaction) => {
+    if (order.type !== 'recharge') return '—'
+    
+    // 1. Check recharge details provider (populated from DB/routing logs)
+    let p = order.rechargeDetails?.provider
+    if (p && p !== '—' && p !== 'null') return p
+    
+    // 2. Check metadata fields directly
+    p = order.metadata?.provider_code || order.metadata?.provider_name || order.metadata?.provider
+    if (p && p !== '—' && p !== 'null') return p
+    
+    // 3. Check LCR routing metadata
+    p = order.metadata?.routing?.selected?.providerCode || order.metadata?.routing?.selected?.providerName
+    if (p && p !== '—' && p !== 'null') return p
+    
+    return '—'
+  }
+
+  const getPhoneNumber = (order: AdminTransaction) => {
+    return String(order.metadata?.phone_number ?? order.metadata?.phoneNumber ?? order.metadata?.mobile_number ?? order.rechargeDetails?.phoneNumber ?? '—')
+  }
 
   const filteredOrders = transactions.filter((order) => {
     const metadata = order.metadata ?? {}
@@ -94,19 +174,19 @@ export default function AdminTransactionsPage() {
       status: order.status as any,
       amount: order.amount,
       currency: order.currency,
-      customerName: String(metadata.customerName ?? 'Unknown'),
-      customerEmail: String(metadata.customerEmail ?? '—'),
+      customerName: order.user?.name || String(metadata.customerName ?? 'Unknown'),
+      customerEmail: order.user?.email || String(metadata.customerEmail ?? '—'),
       customerCountry: String(metadata.country ?? '—'),
       destinationCountry: String(metadata.countryName ?? metadata.country ?? '—'),
-      networkOperator: String(metadata.operator ?? metadata.carrierName ?? '—'),
-      mobileNumber: String(metadata.phone_number ?? metadata.phoneNumber ?? '—'),
+      networkOperator: order.rechargeDetails?.operatorName || order.metadata?.operator_id || order.metadata?.operator || String(order.metadata?.carrierName ?? '—'),
+      mobileNumber: getPhoneNumber(order),
       paymentMethod: String(metadata.payment_gateway ?? '—'),
       paymentStatus: (metadata.razorpay_payment_id || metadata.payment_order_id) ? 'completed' : order.status,
       paymentReferenceId: String(metadata.razorpay_payment_id ?? metadata.providerRef ?? order.id),
       gatewayResponse: String(metadata.gatewayResponse ?? ((metadata.razorpay_payment_id || metadata.payment_order_id || order.status === 'completed') ? 'Approved' : 'Pending')),
-      providerUsed: String(metadata.provider ?? metadata.operator ?? '—'),
+      providerUsed: getProviderName(order),
       routingType: String(metadata.routingType ?? '—'),
-      apiResponseStatus: order.status === 'completed' ? 'SUCCESS' : order.status === 'failed' ? 'FAILED' : 'PENDING',
+      apiResponseStatus: (order.rechargeDetails?.status || order.status) === 'completed' ? 'SUCCESS' : (order.rechargeDetails?.status || order.status) === 'failed' ? 'FAILED' : 'PENDING',
       errorMessage: typeof metadata.errorMessage === 'string' ? metadata.errorMessage : undefined,
       failureReason: String(metadata.errorMessage ?? (order.status === 'failed' ? 'Provider unavailable' : '')),
       retryAttempts: Number(metadata.retryAttempts ?? 0),
@@ -228,10 +308,11 @@ export default function AdminTransactionsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Order ID</TableHead>
-                  <TableHead>Phone Number</TableHead>
-                  <TableHead>Operator</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Plan & Provider</TableHead>
+                  <TableHead>Destination Number</TableHead>
+                  <TableHead>Amount Paid</TableHead>
+                  <TableHead>Recharge Status</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
@@ -239,31 +320,54 @@ export default function AdminTransactionsPage() {
               <TableBody>
                 {filteredOrders.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       No transactions found
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredOrders.map((order) => (
                     <TableRow key={order.id}>
-                      <TableCell className="font-mono text-sm">{order.id.slice(0, 12)}...</TableCell>
+                      <TableCell className="font-mono text-xs">
+                        <span title={order.id}>{order.id.slice(0, 8)}...</span>
+                      </TableCell>
                       <TableCell>
                         <div>
-                          <p className="font-medium">{String(order.metadata?.phone_number ?? order.metadata?.phoneNumber ?? '—')}</p>
-                          <p className="text-xs text-muted-foreground">{String(order.metadata?.countryName ?? order.metadata?.country ?? '—')}</p>
+                          <p className="font-semibold text-sm text-neutral-900">{order.user?.name || 'Unknown'}</p>
+                          <p className="text-xs text-muted-foreground">{order.user?.email || '—'}</p>
                         </div>
                       </TableCell>
-                      <TableCell>{String(order.metadata?.operator ?? order.metadata?.carrierName ?? '—')}</TableCell>
                       <TableCell>
                         <div>
-                          <p className="font-medium">{formatCurrency(order.amount, order.currency)}</p>
+                          <p className="font-medium text-sm text-neutral-800">
+                            {getPlanName(order)}
+                          </p>
                           <p className="text-xs text-muted-foreground">
-                            {order.description || order.type}
+                            {getProviderName(order)}
                           </p>
                         </div>
                       </TableCell>
-                      <TableCell>{getStatusBadge(order.status)}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
+                      <TableCell>
+                        <div>
+                          <p className="font-medium text-sm">
+                            {getPhoneNumber(order)}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {order.rechargeDetails?.operatorName || order.metadata?.operator_id || order.metadata?.operator || String(order.metadata?.carrierName ?? '—')}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="font-bold text-neutral-950 text-sm">
+                            {formatCurrency(order.amount, order.currency)}
+                          </p>
+                          <p className="text-[10px] uppercase font-semibold text-neutral-400">
+                            {order.currency}
+                          </p>
+                        </div>
+                      </TableCell>
+                      <TableCell>{getStatusBadge(order.rechargeDetails?.status || order.status)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                         {formatDate(order.createdAt)}
                       </TableCell>
                       <TableCell>
@@ -282,6 +386,18 @@ export default function AdminTransactionsPage() {
                               <DropdownMenuItem>
                                 <RefreshCw className="mr-2 h-4 w-4" />
                                 Retry
+                              </DropdownMenuItem>
+                            )}
+                            {order.type === 'recharge' && order.status === 'failed' && (
+                              <DropdownMenuItem
+                                className="text-red-600 focus:text-red-700"
+                                onClick={() => {
+                                  setRefundTransaction(order)
+                                  setRefundDialogOpen(true)
+                                }}
+                              >
+                                <RotateCcw className="mr-2 h-4 w-4 text-red-600" />
+                                Refund Wallet
                               </DropdownMenuItem>
                             )}
                           </DropdownMenuContent>
@@ -303,6 +419,63 @@ export default function AdminTransactionsPage() {
         viewer={user ? { id: user.id, email: user.email, name: user.name, role: user.role } : null}
         isAdmin
       />
+
+      <Dialog open={refundDialogOpen} onOpenChange={setRefundDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Confirm Wallet Refund</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to refund this failed recharge? The amount will be credited back to the user's wallet.
+            </DialogDescription>
+          </DialogHeader>
+          {refundTransaction && (
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4 text-sm">
+                <span className="font-semibold text-muted-foreground col-span-1">Customer:</span>
+                <span className="col-span-3 font-medium text-neutral-900">
+                  {refundTransaction.user?.name} ({refundTransaction.user?.email})
+                </span>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4 text-sm">
+                <span className="font-semibold text-muted-foreground col-span-1">Amount:</span>
+                <span className="col-span-3 font-bold text-neutral-900">
+                  {formatCurrency(refundTransaction.amount, refundTransaction.currency)} {refundTransaction.currency}
+                </span>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4 text-sm">
+                <span className="font-semibold text-muted-foreground col-span-1">Plan:</span>
+                <span className="col-span-3 font-medium text-neutral-800">
+                  {getPlanName(refundTransaction)}
+                </span>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4 text-sm">
+                <span className="font-semibold text-muted-foreground col-span-1">Provider:</span>
+                <span className="col-span-3 font-medium text-neutral-800">
+                  {getProviderName(refundTransaction)}
+                </span>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRefundDialogOpen(false)}
+              disabled={refunding}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={handleRefundConfirm}
+              disabled={refunding}
+            >
+              {refunding ? 'Refunding...' : 'Confirm Refund'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

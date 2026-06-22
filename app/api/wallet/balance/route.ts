@@ -8,7 +8,7 @@ export async function GET(request: Request) {
 
   try {
     // Query wallets table for user_id
-    const res = await supabaseRest(`wallets?user_id=eq.${encodeURIComponent(user.id)}&select=balance,currency`, {
+    const res = await supabaseRest(`wallets?user_id=eq.${encodeURIComponent(user.id)}&select=balance,currency&order=balance.desc`, {
       cache: 'no-store'
     })
     if (!res.ok) {

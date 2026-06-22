@@ -109,6 +109,7 @@ export const useAuthStore = create<AuthState>()(
 // Wallet Store
 interface WalletState {
   balance: number
+  currency: string
   transactions: Transaction[]
   isLoading: boolean
   topUp: (amount: number) => Promise<boolean>
@@ -123,6 +124,7 @@ export const useWalletStore = create<WalletState>()(
   persist(
     (set, get) => ({
       balance: 0,
+      currency: 'USD',
       transactions: [],
       isLoading: false,
       topUp: async (amount: number) => {
@@ -219,7 +221,7 @@ export const useWalletStore = create<WalletState>()(
           if (res.ok) {
             const data = await res.json()
             if (data && typeof data.balance === 'number') {
-              set({ balance: data.balance })
+              set({ balance: data.balance, currency: data.currency || 'USD' })
             }
           }
         } catch {

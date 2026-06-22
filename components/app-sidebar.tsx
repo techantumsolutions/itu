@@ -63,6 +63,12 @@ const mainMenuItems: {
       feature: 'dashboard',
     },
     {
+      title: 'Transactions',
+      url: '/admin/transactions',
+      icon: FileSpreadsheet,
+      feature: 'transactions',
+    },
+    {
       title: 'Admin users',
       url: '/admin/staff',
       icon: UserCog,
