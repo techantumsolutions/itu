@@ -57,7 +57,7 @@ export async function POST(request: Request) {
 
       // Load payment order details for checkout execution
       const poRes = await supabaseRest(
-        `payment_orders?id=eq.${enc(paymentOrderId)}&select=id,plan_id,mobile_number,operator_id,country_id,amount,currency,user_id&limit=1`,
+        `payment_orders?id=eq.${enc(paymentOrderId)}&select=id,plan_id,mobile_number,operator_id,country_id,amount,currency,user_id,metadata&limit=1`,
         { cache: 'no-store' },
       )
       const poRows = poRes.ok ? ((await poRes.json()) as Array<Record<string, unknown>>) : []
@@ -67,6 +67,27 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, error: 'Payment order not found' }, { status: 404 })
       }
 
+      const metadata = (po.metadata && typeof po.metadata === 'object' ? po.metadata : {}) as Record<string, any>
+      const usedWalletBalance = Number(metadata.used_wallet_balance ?? 0)
+      const razorpayAmount = Number(po.amount ?? 0)
+      const fullAmount = razorpayAmount + usedWalletBalance
+
+      // If logged in, credit the Razorpay amount to the user's wallet as a topup
+      if (po.user_id) {
+        await supabaseRest('transactions', {
+          method: 'POST',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify([{
+            user_id: po.user_id,
+            type: 'topup',
+            amount: razorpayAmount,
+            currency: String(po.currency ?? 'INR'),
+            status: 'completed',
+            description: `Payment for order ${po.id}`
+          }]),
+        })
+      }
+
       // Execute full checkout: transaction → routing → provider → recharge
       const result = await executeCheckout({
         paymentOrderId,
@@ -74,7 +95,7 @@ export async function POST(request: Request) {
         mobileNumber: String(po.mobile_number ?? ''),
         operatorId: String(po.operator_id ?? ''),
         countryId: String(po.country_id ?? ''),
-        amount: Number(po.amount ?? 0),
+        amount: fullAmount,
         currency: String(po.currency ?? 'INR'),
         razorpayPaymentId: razorpay_payment_id,
         userId: po.user_id ? String(po.user_id) : undefined,

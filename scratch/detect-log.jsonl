@@ -279,3 +279,44 @@
 {"time":"2026-06-22T06:27:20.219Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
 {"time":"2026-06-22T06:27:21.000Z","event":"dtone_error","error":"DTONE API Error: 401"}
 {"time":"2026-06-22T06:27:21.195Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-22T06:28:44.620Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-22T06:28:45.253Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919988776655","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-22T06:28:46.180Z","event":"ding_match","matchedOperator":{"id":"375c6bd5-e5f9-4f08-ac52-ff2711c849f9","code":"375c6bd5-e5f9-4f08-ac52-ff2711c849f9","name":"Vodafone IND","shortName":"Vodafone IND","countryCode":"IND2","countryIso3":"IND","logo":null}}
+{"time":"2026-06-22T07:02:36.117Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-22T07:02:36.767Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"918889097654","Items":[{"ProviderCode":"RJIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-22T07:02:37.367Z","event":"ding_match","matchedOperator":{"id":"9fea8afe-7fea-42f7-a53c-567f7dd9f7e2","code":"9fea8afe-7fea-42f7-a53c-567f7dd9f7e2","name":"Reliance IND","shortName":"Reliance IND","countryCode":"IND2","countryIso3":"IND","logo":null}}
+{"time":"2026-06-22T07:11:57.211Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-22T07:11:57.263Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-22T07:11:59.893Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"918889097654","Items":[{"ProviderCode":"RJIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-22T07:11:59.949Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"918889097654","Items":[{"ProviderCode":"RJIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-22T07:12:00.450Z","event":"ding_match","matchedOperator":{"id":"9fea8afe-7fea-42f7-a53c-567f7dd9f7e2","code":"9fea8afe-7fea-42f7-a53c-567f7dd9f7e2","name":"Reliance IND","shortName":"Reliance IND","countryCode":"IND2","countryIso3":"IND","logo":null}}
+{"time":"2026-06-22T07:12:00.457Z","event":"ding_match","matchedOperator":{"id":"9fea8afe-7fea-42f7-a53c-567f7dd9f7e2","code":"9fea8afe-7fea-42f7-a53c-567f7dd9f7e2","name":"Reliance IND","shortName":"Reliance IND","countryCode":"IND2","countryIso3":"IND","logo":null}}
+{"time":"2026-06-22T07:12:11.986Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-22T07:12:12.645Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919988776655","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-22T07:12:13.317Z","event":"ding_match","matchedOperator":{"id":"375c6bd5-e5f9-4f08-ac52-ff2711c849f9","code":"375c6bd5-e5f9-4f08-ac52-ff2711c849f9","name":"Vodafone IND","shortName":"Vodafone IND","countryCode":"IND2","countryIso3":"IND","logo":null}}
+{"time":"2026-06-22T08:07:15.073Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-22T08:07:15.905Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919988776655","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-22T08:07:16.242Z","event":"ding_match"}
+{"time":"2026-06-22T08:07:16.446Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-22T08:09:24.116Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-22T08:09:24.381Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919988776655","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-22T08:09:24.900Z","event":"ding_match"}
+{"time":"2026-06-22T08:09:25.080Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-22T08:55:46.163Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-22T08:55:46.954Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919848587766","Items":[{"ProviderCode":"AIIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-22T08:55:47.611Z","event":"ding_match"}
+{"time":"2026-06-22T08:55:47.699Z","event":"dtone_error","error":"fetch failed"}
+{"time":"2026-06-22T08:56:46.897Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-22T08:56:47.520Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919988776655","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-22T08:56:48.052Z","event":"ding_match"}
+{"time":"2026-06-22T08:56:48.124Z","event":"dtone_error","error":"fetch failed"}
+{"time":"2026-06-22T09:01:38.933Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-22T09:01:39.396Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"918899674509","Items":[{"ProviderCode":"AIIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-22T09:01:39.840Z","event":"ding_match"}
+{"time":"2026-06-22T09:01:40.149Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-22T10:08:58.555Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-22T10:08:59.462Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919966770099","Items":[{"ProviderCode":"RJIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-22T10:08:59.976Z","event":"ding_match"}
+{"time":"2026-06-22T10:09:00.436Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-22T10:49:19.430Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-22T10:49:20.236Z","event":"dtone_error","error":"DTONE API Error: 401"}

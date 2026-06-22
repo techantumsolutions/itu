@@ -9,13 +9,16 @@ export async function POST(request: Request) {
   const amount = Number(body.amount)
   const description = typeof body.description === 'string' ? body.description : 'Wallet debit'
   const metadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {}
+  const currency = typeof body.currency === 'string' ? body.currency.trim().toUpperCase() : 'USD'
   if (!Number.isFinite(amount) || amount <= 0) return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
 
   const res = await supabaseRest('transactions', {
     method: 'POST',
-    headers: { Prefer: 'return=minimal' },
-    body: JSON.stringify([{ user_id: user.id, type: 'recharge', amount, currency: 'USD', status: 'completed', description, metadata }]),
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify([{ user_id: user.id, type: 'recharge', amount, currency, status: 'completed', description, metadata }]),
   })
   if (!res.ok) return NextResponse.json({ error: 'Failed to persist debit' }, { status: 500 })
-  return NextResponse.json({ ok: true })
+  const rows = (await res.json().catch(() => [])) as Array<{ id: string }>
+  const transactionId = rows[0]?.id ?? ''
+  return NextResponse.json({ ok: true, transactionId })
 }

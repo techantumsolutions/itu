@@ -5,7 +5,7 @@ import { buildUserFromProfile, type ProfileRow } from '@/lib/auth/build-auth-use
 export async function fetchProfileForUser(userId: string): Promise<ProfileRow | null> {
   try {
     const res = await supabaseRest(
-      `profiles?id=eq.${encodeURIComponent(userId)}&select=id,email,name,phone,country_code,country,app_role,admin_permissions,image,is_registered_with_email&limit=1`,
+      `profiles?id=eq.${encodeURIComponent(userId)}&select=id,email,name,phone,country_code,country,app_role,admin_permissions,image,is_registered_with_email,currency&limit=1`,
       { cache: 'no-store' },
     )
     if (!res.ok) return null

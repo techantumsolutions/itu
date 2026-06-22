@@ -1097,6 +1097,24 @@ function SettingsContent() {
                 </Button>
               </CardFooter>
             </Card>
+
+            <Card className="flex h-full flex-col">
+              <CardHeader>
+                <CardTitle>Wallet Settings</CardTitle>
+                <CardDescription>Configure wallet payment settings and consumption limits.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex-1 text-sm text-muted-foreground">
+                Set the maximum percentage of a transaction amount that can be paid using wallet balance.
+              </CardContent>
+              <CardFooter>
+                <Button asChild className="w-full sm:w-auto">
+                  <a href="/admin/settings/wallet">
+                    Open
+                    <ArrowRight className="ml-2 size-4" />
+                  </a>
+                </Button>
+              </CardFooter>
+            </Card>
           </div>
         </TabsContent>
 

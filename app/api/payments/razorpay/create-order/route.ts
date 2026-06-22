@@ -33,6 +33,7 @@ export async function POST(request: Request) {
     const mobileNumber = typeof body.mobileNumber === 'string' ? body.mobileNumber.trim() : ''
     const operatorId = typeof body.operatorId === 'string' ? body.operatorId.trim() : ''
     const countryId = typeof body.countryId === 'string' ? body.countryId.trim() : ''
+    const usedWalletBalance = typeof body.usedWalletBalance === 'number' ? body.usedWalletBalance : 0
 
     if (!planId || !amount || !mobileNumber) {
       return NextResponse.json({ error: 'Missing required fields: planId, amount, mobileNumber' }, { status: 400 })
@@ -92,6 +93,7 @@ export async function POST(request: Request) {
           user_id: userId || null,
           metadata: {
             razorpay_amount: razorpayOrder.amount,
+            used_wallet_balance: usedWalletBalance,
           },
         },
       ]),

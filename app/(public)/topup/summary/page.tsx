@@ -489,25 +489,135 @@ export default function TopupSummaryPage() {
     totalAmount,
     setTransactionResult,
   } = useTopupStore()
-  const { isAuthenticated } = useAuthStore()
+  const { user, isAuthenticated } = useAuthStore()
 
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loginOpen, setLoginOpen] = useState(false)
   const [payAfterLogin, setPayAfterLogin] = useState(false)
 
+  // Wallet & Currency states
+  const [walletBalance, setWalletBalance] = useState<number | null>(null)
+  const [walletCurrency, setWalletCurrency] = useState<string | null>(null)
+  const [maxConsumptionPercentage, setMaxConsumptionPercentage] = useState<number>(100)
+  const [useWallet, setUseWallet] = useState<boolean>(false)
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null)
+
   useEffect(() => {
     if (!selectedPlan || !pricing) router.replace('/topup')
   }, [selectedPlan, pricing, router])
 
-  const amounts = useMemo(() => {
-    const subtotal = pricing?.localAmount ?? 0
-    const fee = fees ?? 0
-    const grand = Math.max(0, subtotal + fee)
-    return { subtotal, fee, grand }
-  }, [pricing?.localAmount, fees])
+  // Fetch wallet balance
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const getBalance = async () => {
+      try {
+        const res = await fetch('/api/wallet/balance', { credentials: 'include', cache: 'no-store' })
+        if (res.ok) {
+          const data = await res.json()
+          if (data && typeof data.balance === 'number') {
+            setWalletBalance(data.balance)
+            setWalletCurrency(data.currency || 'USD')
+            setMaxConsumptionPercentage(data.maxConsumptionPercentage ?? 100)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load wallet balance:', err)
+      }
+    }
+    void getBalance()
+  }, [isAuthenticated])
 
-  const currency = pricing?.localCurrency ?? 'INR'
+  // Fetch exchange rates
+  useEffect(() => {
+    if (!isAuthenticated) return
+    const getRates = async () => {
+      try {
+        const res = await fetch('https://open.er-api.com/v6/latest/EUR', { cache: 'no-store' })
+        if (res.ok) {
+          const data = await res.json()
+          if (data && data.rates) {
+            setExchangeRates(data.rates)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch exchange rates:', err)
+      }
+    }
+    void getRates()
+  }, [isAuthenticated])
+
+  const amounts = useMemo(() => {
+    const userPreferredCurrency = user?.currency
+    const ratesData = exchangeRates
+    
+    let displayCurrency = pricing?.localCurrency ?? 'INR'
+    let planPrice = pricing?.localAmount ?? 0
+    let fee = fees ?? 0
+    
+    if (userPreferredCurrency) {
+      displayCurrency = userPreferredCurrency
+      if (ratesData) {
+        const rate = ratesData[userPreferredCurrency] ?? 1
+        planPrice = selectedPlan.price_eur * rate
+        fee = 0.49 * rate
+      } else {
+        // Fallback while loading
+        planPrice = selectedPlan.price_eur
+        fee = 0.49
+      }
+    }
+    
+    const subtotal = planPrice
+    const total = subtotal + fee
+    
+    let walletBalInPayCurrency = 0
+    let maxAllowedDeduction = 0
+    let usedWalletAmount = 0
+    
+    if (isAuthenticated && walletBalance !== null && walletCurrency) {
+      if (walletCurrency === displayCurrency) {
+        walletBalInPayCurrency = walletBalance
+      } else if (ratesData) {
+        const rateWallet = ratesData[walletCurrency] ?? 1
+        const ratePayment = ratesData[displayCurrency] ?? 1
+        walletBalInPayCurrency = walletBalance * (ratePayment / rateWallet)
+      } else {
+        walletBalInPayCurrency = walletBalance
+      }
+      
+      maxAllowedDeduction = total * (maxConsumptionPercentage / 100)
+      if (useWallet) {
+        usedWalletAmount = Math.min(walletBalInPayCurrency, maxAllowedDeduction)
+      }
+    }
+    
+    const grand = Math.max(0, total - usedWalletAmount)
+    
+    return {
+      subtotal,
+      fee,
+      total,
+      walletBalInPayCurrency,
+      maxAllowedDeduction,
+      usedWalletAmount,
+      grand,
+      currency: displayCurrency,
+    }
+  }, [
+    selectedPlan,
+    pricing,
+    fees,
+    user,
+    exchangeRates,
+    isAuthenticated,
+    walletBalance,
+    walletCurrency,
+    maxConsumptionPercentage,
+    useWallet,
+  ])
+
+  const currency = amounts.currency
 
   const startPayment = useCallback(async () => {
     if (!selectedPlan || !pricing || isSubmitting) return
@@ -515,24 +625,55 @@ export default function TopupSummaryPage() {
     setError(null)
 
     try {
+      // Wallet-only payment
+      if (amounts.grand === 0) {
+        const res = await fetch('/api/payment/wallet/checkout', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            planId: selectedPlan.internalPlanId || selectedPlan.id,
+            mobileNumber: `+${getDialCode(countryCode)}${phoneNumber}`,
+            operatorId: operator,
+            countryId: countryCode,
+            amount: amounts.total,
+            currency: amounts.currency,
+          }),
+        })
+        const data = await res.json()
+        if (res.ok && data?.ok) {
+          setTransactionResult({
+            transactionId: data.transactionId || '',
+            providerRef: data.providerRef || '',
+            providerName: data.providerName || '',
+            rechargeStatus: 'success',
+            errorMessage: '',
+            rewardPointsEarned: data.rewardPointsEarned ?? 0,
+          })
+          router.push('/topup/success')
+        } else {
+          throw new Error(data?.error || 'Wallet checkout failed')
+        }
+        return
+      }
+
       // 1. Load Razorpay script
       const ok = await loadRazorpayScript()
       if (!ok) throw new Error('Unable to load Razorpay checkout')
 
       // 2. Create Razorpay order via new endpoint
-      // Razorpay only supports INR — always use the plan's INR price
-      const razorpayAmount = selectedPlan.price_inr + (fees ?? 0)
       const createRes = await fetch('/api/payments/razorpay/create-order', {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           planId: selectedPlan.internalPlanId || selectedPlan.id,
-          amount: razorpayAmount,
-          currency: 'INR',
+          amount: amounts.grand,
+          currency: amounts.currency,
           mobileNumber: `+${getDialCode(countryCode)}${phoneNumber}`,
           operatorId: operator,
           countryId: countryCode,
+          usedWalletBalance: amounts.usedWalletAmount,
         }),
       })
       const createData = await createRes.json()
@@ -610,7 +751,7 @@ export default function TopupSummaryPage() {
       setError(e instanceof Error ? e.message : 'Payment failed')
       setIsSubmitting(false)
     }
-  }, [selectedPlan, pricing, isSubmitting, amounts.grand, currency, countryCode, phoneNumber, operator, setTransactionResult, router])
+  }, [selectedPlan, pricing, isSubmitting, amounts, countryCode, phoneNumber, operator, setTransactionResult, router])
 
   // Auto-trigger payment after successful inline login
   useEffect(() => {
@@ -712,7 +853,13 @@ export default function TopupSummaryPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-neutral-500">Recharge Amount (MRP)</span>
                     <span className="font-semibold text-neutral-900">
-                      ₹{selectedPlan.price_inr} / €{selectedPlan.price_eur}
+                      {amounts.currency === 'INR' ? (
+                        `₹${selectedPlan.price_inr}`
+                      ) : amounts.currency === 'EUR' ? (
+                        `€${selectedPlan.price_eur}`
+                      ) : (
+                        `${amounts.subtotal.toFixed(2)} ${amounts.currency}`
+                      )}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
@@ -721,6 +868,44 @@ export default function TopupSummaryPage() {
                       {amounts.fee > 0 ? `${amounts.fee.toFixed(2)} ${currency}` : 'Free'}
                     </span>
                   </div>
+
+                  {isAuthenticated && walletBalance !== null && (
+                    <div className="mt-3">
+                      <label className="flex items-center gap-3 cursor-pointer rounded-xl border border-neutral-200 bg-neutral-50/50 p-2.5 hover:bg-neutral-50 transition-all select-none">
+                        <input
+                          type="checkbox"
+                          checked={useWallet}
+                          onChange={(e) => setUseWallet(e.target.checked)}
+                          className="size-4 rounded border-neutral-300 text-[var(--hero-cta-orange)] focus:ring-[var(--hero-cta-orange)] accent-[var(--hero-cta-orange)] cursor-pointer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-bold text-neutral-800 flex justify-between gap-2">
+                            <span className="truncate">Use Wallet Balance</span>
+                            <span className="shrink-0 font-extrabold text-neutral-900">
+                              {amounts.walletBalInPayCurrency.toFixed(2)} {amounts.currency}
+                            </span>
+                          </p>
+                          <p className="text-[9px] text-neutral-400 mt-0.5 leading-tight">
+                            {maxConsumptionPercentage < 100 ? (
+                              `Max ${maxConsumptionPercentage}% consumption allowed`
+                            ) : (
+                              `Pay up to 100% using wallet`
+                            )}
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  )}
+
+                  {isAuthenticated && useWallet && amounts.usedWalletAmount > 0 && (
+                    <div className="flex items-center justify-between text-emerald-600 font-semibold mt-1">
+                      <span className="text-xs">Wallet Deduction</span>
+                      <span className="text-xs">
+                        -{amounts.usedWalletAmount.toFixed(2)} {amounts.currency}
+                      </span>
+                    </div>
+                  )}
+
                   <div className="my-3 h-px bg-neutral-200" />
                   <div className="flex items-center justify-between">
                     <span className="font-semibold text-neutral-700">Total Payable</span>

@@ -19,6 +19,7 @@ export interface User {
   /** Same as `role` for admin kinds; optional mirror for APIs. */
   appRole?: string
   is_registered_with_email?: boolean
+  currency?: string
 }
 
 // Wallet & Transaction Types

@@ -13,6 +13,7 @@ export type ProfileRow = {
   image?: string | null
   is_registered_with_email?: boolean | null
   reward_points?: number | null
+  currency?: string | null
 }
 
 const CANONICAL_SUPER_EMAIL = 'admin@itu.com'
@@ -63,5 +64,6 @@ export function buildUserFromProfile(
     appRole,
     avatar: profile?.image ?? undefined,
     is_registered_with_email: profile?.is_registered_with_email ?? false,
+    currency: profile?.currency ?? undefined,
   }
 }
