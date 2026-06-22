@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Wallet, Plus, ArrowUpRight, ArrowDownLeft, History, CreditCard, RefreshCw, Loader2, Coins } from 'lucide-react'
+import { Wallet, Plus, ArrowUpRight, ArrowDownLeft, History, CreditCard, RefreshCw, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -15,7 +15,7 @@ import Link from 'next/link'
 const quickAmounts = [10, 25, 50, 100, 250, 500]
 
 export default function AccountWalletPage() {
-  const { balance, transactions, topUp, fetchBalance, fetchTransactions, isLoading } = useWalletStore()
+  const { balance, currency, transactions, topUp, fetchBalance, fetchTransactions, isLoading } = useWalletStore()
   const { user } = useAuthStore()
   const [topUpAmount, setTopUpAmount] = useState('')
   const [error, setError] = useState('')
@@ -44,11 +44,12 @@ export default function AccountWalletPage() {
     void fetchPoints()
   }, [])
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
+  const formatCurrency = (amount: number, currencyCode: string = 'USD') => {
+    const formatted = new Intl.NumberFormat('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(amount)
+    return amount > 0 ? `${formatted} ${currencyCode}` : formatted
   }
 
   const formatDate = (dateString: string) => {
@@ -134,10 +135,7 @@ export default function AccountWalletPage() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-neutral-400 text-sm font-medium">Available Balance</p>
-                <p className="text-5xl font-black mt-2 tracking-tight">{formatCurrency(balance + pointsWorth)}</p>
-                <p className="text-neutral-400 text-xs mt-2 font-medium">
-                  {formatCurrency(balance)} wallet balance + {formatCurrency(pointsWorth)} points worth
-                </p>
+                <p className="text-5xl font-black mt-2 tracking-tight">{formatCurrency(balance, currency)}</p>
               </div>
               <div className="h-12 w-12 rounded-2xl bg-white/10 flex items-center justify-center text-amber-400 shadow-inner">
                 <Wallet className="h-6 w-6" />
@@ -159,11 +157,12 @@ export default function AccountWalletPage() {
               <div>
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Top-Ups</p>
                 <p className="text-xl font-bold text-neutral-950">
-                  {formatCurrency(
-                    transactions
-                      .filter((t) => t.type === 'topup' || t.type === 'refund')
-                      .reduce((acc, t) => acc + t.amount, 0)
-                  )}
+                  {(() => {
+                    const topUpTxns = transactions.filter((t) => t.type === 'topup')
+                    const total = topUpTxns.reduce((acc, t) => acc + t.amount, 0)
+                    const topUpCurrency = topUpTxns.length > 0 ? topUpTxns[0].currency : currency
+                    return formatCurrency(total, topUpCurrency)
+                  })()}
                 </p>
               </div>
             </CardContent>
@@ -176,36 +175,17 @@ export default function AccountWalletPage() {
               <div>
                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Spent</p>
                 <p className="text-xl font-bold text-neutral-950">
-                  {formatCurrency(
-                    transactions
-                      .filter((t) => t.type === 'recharge')
-                      .reduce((acc, t) => acc + t.amount, 0)
-                  )}
+                  {(() => {
+                    const rechargeTxns = transactions.filter((t) => t.type === 'recharge')
+                    const total = rechargeTxns.reduce((acc, t) => acc + t.amount, 0)
+                    const spentCurrency = rechargeTxns.length > 0 ? rechargeTxns[0].currency : currency
+                    return formatCurrency(total, spentCurrency)
+                  })()}
                 </p>
               </div>
             </CardContent>
           </Card>
-          <Link href="/account/rewards" className="block group">
-            <Card className="rounded-2xl border-neutral-200/60 shadow-sm group-hover:bg-neutral-50/50 transition-colors">
-              <CardContent className="p-4 flex items-center gap-4">
-                <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
-                  <Coins className="h-5 w-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Reward Points</p>
-                    <span className="text-[10px] text-neutral-400 font-normal shrink-0 ml-1 group-hover:text-neutral-600 transition-colors">Details →</span>
-                  </div>
-                  <p className="text-xl font-bold text-neutral-950 mt-0.5 truncate">
-                    {rewardPoints.toLocaleString()} pts
-                  </p>
-                  <p className="text-xs text-emerald-600 font-semibold mt-0.5">
-                    Worth {formatCurrency(pointsWorth)}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
+
         </div>
       </div>
 
@@ -337,7 +317,7 @@ export default function AccountWalletPage() {
                         </TableCell>
                         <TableCell className={cn('text-right pr-6 font-bold text-sm', getAmountColor(t.type))}>
                           {getAmountPrefix(t.type)}
-                          {formatCurrency(t.amount)}
+                          {formatCurrency(t.amount, t.currency)}
                         </TableCell>
                       </TableRow>
                     ))
