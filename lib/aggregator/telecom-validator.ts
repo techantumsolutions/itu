@@ -236,7 +236,7 @@ export function extractRawPlanFields(raw: any) {
   const type = raw.type || ''
 
   // description
-  const description = raw.description || ''
+  const description = raw.description || raw.productDescription || ''
 
   // product name / productName / product_name
   const productName = raw['product name'] || raw.productName || raw.product_name || ''

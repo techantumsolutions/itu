@@ -50,6 +50,7 @@ import type { ServiceDomainSegment } from '@/lib/aggregator/catalog-intelligence
 
 import { extractPlanSignatureParts, sha256 } from '@/lib/aggregator/signature'
 import { wholesaleCostFromNormalizedPlan } from '@/lib/catalog/provider-wholesale-pricing'
+import { extractValidityDaysFromRaw, resolveValidityForStorage } from '@/lib/aggregator/raw-validity'
 import type { AggregatorSyncResult } from '@/lib/aggregator/types'
 import type { SyncCatalogOptions } from '@/lib/lcr/sync-options'
 import { resolveSyncCountries } from '@/lib/lcr/sync-options'
@@ -693,7 +694,12 @@ export async function syncAggregatorProvider(
           currency: wholesale.wholesaleCurrency,
           destinationAmount: wholesale.destinationAmount,
           destinationCurrency: wholesale.destinationCurrency,
-          validity: plan.validityDays ? `${plan.validityDays}D` : null,
+          validity: resolveValidityForStorage({
+            validityDays: plan.validityDays,
+            raw: plan.raw,
+            planType: plan.planType,
+            category: plan.category,
+          }),
           talktime: parts.talktime || null,
           dataVolume: parts.data || null,
           sms: parts.sms || null,
@@ -984,7 +990,7 @@ export function rawPlanToNormalized(raw: any, systemOperatorId: string, telecomO
     requiredFields: [],
     retailAmount: Number(raw.amount || raw.retailAmount || 0),
     retailCurrency: String(raw.currency || raw.retailCurrency || 'USD'),
-    validityDays: parseInt(String(raw.validity || '').replace(/\D/g, '')) || undefined,
+    validityDays: extractValidityDaysFromRaw(raw.raw_json || raw.row_json || raw.raw || raw),
     raw: raw.raw_json || raw.row_json || raw.raw || raw
   }
 }

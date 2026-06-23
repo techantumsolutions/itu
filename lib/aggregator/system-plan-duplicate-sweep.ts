@@ -6,6 +6,8 @@ import {
   pickCanonicalMergeTargetPlan,
   type SystemPlanMergeRow,
 } from '@/lib/aggregator/plan-display-merge'
+import { groupPlansByCountryOperatorRecharge } from '@/lib/aggregator/system-plan-recharge-identity'
+import { batchLoadSystemPlanRechargeValues } from '@/lib/catalog/plan-recharge-value'
 
 const ACTOR = 'system-plans-duplicate-worker'
 
@@ -48,6 +50,62 @@ async function mergeSystemPlanGroups(
       if (result.success) merged += sources.length
     } catch (err) {
       console.error(`[${ACTOR}] merge failed (${logLabel}):`, err)
+    }
+  }
+
+  return { merged, groupsFound }
+}
+
+async function fetchOperatorName(operatorId: string): Promise<string> {
+  const res = await supabaseRest(
+    `system_operators?id=eq.${enc(operatorId)}&select=system_operator_name&limit=1`,
+    { cache: 'no-store' },
+  )
+  if (!res.ok) return operatorId
+  const rows = (await res.json()) as Array<{ system_operator_name?: string | null }>
+  return String(rows[0]?.system_operator_name ?? operatorId).trim() || operatorId
+}
+
+async function mergeCountryOperatorRechargeGroups(
+  plans: SystemPlanMergeRow[],
+  operatorId: string,
+): Promise<{ merged: number; groupsFound: number }> {
+  if (plans.length < 2) return { merged: 0, groupsFound: 0 }
+
+  const rechargeByPlanId = await batchLoadSystemPlanRechargeValues(plans.map((p) => p.id))
+  const groups = groupPlansByCountryOperatorRecharge(plans, rechargeByPlanId)
+  const operatorName = await fetchOperatorName(operatorId)
+
+  let merged = 0
+  let groupsFound = 0
+
+  for (const group of groups.values()) {
+    if (group.plans.length < 2) continue
+    groupsFound++
+
+    const target = pickCanonicalMergeTargetPlan(group.plans)
+    if (!target?.id) continue
+
+    const sources = group.plans
+      .map((row) => row.id)
+      .filter((id): id is string => Boolean(id) && id !== target.id)
+    if (!sources.length) continue
+
+    try {
+      const result = await aggMergeSystemPlans(target.id, sources, ACTOR)
+      if (!result.success) continue
+
+      merged += sources.length
+      console.log(
+        `[auto-merge] Merged plans using country+operator+recharge_value rule:\n` +
+          `Country=${group.countryCode}\n` +
+          `Operator=${operatorName}\n` +
+          `RechargeValue=${group.recharge.amount}\n` +
+          `SourcePlans=${group.plans.length}\n` +
+          `TargetSystemPlan=${target.id}`,
+      )
+    } catch (err) {
+      console.error(`[${ACTOR}] country+operator+recharge_value merge failed:`, err)
     }
   }
 
@@ -133,10 +191,15 @@ async function mergeOperatorDuplicates(operatorId: string): Promise<{
       'display-price',
     )
     const signature = await mergeSystemPlanGroups(groupPlansBySignature(plans), 'signature')
+    const rechargeValue = await mergeCountryOperatorRechargeGroups(plans, operatorId)
 
-    const roundMerged = displayName.merged + displayPrice.merged + signature.merged
+    const roundMerged =
+      displayName.merged + displayPrice.merged + signature.merged + rechargeValue.merged
     duplicateGroupsFound +=
-      displayName.groupsFound + displayPrice.groupsFound + signature.groupsFound
+      displayName.groupsFound +
+      displayPrice.groupsFound +
+      signature.groupsFound +
+      rechargeValue.groupsFound
 
     if (roundMerged === 0) break
 

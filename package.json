@@ -19,6 +19,7 @@
     "socket:server": "tsx --tsconfig tsconfig.json scripts/socket-server.ts",
     "db:seed-countries": "tsx --tsconfig tsconfig.json scripts/seed-countries.ts",
     "telecom:seed-registry": "tsx --tsconfig tsconfig.json scripts/telecom-seed-registry.ts",
+    "db:repair-registry-schema": "tsx --tsconfig tsconfig.json scripts/db-repair-registry-schema.ts",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
     "supabase:status": "supabase status",

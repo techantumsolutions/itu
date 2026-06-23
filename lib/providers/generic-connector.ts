@@ -3,6 +3,7 @@ import { executeGenericRequest, fetchGenericCatalog, type ApiRequestConfig, type
 import { dtoneConnector } from '@/lib/providers/dtone-connector'
 import { dingConnector } from '@/lib/providers/ding-connector'
 import { valuetopupConnector } from '@/lib/providers/valuetopup-connector'
+import { extractValidityDaysFromRaw } from '@/lib/aggregator/raw-validity'
 import type {
   ProviderConnector,
   ProviderConfig,
@@ -125,7 +126,8 @@ export const BUILT_IN_CONFIGS: Record<string, BuiltInProviderConfig> = {
       retailAmount: 'min.faceValue',
       retailCurrency: 'min.faceValueCurrency',
       wholesaleAmount: 'min.faceValue * (1 - discount / 100)',
-      wholesaleCurrency: 'min.faceValueCurrency'
+      wholesaleCurrency: 'min.faceValueCurrency',
+      description: 'productDescription',
     }
   },
   ding: {
@@ -381,21 +383,8 @@ export const genericConnector: ProviderConnector = {
           }
         }
 
-        // Validity Days parsing
-        let validityDays: number | undefined
-        const rawValidity = getPathValue(p, m.validityDays || 'validity.quantity')
-        if (typeof rawValidity === 'number') {
-          validityDays = rawValidity
-        } else if (typeof rawValidity === 'string' && rawValidity.startsWith('P')) {
-          // ISO 8601 Duration parsing
-          const match = rawValidity.match(/P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)D)?/)
-          if (match) {
-            const y = num(match[1]) || 0
-            const m = num(match[2]) || 0
-            const d = num(match[3]) || 0
-            validityDays = y * 365 + m * 30 + d
-          }
-        }
+        // Validity from raw JSON (DT One, DING ISO, generic keyword walk)
+        const validityDays = extractValidityDaysFromRaw(p)
 
         return {
           providerId: config.id,
@@ -407,7 +396,11 @@ export const genericConnector: ProviderConnector = {
           service,
           planType,
           name: text(getPathValue(p, m.name || 'DefaultDisplayText') || p.skuName || p.productName || p.name),
-          description: text(getPathValue(p, m.description || 'DefaultDisplayText') || p.additionalInformation),
+          description: text(
+            getPathValue(p, m.description || 'DefaultDisplayText') ||
+              p.productDescription ||
+              p.additionalInformation,
+          ),
           retailAmount,
           retailCurrency,
           wholesaleAmount,

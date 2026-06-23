@@ -52,6 +52,8 @@ export async function GET(request: Request) {
         systemPlanId: p.systemPlanId,
         price_inr: p.price_inr,
         price_eur: p.price_eur,
+        recharge_amount: p.recharge_amount,
+        recharge_currency: p.recharge_currency,
         validity: p.validity,
         data: p.data,
         benefits: p.benefits,

@@ -1,4 +1,5 @@
 import { fetchAllDtoneProducts } from '@/lib/dtone'
+import { extractValidityDaysFromRaw } from '@/lib/aggregator/raw-validity'
 import type { ProviderConnector, ProviderConfig, RawPlanRecord, NormalizedPlan, NormalizedBenefit, FetchRawPlansOptions } from '@/lib/providers/types'
 
 function text(v: unknown): string {
@@ -69,10 +70,7 @@ export const dtoneConnector: ProviderConnector = {
         const tags = asArr(p?.tags).map((t) => text(t).toUpperCase()).filter(Boolean)
         const zones = asArr(p?.availability_zones).map((z) => text(z).toUpperCase()).filter(Boolean)
 
-        const validityQty = num(p?.validity?.quantity)
-        const validityUnit = text(p?.validity?.unit).toUpperCase()
-        const validityDays =
-          validityQty && validityUnit === 'DAY' ? validityQty : validityQty && validityUnit === 'DAYS' ? validityQty : undefined
+        const validityDays = extractValidityDaysFromRaw(p)
 
         return {
           providerId: config.id,

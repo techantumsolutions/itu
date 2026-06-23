@@ -1,6 +1,7 @@
 import { getProducts, getCountries, getProviders } from '@/lib/api/ding-connect'
 import type { DingProvider } from '@/lib/types'
 import { normalizeCountryIso3, toPublicCountryCode } from '@/lib/lcr/countries'
+import { extractValidityDaysFromRaw } from '@/lib/aggregator/raw-validity'
 import type {
   ProviderConnector,
   ProviderConfig,
@@ -21,16 +22,6 @@ function num(v: unknown): number | undefined {
 
 function asArr(v: unknown): unknown[] {
   return Array.isArray(v) ? v : []
-}
-
-function parseValidityDays(iso?: string): number | undefined {
-  if (!iso) return undefined
-  const match = iso.match(/P(?:(\d+)Y)?(?:(\d+)M)?(?:(\d+)D)?/)
-  if (!match) return undefined
-  const y = num(match[1]) || 0
-  const m = num(match[2]) || 0
-  const d = num(match[3]) || 0
-  return y * 365 + m * 30 + d
 }
 
 function toBenefit(b: any): NormalizedBenefit {
@@ -189,7 +180,7 @@ export const dingConnector: ProviderConnector = {
         const benefits = asArr(p?.Benefits).map((b: any) => toBenefit(b))
         const hasData = benefits.some((b) => b.type === 'DATA')
 
-        const validityDays = parseValidityDays(p?.ValidityPeriodIso)
+        const validityDays = extractValidityDaysFromRaw(p)
 
         const retailAmount = num(p?.Minimum?.SendValue) || 0
         const rawWholesale = retailAmount * (1 - (num(p?.CommissionRate) || 0) / 100)

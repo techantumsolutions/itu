@@ -16,6 +16,7 @@ import { flagEmojiFromIso } from '@/lib/lcr/countries'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { countriesList, getFlagEmoji } from '@/lib/country-codes'
+import { formatPlanRechargeValue } from '@/lib/catalog/plan-recharge-value'
 
 function cleanOperatorName(name: string): string {
   let val = (name ?? '').trim()
@@ -175,8 +176,7 @@ function elaboratePlanDescription(
     return currentDesc
   }
 
-  const inrValue = plan.price_inr
-  const eurValue = plan.price_eur
+  const rechargeLabel = formatPlanRechargeValue(plan.recharge_amount, plan.recharge_currency)
 
   const commonCurrencies: Record<string, string> = {
     IN: 'INR (₹)',
@@ -217,16 +217,16 @@ function elaboratePlanDescription(
     : `the local currency equivalent`
 
   if (plan.type === 'topup') {
-    const talktimeAmt = specs.calls && specs.calls !== 'Unlimited' ? specs.calls : `INR ${inrValue} / €${eurValue}`
+    const talktimeAmt = specs.calls && specs.calls !== 'Unlimited' ? specs.calls : rechargeLabel
     const baseDesc = currentDesc ? ` (${currentDesc})` : ''
-    return `Instant airtime top-up plan${baseDesc}. This plan delivers standard talktime credit of approximately ${localValueText}, valued at INR ${inrValue} (€${eurValue}). Perfect for making local/international calls, sending SMS, or using mobile data at standard operator base tariffs.`
+    return `Instant airtime top-up plan${baseDesc}. This plan delivers standard talktime credit of approximately ${localValueText}, valued at ${rechargeLabel}. Perfect for making local/international calls, sending SMS, or using mobile data at standard operator base tariffs.`
   }
 
   if (plan.type === 'data') {
     const dataAmt = plan.data || specs.data || 'high-speed'
     const validityText = plan.validity && plan.validity !== 'No Expiry' ? `for ${plan.validity}` : 'with standard validity'
     const baseDesc = currentDesc ? ` (${currentDesc})` : ''
-    return `High-speed internet mobile data pack${baseDesc}. Provides ${dataAmt} data capacity ${validityText}, priced at INR ${inrValue} (€${eurValue}), suitable for ${localValueText}. Ideal for internet browsing, streaming video, downloading files, and social media connectivity.`
+    return `High-speed internet mobile data pack${baseDesc}. Provides ${dataAmt} data capacity ${validityText}, priced at ${rechargeLabel}, suitable for ${localValueText}. Ideal for internet browsing, streaming video, downloading files, and social media connectivity.`
   }
 
   return currentDesc
@@ -264,7 +264,7 @@ export default function TopupPlanSelectionPage() {
   const [plans, setPlans] = useState<TopupPlan[]>([])
   const [resolvedProviderCode, setResolvedProviderCode] = useState<string | undefined>()
   const [tab, setTab] = useState<(typeof tabs)[number]['id']>('all')
-  const [sort, setSort] = useState<'popular' | 'price-asc' | 'price-desc'>('popular')
+  const [sort, setSort] = useState<'price-asc' | 'price-desc'>('price-asc')
 
   const [operatorDialogOpen, setOperatorDialogOpen] = useState(false)
   const [providersLoading, setProvidersLoading] = useState(false)
@@ -391,8 +391,9 @@ export default function TopupPlanSelectionPage() {
         // Filter out plans with zero/negative prices only; keep -1 validity (DT One uses it for 'no expiry')
         console.log('Fetched plans:', raw)
         const valid = raw.filter((p) => {
-          if (p.price_inr <= 0 && p.price_eur <= 0) return false
-          return true
+          const recharge = Number(p.recharge_amount ?? 0)
+          if (recharge > 0) return true
+          return p.price_inr > 0 || p.price_eur > 0
         })
         // Normalize -1 validity to a human-readable label
         const normalized = valid.map((p) => {
@@ -433,12 +434,14 @@ export default function TopupPlanSelectionPage() {
   const visiblePlans = useMemo(() => {
     let rows = [...plans]
     if (tab !== 'all') rows = rows.filter((p) => p.type === tab)
-    if (sort === 'popular') {
-      rows = rows.sort((a, b) => (b.tag === 'popular' ? 1 : 0) - (a.tag === 'popular' ? 1 : 0))
-    } else if (sort === 'price-asc') {
-      rows = rows.sort((a, b) => a.price_eur - b.price_eur)
-    } else if (sort === 'price-desc') {
-      rows = rows.sort((a, b) => b.price_eur - a.price_eur)
+
+    const priceOf = (p: TopupPlan) => p.recharge_amount ?? p.price_eur ?? p.price_inr ?? 0
+    const effectiveSort = tab === 'all' ? 'price-asc' : sort
+
+    if (effectiveSort === 'price-asc') {
+      rows = rows.sort((a, b) => priceOf(a) - priceOf(b))
+    } else {
+      rows = rows.sort((a, b) => priceOf(b) - priceOf(a))
     }
     return rows
   }, [plans, tab, sort])
@@ -596,19 +599,20 @@ export default function TopupPlanSelectionPage() {
                 </TabsList>
               </Tabs>
 
-              <div className="flex w-full items-center justify-end gap-3 md:w-auto">
-                <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Filter by:</span>
-                <Select value={sort} onValueChange={(v) => setSort(v as any)}>
-                  <SelectTrigger className="h-11 w-[200px] rounded-full bg-[#f8f6f7] shadow-none ring-1 ring-black/10">
-                    <SelectValue placeholder="Sort by" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="popular">Popularity</SelectItem>
-                    <SelectItem value="price-asc">Price: Low → High</SelectItem>
-                    <SelectItem value="price-desc">Price: High → Low</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {tab !== 'all' ? (
+                <div className="flex w-full items-center justify-end gap-3 md:w-auto">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">Filter by:</span>
+                  <Select value={sort} onValueChange={(v) => setSort(v as 'price-asc' | 'price-desc')}>
+                    <SelectTrigger className="h-11 w-[200px] rounded-full bg-[#f8f6f7] shadow-none ring-1 ring-black/10">
+                      <SelectValue placeholder="Sort by" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="price-asc">Price: Low → High</SelectItem>
+                      <SelectItem value="price-desc">Price: High → Low</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : null}
             </div>
 
             <div className="mt-6 space-y-6">
@@ -655,8 +659,9 @@ export default function TopupPlanSelectionPage() {
                                 </div>
                               </div>
                             ) : null}
-                            <p className="text-2xl font-extrabold text-neutral-900">INR {plan.price_inr}</p>
-                            <p className="mt-1 text-[11px] font-bold text-neutral-700">(€{plan.price_eur})</p>
+                            <p className="text-2xl font-extrabold text-neutral-900">
+                              {formatPlanRechargeValue(plan.recharge_amount, plan.recharge_currency)}
+                            </p>
                           </div>
                         </div>
 
@@ -667,7 +672,7 @@ export default function TopupPlanSelectionPage() {
                               const ttMatch = (plan.benefits ?? '').match(/(?:talktime\s+of|talktime|tiempo\s+de\s+conversaci[oó]n|valor|cr[eé]dito)\s*(?:inr|rs\.?|eur|€)?\s*([\d.,]+)/i)
                               const talktimeText = ttMatch
                                 ? `Talktime Plan of ${ttMatch[0]}`
-                                : `Talktime Plan of INR ${plan.price_inr} (€${plan.price_eur})`
+                                : `Talktime Plan of ${formatPlanRechargeValue(plan.recharge_amount, plan.recharge_currency)}`
                               return (
                                 <div className="mb-3.5 flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-1.5 text-xs font-semibold text-emerald-700 border border-emerald-500/20 w-fit">
                                   <Sparkles className="h-3.5 w-3.5 text-emerald-600" />

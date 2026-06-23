@@ -12,6 +12,9 @@ export type TopupPlan = {
   systemPlanId?: string
   type: TopupPlanType
   tag: TopupPlanTag
+  /** Customer-facing recharge / face value shown on plan cards. */
+  recharge_amount: number
+  recharge_currency: string
   price_inr: number
   price_eur: number
   validity: string

@@ -6,6 +6,7 @@ import { resolveSyncCountries, type SyncCatalogOptions } from '@/lib/lcr/sync-op
 import { resolvePlanCountryCode } from '@/lib/aggregator/plan-country-resolver'
 import { normalizeCountryIso3 } from '@/lib/lcr/countries'
 import { wholesaleCostFromNormalizedPlan } from '@/lib/catalog/provider-wholesale-pricing'
+import { resolveValidityForStorage } from '@/lib/aggregator/raw-validity'
 
 function rawOperatorFromPlan(plan: any) {
   const raw: any = plan.raw ?? {}
@@ -90,7 +91,12 @@ export async function runStep2Fetch(
       currency: wholesale.wholesaleCurrency,
       destinationAmount: wholesale.destinationAmount,
       destinationCurrency: wholesale.destinationCurrency,
-      validity: plan.validityDays ? `${plan.validityDays}D` : null,
+      validity: resolveValidityForStorage({
+        validityDays: plan.validityDays,
+        raw: plan.raw,
+        planType: plan.planType,
+        category: plan.category,
+      }),
       talktime: null,
       dataVolume: null,
       sms: null,

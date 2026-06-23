@@ -21,6 +21,13 @@ import {
   type InternalPlanRow,
 } from '@/lib/lcr/internal-plan-display'
 import { countriesList } from '@/lib/country-codes'
+import {
+  batchLoadInternalPlanRechargeValues,
+  batchLoadSystemPlanRechargeValues,
+  derivedDisplayPrices,
+  formatPlanRechargeValue,
+  type PlanRechargeValue,
+} from '@/lib/catalog/plan-recharge-value'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -94,6 +101,10 @@ export type PublicPlan = {
   internalPlanId?: string
   systemPlanId?: string
   operatorId: string
+  /** Customer-facing recharge / face value (destination amount). */
+  recharge_amount: number
+  recharge_currency: string
+  /** Derived for checkout sorting — not shown on plan cards. */
   price_inr: number
   price_eur: number
   validity: string
@@ -233,8 +244,7 @@ function elaboratePlanDescription(
     return currentDesc
   }
 
-  const inrValue = plan.price_inr
-  const eurValue = plan.price_eur
+  const rechargeLabel = formatPlanRechargeValue(plan.recharge_amount, plan.recharge_currency)
 
   const commonCurrencies: Record<string, string> = {
     IN: 'INR (₹)',
@@ -275,16 +285,16 @@ function elaboratePlanDescription(
     : `the local currency equivalent`
 
   if (plan.type === 'topup') {
-    const talktimeAmt = specs.calls && specs.calls !== 'Unlimited' ? specs.calls : `INR ${inrValue} / €${eurValue}`
+    const talktimeAmt = specs.calls && specs.calls !== 'Unlimited' ? specs.calls : rechargeLabel
     const baseDesc = currentDesc ? ` (${currentDesc})` : ''
-    return `Instant airtime top-up plan${baseDesc}. This plan delivers standard talktime credit of approximately ${localValueText}, valued at INR ${inrValue} (€${eurValue}). Perfect for making local/international calls, sending SMS, or using mobile data at standard operator base tariffs.`
+    return `Instant airtime top-up plan${baseDesc}. This plan delivers standard talktime credit of approximately ${localValueText}, valued at ${rechargeLabel}. Perfect for making local/international calls, sending SMS, or using mobile data at standard operator base tariffs.`
   }
 
   if (plan.type === 'data') {
     const dataAmt = plan.data || specs.data || 'high-speed'
     const validityText = plan.validity && plan.validity !== 'No Expiry' ? `for ${plan.validity}` : 'with standard validity'
     const baseDesc = currentDesc ? ` (${currentDesc})` : ''
-    return `High-speed internet mobile data pack${baseDesc}. Provides ${dataAmt} data capacity ${validityText}, priced at INR ${inrValue} (€${eurValue}), suitable for ${localValueText}. Ideal for internet browsing, streaming video, downloading files, and social media connectivity.`
+    return `High-speed internet mobile data pack${baseDesc}. Provides ${dataAmt} data capacity ${validityText}, priced at ${rechargeLabel}, suitable for ${localValueText}. Ideal for internet browsing, streaming video, downloading files, and social media connectivity.`
   }
 
   return currentDesc
@@ -492,43 +502,22 @@ export async function fetchPublicOperators(countryInput: string): Promise<Public
   }
 }
 
-async function loadPlanPrices(internalPlanIds: string[]): Promise<Map<string, { price: number; currency: string }>> {
-  const map = new Map<string, { price: number; currency: string }>()
-  if (!internalPlanIds.length) return map
-  const res = await supabaseRest(
-    `internal_plan_provider_mapping?enabled=eq.true&internal_plan_id=in.(${internalPlanIds.map(enc).join(',')})&select=internal_plan_id,provider_price,provider_currency&limit=5000`,
-    { cache: 'no-store' },
+function systemPlanToPublic(
+  row: Record<string, unknown>,
+  operatorId: string,
+  recharge: PlanRechargeValue,
+): PublicPlan {
+  const { price_inr: priceInr, price_eur: priceEur } = derivedDisplayPrices(
+    recharge.amount,
+    recharge.currency,
   )
-  if (!res.ok) return map
-  const rows = (await res.json()) as Array<{
-    internal_plan_id: string
-    provider_price: number | null
-    provider_currency: string | null
-  }>
-  for (const row of rows) {
-    const price = num(row.provider_price, 0)
-    if (price <= 0) continue
-    const existing = map.get(row.internal_plan_id)
-    if (!existing || price < existing.price) {
-      map.set(row.internal_plan_id, {
-        price,
-        currency: (row.provider_currency ?? 'EUR').toUpperCase(),
-      })
-    }
-  }
-  return map
-}
-
-function systemPlanToPublic(row: Record<string, unknown>, operatorId: string): PublicPlan {
-  const amount = num(row.amount, 0)
-  const currency = String(row.currency ?? 'EUR').toUpperCase()
-  const priceInr = currency === 'INR' ? Math.round(amount) : Math.round(amount * 90)
-  const priceEur = currency === 'EUR' ? Number(amount.toFixed(2)) : Number((amount / 90).toFixed(2))
   return {
     id: String(row.id),
     systemPlanId: String(row.id),
     internalPlanId: row.internal_plan_id != null ? String(row.internal_plan_id) : undefined,
     operatorId,
+    recharge_amount: recharge.amount,
+    recharge_currency: recharge.currency,
     price_inr: priceInr,
     price_eur: priceEur,
     validity: String(row.validity ?? ''),
@@ -541,7 +530,36 @@ function systemPlanToPublic(row: Record<string, unknown>, operatorId: string): P
       String(row.description ?? row.system_plan_name ?? '')
     ),
     planName: String(row.system_plan_name ?? 'Plan'),
-    currency,
+    currency: recharge.currency,
+  }
+}
+
+function internalPlanToPublic(
+  row: InternalPlanRow,
+  operatorRef: string,
+  recharge: PlanRechargeValue,
+  idx: number,
+): PublicPlan {
+  const { price_inr: priceInr, price_eur: priceEur } = derivedDisplayPrices(
+    recharge.amount,
+    recharge.currency,
+  )
+  const name = displayPlanName(row)
+  const benefits = row.uti_description ?? name
+  return {
+    id: row.id,
+    internalPlanId: row.id,
+    operatorId: operatorRef,
+    recharge_amount: recharge.amount,
+    recharge_currency: recharge.currency,
+    price_inr: priceInr,
+    price_eur: priceEur,
+    validity: row.subservice ?? '',
+    benefits,
+    tag: idx < 3 ? 'popular' : 'none',
+    type: mapPlanType(row.category, name, benefits),
+    planName: name,
+    currency: recharge.currency,
   }
 }
 
@@ -591,31 +609,14 @@ async function listPlansFromInternalPlansByName(countryIso3: string, operatorNam
   const matched = rows.filter((row) => operatorNameMatches(operatorNameFromInternalPlan(row, systemNames), operatorName))
   if (!matched.length) return []
 
-  const prices = await loadPlanPrices(matched.map((r) => r.id))
-  return matched.map((row, idx) => {
-    const pricing = prices.get(row.id)
-    const amount = pricing?.price ?? 0
-    const currency = pricing?.currency ?? 'EUR'
-    const priceInr = currency === 'INR' ? Math.round(amount) : Math.round(amount * 90)
-    const priceEur = currency === 'EUR' ? Number(amount.toFixed(2)) : Number((amount / 90).toFixed(2))
-    return {
-      id: row.id,
-      internalPlanId: row.id,
-      operatorId: row.operator_ref,
-      price_inr: priceInr,
-      price_eur: priceEur,
-      validity: row.subservice ?? '',
-      benefits: row.uti_description ?? displayPlanName(row),
-      tag: idx < 3 ? 'popular' : 'none',
-      type: mapPlanType(
-        row.category,
-        displayPlanName(row),
-        row.uti_description ?? displayPlanName(row)
-      ),
-      planName: displayPlanName(row),
-      currency,
-    }
-  })
+  const rechargeMap = await batchLoadInternalPlanRechargeValues(matched.map((r) => r.id))
+  return matched
+    .map((row, idx) => {
+      const recharge = rechargeMap.get(row.id)
+      if (!recharge) return null
+      return internalPlanToPublic(row, row.operator_ref, recharge, idx)
+    })
+    .filter((p): p is PublicPlan => p != null)
 }
 
 function applyPlanFilters(
@@ -652,31 +653,14 @@ async function listPlansFromInternalPlans(countryIso3: string, operatorRef: stri
   )
   if (!res.ok) return []
   const rows = (await res.json()) as InternalPlanRow[]
-  const prices = await loadPlanPrices(rows.map((r) => r.id))
-  return rows.map((row, idx) => {
-    const pricing = prices.get(row.id)
-    const amount = pricing?.price ?? 0
-    const currency = pricing?.currency ?? 'EUR'
-    const priceInr = currency === 'INR' ? Math.round(amount) : Math.round(amount * 90)
-    const priceEur = currency === 'EUR' ? Number(amount.toFixed(2)) : Number((amount / 90).toFixed(2))
-    return {
-      id: row.id,
-      internalPlanId: row.id,
-      operatorId: operatorRef,
-      price_inr: priceInr,
-      price_eur: priceEur,
-      validity: row.subservice ?? '',
-      benefits: row.uti_description ?? displayPlanName(row),
-      tag: idx < 3 ? 'popular' : 'none',
-      type: mapPlanType(
-        row.category,
-        displayPlanName(row),
-        row.uti_description ?? displayPlanName(row)
-      ),
-      planName: displayPlanName(row),
-      currency,
-    }
-  })
+  const rechargeMap = await batchLoadInternalPlanRechargeValues(rows.map((r) => r.id))
+  return rows
+    .map((row, idx) => {
+      const recharge = rechargeMap.get(row.id)
+      if (!recharge) return null
+      return internalPlanToPublic(row, operatorRef, recharge, idx)
+    })
+    .filter((p): p is PublicPlan => p != null)
 }
 
 export async function fetchPublicPlans(input: {
@@ -729,7 +713,18 @@ export async function fetchPublicPlans(input: {
       })) as Record<string, unknown>[]
       const activeMobilePlans = rows.filter((row) => isMobileCatalogPlan(row as { status?: string; service_domain?: string }))
       const eligibleRows = await filterWebsiteEligibleSystemPlans(activeMobilePlans, operatorId)
-      if (eligibleRows.length) plans = eligibleRows.map((r) => systemPlanToPublic(r, operatorId))
+      if (eligibleRows.length) {
+        const rechargeMap = await batchLoadSystemPlanRechargeValues(
+          eligibleRows.map((r) => String(r.id)),
+        )
+        plans = eligibleRows
+          .map((r) => {
+            const recharge = rechargeMap.get(String(r.id))
+            if (!recharge) return null
+            return systemPlanToPublic(r, operatorId, recharge)
+          })
+          .filter((p): p is PublicPlan => p != null)
+      }
     }
   }
 
@@ -745,19 +740,26 @@ export async function fetchPublicPlans(input: {
     try {
       const iso2 = countryIso3 ? toPublicCountryCode(countryIso3) : (input.countryCode ?? 'IN')
       const legacy = await dbFetchPlans(iso2, operatorId)
-      plans = legacy.map((p) => ({
-        id: p.sku_code,
-        internalPlanId: p.sku_code,
-        operatorId,
-        price_inr: Math.round(num(p.price_inr)),
-        price_eur: Number(num(p.price_eur).toFixed(2)),
-        validity: p.validity ?? '',
-        data: p.data_label ?? undefined,
-        benefits: p.benefits ?? '',
-        tag: p.tag === 'popular' ? ('popular' as const) : ('none' as const),
-        type: mapPlanType(p.plan_type, p.plan_name ?? p.sku_code, p.benefits ?? ''),
-        planName: p.plan_name ?? p.sku_code,
-      }))
+      plans = legacy.map((p) => {
+        const amount = num(p.price_inr) > 0 ? num(p.price_inr) : num(p.price_eur)
+        const currency = num(p.price_inr) > 0 ? 'INR' : 'EUR'
+        return {
+          id: p.sku_code,
+          internalPlanId: p.sku_code,
+          operatorId,
+          recharge_amount: amount,
+          recharge_currency: currency,
+          price_inr: Math.round(num(p.price_inr)),
+          price_eur: Number(num(p.price_eur).toFixed(2)),
+          validity: p.validity ?? '',
+          data: p.data_label ?? undefined,
+          benefits: p.benefits ?? '',
+          tag: p.tag === 'popular' ? ('popular' as const) : ('none' as const),
+          type: mapPlanType(p.plan_type, p.plan_name ?? p.sku_code, p.benefits ?? ''),
+          planName: p.plan_name ?? p.sku_code,
+          currency,
+        }
+      })
     } catch {
       plans = []
     }

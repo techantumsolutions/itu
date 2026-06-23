@@ -1,5 +1,6 @@
 import { fetchValuetopupCatalog } from '@/lib/valuetopup'
 import { normalizeCountryIso3 } from '@/lib/lcr/countries'
+import { extractValidityDaysFromRaw } from '@/lib/aggregator/raw-validity'
 import type {
   FetchRawPlansOptions,
   NormalizedBenefit,
@@ -16,6 +17,12 @@ function text(v: unknown): string {
 function num(v: unknown): number | undefined {
   const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN
   return Number.isFinite(n) ? n : undefined
+}
+
+function valuetopupPlanDescription(sku: Record<string, unknown>): string | undefined {
+  const productDescription = text(sku.productDescription)
+  const additionalInformation = text(sku.additionalInformation)
+  return productDescription || additionalInformation || undefined
 }
 
 export const valuetopupConnector: ProviderConnector = {
@@ -84,11 +91,12 @@ export const valuetopupConnector: ProviderConnector = {
           planType: sku.category === 'Pin' ? 'PIN' : 'AIRTIME',
           tags: ['VALUETOPUP', text(sku.category).toUpperCase()],
           name: text(sku.skuName) || text(sku.productName),
-          description: text(sku.additionalInformation) || undefined,
+          description: valuetopupPlanDescription(sku),
           retailAmount,
           retailCurrency: currency,
           wholesaleAmount,
           wholesaleCurrency: currency,
+          validityDays: extractValidityDaysFromRaw(sku),
           benefits: [benefit],
           requiredFields: sku.category === 'Pin' ? [] : [['account']],
           category: text(sku.category) || undefined,
