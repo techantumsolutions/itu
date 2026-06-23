@@ -14,10 +14,19 @@ jest.mock('./repository', () => ({
   listProviderPriorities: jest.fn(async () => []),
   listActiveRoutingRules: jest.fn(async () => []),
   insertRoutingLog: jest.fn(async () => 'log-1'),
+  insertDetailedRoutingLog: jest.fn(async () => 'log-detail-1'),
 }))
 
 jest.mock('@/lib/db/supabase-rest', () => ({
   supabaseRest: jest.fn(),
+}))
+
+jest.mock('@/lib/lcr-v2/recharge-db', () => ({
+  dbGetInternalPlan: jest.fn(async () => ({ id: 'plan-1' })),
+}))
+
+jest.mock('@/lib/routing/plan-mapping-pricing', () => ({
+  batchResolvePlanMappingPricing: jest.fn(async () => new Map()),
 }))
 
 import { supabaseRest } from '@/lib/db/supabase-rest'
@@ -27,13 +36,29 @@ const mockedSupabase = supabaseRest as jest.MockedFunction<typeof supabaseRest>
 const mockedRules = listActiveRoutingRules as jest.MockedFunction<typeof listActiveRoutingRules>
 
 function mockMappings(
-  rows: Array<{ provider_id: string; provider_plan_id: string; provider_price: number; provider_priority?: number }>,
+  rows: Array<{
+    provider_id: string
+    provider_plan_id: string
+    provider_price: number
+    provider_currency?: string
+    provider_priority?: number
+  }>,
 ) {
   mockedSupabase.mockImplementation(async (path: string) => {
     if (path.includes('internal_plan_provider_mapping')) {
-      return { ok: true, json: async () => rows } as Response
+      const mapped = rows.map((r) => ({
+        ...r,
+        provider_currency: r.provider_currency ?? 'EUR',
+        enabled: true,
+      }))
+      return { ok: true, json: async () => mapped } as Response
     }
     if (path.includes('lcr_providers')) {
+      const adapterById: Record<string, string> = {
+        'p-dtone': 'dtone',
+        'p-ding': 'ding',
+        'p-reloadly': 'reloadly',
+      }
       const providers = rows.map((r, i) => ({
         id: r.provider_id,
         code: ['DTONE', 'DING', 'RELOADLY'][i] ?? 'P',
@@ -42,8 +67,12 @@ function mockMappings(
         priority: 100 + i,
         status: 'online',
         supported_countries: [],
+        adapter_key: adapterById[r.provider_id] ?? 'ding',
       }))
       return { ok: true, json: async () => providers } as Response
+    }
+    if (path.includes('agg_exchange_rates')) {
+      return { ok: true, json: async () => [] } as Response
     }
     return { ok: false, text: async () => 'not found' } as Response
   })
@@ -89,11 +118,11 @@ describe('RoutingEngineService', () => {
     expect(result.selected?.providerId).toBe('p-dtone')
   })
 
-  it('selects lowest cost when no rule exists (Ding = 8)', async () => {
+  it('selects lowest normalized cost when no rule exists (Ding = 8 EUR)', async () => {
     mockMappings([
-      { provider_id: 'p-dtone', provider_plan_id: 'plan-d', provider_price: 10 },
-      { provider_id: 'p-ding', provider_plan_id: 'plan-g', provider_price: 8 },
-      { provider_id: 'p-reloadly', provider_plan_id: 'plan-r', provider_price: 12 },
+      { provider_id: 'p-dtone', provider_plan_id: 'plan-d', provider_price: 10, provider_currency: 'EUR' },
+      { provider_id: 'p-ding', provider_plan_id: 'plan-g', provider_price: 8, provider_currency: 'EUR' },
+      { provider_id: 'p-reloadly', provider_plan_id: 'plan-r', provider_price: 12, provider_currency: 'EUR' },
     ])
 
     const result = await service.resolveProvider({
@@ -104,12 +133,31 @@ describe('RoutingEngineService', () => {
 
     expect(result.routingType).toBe('LCR')
     expect(result.selected?.providerId).toBe('p-ding')
+    expect(result.selected?.normalized_provider_price).toBe(8)
+  })
+
+  it('sorts by normalized cost, not raw provider_price (INR vs EUR)', async () => {
+    mockMappings([
+      { provider_id: 'p-ding', provider_plan_id: 'plan-g', provider_price: 21.44, provider_currency: 'EUR' },
+      { provider_id: 'p-reloadly', provider_plan_id: 'plan-r', provider_price: 2500, provider_currency: 'INR' },
+    ])
+
+    const result = await service.resolveProvider({
+      countryId: 'USA',
+      operatorId: 'tmobile',
+      productId: 'plan-mixed',
+    })
+
+    expect(result.selected?.providerId).toBe('p-ding')
+    expect(result.selected?.normalized_provider_price).toBeCloseTo(21.44, 2)
+    const reloadly = result.fallbacks.find((f) => f.providerId === 'p-reloadly')
+    expect(reloadly?.normalized_provider_price).toBeGreaterThan(21.44)
   })
 
   it('includes DTOne as fallback when Ding is first choice', async () => {
     mockMappings([
-      { provider_id: 'p-ding', provider_plan_id: 'plan-g', provider_price: 8 },
-      { provider_id: 'p-dtone', provider_plan_id: 'plan-d', provider_price: 10 },
+      { provider_id: 'p-ding', provider_plan_id: 'plan-g', provider_price: 8, provider_currency: 'EUR' },
+      { provider_id: 'p-dtone', provider_plan_id: 'plan-d', provider_price: 10, provider_currency: 'EUR' },
     ])
 
     const result = await service.resolveProvider({

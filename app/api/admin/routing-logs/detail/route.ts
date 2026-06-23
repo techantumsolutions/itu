@@ -53,6 +53,46 @@ export async function GET(request: Request) {
           ? (attempt.routing_decision as Record<string, unknown>)
           : {}
 
+      const evaluatedRaw = routingDecision.evaluated_providers ?? routingDecision.evaluatedProviders
+      const evaluatedList = Array.isArray(evaluatedRaw) ? [...evaluatedRaw] : []
+      for (const hop of attempts) {
+        if (!hop?.skipped) continue
+        const hopId = hop.providerId ?? hop.providerName
+        if (!hopId) continue
+        const idx = evaluatedList.findIndex(
+          (ev: any) =>
+            ev?.providerId === hop.providerId ||
+            ev?.providerName === hop.providerName ||
+            ev?.provider === hop.providerName,
+        )
+        const skipReason = hop.skipReason ?? hop.errorMessage ?? hop.error ?? 'Pre-validation skipped'
+        if (idx >= 0) {
+          evaluatedList[idx] = {
+            ...evaluatedList[idx],
+            eligibility: false,
+            eligible: false,
+            filterReason: skipReason,
+            reason: skipReason,
+          }
+        } else {
+          evaluatedList.push({
+            providerId: hop.providerId,
+            providerName: hop.providerName ?? hop.providerId,
+            costPrice: hop.cost ?? null,
+            currency: hop.currency ?? null,
+            eligibility: false,
+            eligible: false,
+            filterReason: skipReason,
+            reason: skipReason,
+          })
+        }
+      }
+
+      const routingDecisionWithSkips = {
+        ...routingDecision,
+        evaluated_providers: evaluatedList,
+      }
+
       return NextResponse.json({
         attempt: {
           id: attempt.id,
@@ -65,13 +105,15 @@ export async function GET(request: Request) {
           provider_currency: pricing.providerCurrency,
           provider_destination_amount: mappedPricing?.destinationAmount ?? null,
           provider_destination_currency: mappedPricing?.destinationCurrency ?? null,
-          routing_decision: routingDecision,
+          routing_decision: routingDecisionWithSkips,
           attempts: attempts.map((hop: any) => ({
             providerName: hop.providerName || hop.providerId || '—',
             cost: hop.cost ?? null,
             currency: hop.currency ?? pricing.providerCurrency,
             source: hop.source ?? 'LCR',
             ok: Boolean(hop.ok),
+            skipped: Boolean(hop.skipped),
+            skipReason: hop.skipReason ?? hop.errorMessage,
             error: hop.error,
             errorCode: hop.errorCode,
             errorMessage: hop.errorMessage,

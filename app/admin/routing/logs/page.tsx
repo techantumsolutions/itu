@@ -425,7 +425,9 @@ export default function RoutingLogsPage() {
                                             <span className={`absolute -left-[31px] top-1.5 flex h-4 w-4 items-center justify-center rounded-full border text-[9px] font-bold ${
                                               hop.ok 
                                                 ? 'bg-emerald-500 border-emerald-600 text-white shadow shadow-emerald-500/20' 
-                                                : 'bg-rose-500 border-rose-600 text-white shadow shadow-rose-500/20'
+                                                : hop.skipped
+                                                  ? 'bg-amber-500 border-amber-600 text-white shadow shadow-amber-500/20'
+                                                  : 'bg-rose-500 border-rose-600 text-white shadow shadow-rose-500/20'
                                             }`}>
                                               {idx + 1}
                                             </span>
@@ -434,8 +436,8 @@ export default function RoutingLogsPage() {
                                                 <span className="font-semibold text-xs text-foreground">
                                                   Attempt #{idx + 1}: {hop.providerName}
                                                 </span>
-                                                <Badge variant={hop.ok ? 'success' : 'destructive'} className="text-[10px]">
-                                                  {hop.ok ? 'Success' : 'Failed'}
+                                                <Badge variant={hop.ok ? 'success' : hop.skipped ? 'outline' : 'destructive'} className="text-[10px]">
+                                                  {hop.ok ? 'Success' : hop.skipped ? 'Skipped' : 'Failed'}
                                                 </Badge>
                                               </div>
                                               <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground">
@@ -443,10 +445,23 @@ export default function RoutingLogsPage() {
                                                 <div>Cost: <span className="font-medium text-foreground">{formatMoney(hop.cost, hop.currency)}</span></div>
                                               </div>
                                               {!hop.ok && (
-                                                <div className="text-[10px] text-destructive bg-rose-50/50 p-2 rounded border border-rose-100 mt-1 font-mono">
-                                                  {hop.error || 'Unknown Error'}
-                                                  {hop.errorCode && <span className="block font-semibold">Error Code: {hop.errorCode}</span>}
-                                                  {hop.errorMessage && <span className="block">Message: {hop.errorMessage}</span>}
+                                                <div className={`text-[10px] p-2 rounded border mt-1 font-mono ${
+                                                  hop.skipped
+                                                    ? 'text-amber-800 bg-amber-50/50 border-amber-100'
+                                                    : 'text-destructive bg-rose-50/50 border-rose-100'
+                                                }`}>
+                                                  {hop.skipped ? (
+                                                    <>
+                                                      <span className="block font-semibold">Skipped before API call</span>
+                                                      <span className="block">{hop.skipReason || hop.errorMessage || hop.error || 'Pre-validation failed'}</span>
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      {hop.error || 'Unknown Error'}
+                                                      {hop.errorCode && <span className="block font-semibold">Error Code: {hop.errorCode}</span>}
+                                                      {hop.errorMessage && <span className="block">Message: {hop.errorMessage}</span>}
+                                                    </>
+                                                  )}
                                                 </div>
                                               )}
                                             </div>

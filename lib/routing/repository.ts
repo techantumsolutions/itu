@@ -307,12 +307,22 @@ export async function listRoutingLogs(filters: {
 function mapRoutingLogRow(row: Record<string, unknown>): RoutingLogRow {
   const prov = row.lcr_providers as { code?: string; name?: string } | null
   const status = String(row.status ?? 'SELECTED')
+  const meta = parseRoutingLogStatus(status)
   const pricing = mergeRoutingLogPricing({
     providerCost: row.provider_cost != null ? Number(row.provider_cost) : null,
     providerId: row.provider_id != null ? String(row.provider_id) : null,
     providerName: prov?.name,
     status,
   })
+
+  const wholesaleAmount =
+    typeof meta.provider_wholesale_amount === 'number'
+      ? meta.provider_wholesale_amount
+      : pricing.providerCost
+  const wholesaleCurrency =
+    typeof meta.provider_wholesale_currency === 'string'
+      ? meta.provider_wholesale_currency
+      : pricing.providerCurrency
 
   return {
     id: String(row.id),
@@ -324,8 +334,16 @@ function mapRoutingLogRow(row: Record<string, unknown>): RoutingLogRow {
     providerCode: prov?.code,
     providerName: prov?.name,
     routingType: String(row.routing_type ?? 'LCR') as RoutingLogRow['routingType'],
-    providerCost: pricing.providerCost,
-    providerCurrency: pricing.providerCurrency,
+    providerCost: wholesaleAmount,
+    providerCurrency: wholesaleCurrency,
+    providerWholesaleAmount: wholesaleAmount,
+    providerWholesaleCurrency: wholesaleCurrency,
+    destinationFaceValue:
+      typeof meta.destination_face_value === 'number' ? meta.destination_face_value : null,
+    destinationCurrency:
+      typeof meta.destination_currency === 'string' ? meta.destination_currency : null,
+    normalizedProviderPrice:
+      typeof meta.normalized_provider_price === 'number' ? meta.normalized_provider_price : null,
     userAmount: pricing.userAmount,
     userCurrency: pricing.userCurrency,
     fallbackUsed: Boolean(row.fallback_used),
@@ -432,8 +450,14 @@ export async function enrichRoutingLogsWithPricing<T extends RoutingLogRow>(logs
       providerId: providerId ?? log.providerId,
       userAmount: pricing.userAmount,
       userCurrency: pricing.userCurrency,
-      providerCost: pricing.providerCost,
-      providerCurrency: pricing.providerCurrency,
+      providerCost: resolvedWholesale?.wholesaleAmount ?? pricing.providerCost,
+      providerCurrency: resolvedWholesale?.wholesaleCurrency ?? pricing.providerCurrency,
+      providerWholesaleAmount: resolvedWholesale?.wholesaleAmount ?? log.providerWholesaleAmount ?? pricing.providerCost,
+      providerWholesaleCurrency:
+        resolvedWholesale?.wholesaleCurrency ?? log.providerWholesaleCurrency ?? pricing.providerCurrency,
+      destinationFaceValue: resolvedWholesale?.destinationAmount ?? log.destinationFaceValue ?? null,
+      destinationCurrency: resolvedWholesale?.destinationCurrency ?? log.destinationCurrency ?? null,
+      normalizedProviderPrice: log.normalizedProviderPrice ?? null,
       providerDestinationAmount: resolvedWholesale?.destinationAmount ?? null,
       providerDestinationCurrency: resolvedWholesale?.destinationCurrency ?? null,
     }
@@ -470,8 +494,14 @@ export async function insertDetailedRoutingLog(input: {
   routingRuleProvider?: string | null
   selectedProvider?: string | null
   attemptNumber?: number
+  /** @deprecated Use providerWholesaleAmount — kept for routing_logs.provider_cost column */
   providerCost?: number
   providerCurrency?: string | null
+  providerWholesaleAmount?: number | null
+  providerWholesaleCurrency?: string | null
+  destinationFaceValue?: number | null
+  destinationCurrency?: string | null
+  normalizedProviderPrice?: number | null
   userAmount?: number | null
   userCurrency?: string | null
   providerPlanId?: string | null
@@ -484,6 +514,11 @@ export async function insertDetailedRoutingLog(input: {
   responseMessage?: string | null
   verificationMappingCount?: number | null
 }): Promise<string | null> {
+  const wholesaleAmount = input.providerWholesaleAmount ?? input.providerCost ?? null
+  const wholesaleCurrency = input.providerWholesaleCurrency ?? input.providerCurrency ?? null
+  const destinationFace = input.destinationFaceValue ?? input.providerDestinationAmount ?? null
+  const destinationCurrency = input.destinationCurrency ?? input.providerDestinationCurrency ?? null
+
   const details = {
     routingStrategy: input.routingStrategy,
     routingRuleMatched: input.routingRuleMatched,
@@ -491,10 +526,16 @@ export async function insertDetailedRoutingLog(input: {
     routingRuleProvider: input.routingRuleProvider ?? null,
     attemptNumber: input.attemptNumber ?? null,
     providerPriority: input.providerPriority ?? null,
-    providerCurrency: input.providerCurrency ?? null,
+    providerCurrency: wholesaleCurrency,
     providerPlanId: input.providerPlanId ?? null,
-    providerDestinationAmount: input.providerDestinationAmount ?? null,
-    providerDestinationCurrency: input.providerDestinationCurrency ?? null,
+    providerDestinationAmount: destinationFace,
+    providerDestinationCurrency: destinationCurrency,
+    provider_wholesale_amount: wholesaleAmount,
+    provider_wholesale_currency: wholesaleCurrency,
+    destination_face_value: destinationFace,
+    destination_currency: destinationCurrency,
+    normalized_provider_price: input.normalizedProviderPrice ?? null,
+    selected_provider: input.selectedProvider ?? null,
     userAmount: input.userAmount ?? null,
     userCurrency: input.userCurrency ?? null,
     failureReason: input.failureReason ?? null,
@@ -513,7 +554,7 @@ export async function insertDetailedRoutingLog(input: {
       product_id: input.planId,
       provider_id: input.selectedProvider || null,
       routing_type: input.routingRuleMatched === 'Yes' ? 'RULE' : 'LCR',
-      provider_cost: input.providerCost ?? null,
+      provider_cost: wholesaleAmount,
       fallback_used: (input.attemptNumber ?? 1) > 1,
       status: JSON.stringify({
         event: input.executionResult,
@@ -557,6 +598,8 @@ export type RoutingAuditDetail = {
     currency?: string | null
     source: 'RULE' | 'LCR'
     ok: boolean
+    skipped?: boolean
+    skipReason?: string
     error?: string
     errorCode?: string
     errorMessage?: string
@@ -680,6 +723,35 @@ export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingA
         error: typeof meta.failureReason === 'string' ? meta.failureReason : event,
         errorCode: typeof meta.responseCode === 'string' ? meta.responseCode : undefined,
         errorMessage: typeof meta.responseMessage === 'string' ? meta.responseMessage : undefined,
+      })
+    }
+
+    if (event === 'PROVIDER_PRE_VALIDATION_SKIPPED') {
+      const skipReason =
+        typeof meta.failureReason === 'string'
+          ? meta.failureReason
+          : typeof meta.responseMessage === 'string'
+            ? meta.responseMessage
+            : 'Pre-validation skipped'
+      const providerKey = log.providerId ?? log.providerName ?? log.providerCode ?? ''
+      if (providerKey && evaluatedMap.has(providerKey)) {
+        const existing = evaluatedMap.get(providerKey)!
+        evaluatedMap.set(providerKey, {
+          ...existing,
+          eligibility: false,
+          filterReason: skipReason,
+        })
+      }
+      attempts.push({
+        providerName: log.providerName || log.providerCode || '—',
+        cost: log.providerCost,
+        currency: log.providerCurrency ?? (typeof meta.providerCurrency === 'string' ? meta.providerCurrency : null),
+        source: meta.routingRuleMatched === 'Yes' ? 'RULE' : 'LCR',
+        ok: false,
+        skipped: true,
+        skipReason,
+        error: typeof meta.responseCode === 'string' ? meta.responseCode : 'PROVIDER_PRE_VALIDATION_SKIPPED',
+        errorMessage: skipReason,
       })
     }
   }

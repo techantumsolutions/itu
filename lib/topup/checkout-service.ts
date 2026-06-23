@@ -16,6 +16,26 @@ import { executeMappedRecharge } from '@/lib/lcr-v2/execute-provider'
 import { dbGetProvider, dbGetInternalPlan, dbInsertRechargeAttempt, dbUpdateRechargeAttempt } from '@/lib/lcr-v2/recharge-db'
 import { insertDetailedRoutingLog } from '@/lib/routing/repository'
 import { processRewardsForTransaction } from '@/lib/rewards/reward-service'
+import {
+  providerPreValidation,
+  isDingInsufficientBalance,
+  DING_INSUFFICIENT_BALANCE_LOG,
+} from '@/lib/lcr-v2/provider-pre-validation'
+import {
+  buildProviderExecutionContextFromCandidate,
+  logProviderExecutionContext,
+} from '@/lib/lcr-v2/provider-execution-context'
+import {
+  pricingFieldsFromCandidate,
+  detailedRoutingLogPricingInput,
+} from '@/lib/routing/provider-pricing-log-fields'
+import type { RoutingProviderCandidate } from '@/lib/routing/types'
+
+function candidatePricingLog(candidate: RoutingProviderCandidate | null | undefined) {
+  return detailedRoutingLogPricingInput(pricingFieldsFromCandidate(candidate), {
+    providerPlanId: candidate?.providerPlanId,
+  })
+}
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -254,7 +274,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
       routingStrategy: routingResult.settings?.routingStrategy || 'LEAST_COST',
       routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
       selectedProvider: e.providerId,
-      providerCost: e.price !== Infinity ? e.price : undefined,
+      ...candidatePricingLog(e),
       providerPriority: e.providerPriority,
       executionResult: isFiltered ? 'LCR_PROVIDER_FILTERED' : 'LCR_PROVIDER_DISCOVERED',
       failureReason: isFiltered ? filterReason : undefined,
@@ -271,8 +291,11 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
       activeStatus: e.activeStatus ?? e.eligible,
       onlineStatus: e.onlineStatus ?? 'unknown',
       mappingExists: e.mappingExists ?? true,
-      costPrice: e.price,
-      currency: e.currency ?? null,
+      costPrice: e.provider_wholesale_amount ?? e.price,
+      currency: e.provider_wholesale_currency ?? e.currency ?? null,
+      destinationFaceValue: e.destination_face_value ?? null,
+      destinationCurrency: e.destination_currency ?? null,
+      normalizedPrice: e.normalized_provider_price ?? null,
       margin: e.margin ?? 0,
       priority: e.providerPriority ?? 100,
       eligibility: e.eligible,
@@ -298,7 +321,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
       routingStrategy: routingResult.settings?.routingStrategy || 'LEAST_COST',
       routingRuleMatched: 'No',
       selectedProvider: bestPricedCandidate?.providerId,
-      providerCost: bestPricedCandidate?.price !== Infinity ? bestPricedCandidate?.price : undefined,
+      ...candidatePricingLog(bestPricedCandidate),
       executionResult: reason,
     })
     await updateTransactionStatus(transactionId, 'failed', { error: errMsg, routing: routingResult })
@@ -312,7 +335,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     return { ok: false, transactionId, rechargeOrderId: rechargeOrderId ?? undefined, status: 'failed', error: errMsg, hints, rewardPointsEarned }
   }
 
-  logHint(`Primary Provider Assigned: ${routingResult.selected.providerName || routingResult.selected.providerId} (Plan SKU: ${routingResult.selected.providerPlanId}, Cost: ${routingResult.selected.price} ${routingResult.selected.currency || 'EUR'})`)
+  logHint(`Primary Provider Assigned: ${routingResult.selected.providerName || routingResult.selected.providerId} (Plan SKU: ${routingResult.selected.providerPlanId}, Wholesale: ${routingResult.selected.provider_wholesale_amount ?? routingResult.selected.price} ${(routingResult.selected.provider_wholesale_currency ?? routingResult.selected.currency) || 'EUR'}, Normalized: ${routingResult.selected.normalized_provider_price ?? 'N/A'})`)
 
   const retrySettings = routingResult.settings
   const selected = routingResult.selected
@@ -357,7 +380,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     return null
   })
 
-  logHint(`Provider failover chain established. Trying providers: ${chain.map(c => `${c.providerName || c.providerId} (Cost: ${c.price ?? 'N/A'} ${c.currency || 'EUR'})`).join(' -> ')}`)
+  logHint(`Provider failover chain established. Trying providers: ${chain.map((c) => `${c.providerName || c.providerId} (normalized=${c.normalized_provider_price ?? 'N/A'} ${c.normalized_provider_currency ?? ''}, wholesale=${c.provider_wholesale_amount ?? c.price} ${c.provider_wholesale_currency ?? c.currency})`).join(' -> ')}`)
 
   const attemptsLog: Array<{ 
     providerId: string
@@ -396,7 +419,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
         routingRuleId: routingResult.ruleId,
         routingRuleProvider: candidate.providerName || candidate.providerId,
         selectedProvider: candidate.providerId,
-        providerCost: candidate.price,
+        ...candidatePricingLog(candidate),
         providerPriority: candidate.providerPriority,
         executionResult: 'RULE_PROVIDER_SELECTED',
         attemptNumber: i + 1,
@@ -410,7 +433,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
         routingStrategy: snapshot.routing_strategy,
         routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
         selectedProvider: candidate.providerId,
-        providerCost: candidate.price,
+        ...candidatePricingLog(candidate),
         providerPriority: candidate.providerPriority,
         executionResult: 'RETRY_STARTED',
         attemptNumber: i + 1,
@@ -423,14 +446,14 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
         routingStrategy: snapshot.routing_strategy,
         routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
         selectedProvider: candidate.providerId,
-        providerCost: candidate.price,
+        ...candidatePricingLog(candidate),
         providerPriority: candidate.providerPriority,
         executionResult: 'RETRY_PROVIDER_SELECTED',
         attemptNumber: i + 1,
       })
     }
 
-    logHint(`[Hop ${i + 1}/${chain.length}] Attempting provider: ${candidate.providerName || candidate.providerId} (Plan SKU: ${candidate.providerPlanId}, Cost: ${candidate.price ?? 'N/A'} ${candidate.currency || 'EUR'})`)
+    logHint(`[Hop ${i + 1}/${chain.length}] Attempting provider: ${candidate.providerName || candidate.providerId} (Plan SKU: ${candidate.providerPlanId}, Wholesale: ${candidate.provider_wholesale_amount ?? candidate.price ?? 'N/A'} ${(candidate.provider_wholesale_currency ?? candidate.currency) || 'EUR'})`)
 
     const provider = await dbGetProvider(candidate.providerId)
     if (!provider) {
@@ -454,17 +477,69 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     const phoneDigits = input.mobileNumber.replace(/\D/g, '')
     const externalId = `TXN-${transactionId.slice(0, 8).toUpperCase()}-${Date.now()}`
 
-    logHint(`[Hop ${i + 1}/${chain.length}] Sending request to provider adapter "${adapterKey}" with ExternalRef: ${externalId}`)
-
-    const exec = await executeMappedRecharge({
+    const executionContext = buildProviderExecutionContextFromCandidate({
+      candidate,
       adapterKey,
-      providerPlanId: candidate.providerPlanId,
       phoneDigits,
       externalId,
-      sendAmount: input.amount,
+      customer_payment_amount: input.amount,
+      customer_payment_currency: input.currency || 'INR',
     })
 
+    logProviderExecutionContext(executionContext, 'checkout-hop')
+    logHint(
+      `[Hop ${i + 1}/${chain.length}] customer_payment=${executionContext.customer_payment_amount} ${executionContext.customer_payment_currency} | wholesale=${executionContext.provider_wholesale_amount} ${executionContext.provider_wholesale_currency} | destination_face=${executionContext.destination_face_value} ${executionContext.destination_currency}`,
+    )
+
+    const preCheck = await providerPreValidation({ executionContext })
+
+    if (!preCheck.eligible) {
+      const skipReason = preCheck.logMessage ?? preCheck.reason ?? 'Provider pre-validation failed'
+      logHint(`[Hop ${i + 1}/${chain.length}] ${skipReason}`)
+      attemptsLog.push({
+        providerId: candidate.providerId,
+        providerName: candidate.providerName || provider.name || candidate.providerId,
+        providerPlanId: candidate.providerPlanId,
+        cost: candidate.price ?? 0,
+        source: currentSource,
+        ok: false,
+        skipped: true,
+        skipReason,
+        error: preCheck.reason ?? 'PROVIDER_PRE_VALIDATION_FAILED',
+        errorMessage: skipReason,
+      })
+      if (attempt) {
+        await dbUpdateRechargeAttempt(attempt.id, { attempts: attemptsLog }).catch(() => {})
+      }
+      await insertDetailedRoutingLog({
+        transactionId,
+        countryCode,
+        operatorCode,
+        planId: normalizedInput.planId,
+        routingStrategy: snapshot.routing_strategy,
+        routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
+        selectedProvider: candidate.providerId,
+        providerPlanId: candidate.providerPlanId,
+        ...candidatePricingLog(candidate),
+        providerPriority: candidate.providerPriority,
+        executionResult: 'PROVIDER_PRE_VALIDATION_SKIPPED',
+        attemptNumber: i + 1,
+        failureReason: skipReason,
+        responseCode: preCheck.reason ?? null,
+        responseMessage: skipReason,
+      })
+      continue
+    }
+
+    logHint(`[Hop ${i + 1}/${chain.length}] Sending request to provider adapter "${adapterKey}" with ExternalRef: ${externalId}`)
+
+    const exec = await executeMappedRecharge(executionContext)
+
     logHint(`[Hop ${i + 1}/${chain.length}] Response status: ${exec.ok ? 'SUCCESS' : 'FAILED'}${exec.error ? ` | Error: ${exec.error}` : ''}`)
+
+    if (!exec.ok && adapterKey === 'ding' && isDingInsufficientBalance(exec.errorCode, exec.errorMessage)) {
+      console.log(DING_INSUFFICIENT_BALANCE_LOG)
+    }
 
     attemptsLog.push({
       providerId: candidate.providerId,
@@ -509,8 +584,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
         routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
         selectedProvider: candidate.providerId,
         providerPlanId: candidate.providerPlanId,
-        providerCost: candidate.price,
-        providerCurrency: candidate.currency ?? null,
+        ...candidatePricingLog(candidate),
         userAmount: input.amount,
         userCurrency: input.currency || 'INR',
         providerPriority: candidate.providerPriority,
@@ -530,7 +604,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
           routingStrategy: snapshot.routing_strategy,
           routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
           selectedProvider: candidate.providerId,
-          providerCost: candidate.price,
+          ...candidatePricingLog(candidate),
           providerPriority: candidate.providerPriority,
           executionResult: 'INCONSISTENT_PROVIDER_RESOLUTION',
           attemptNumber: i + 1,
@@ -594,7 +668,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
           routingRuleId: routingResult.ruleId,
           routingRuleProvider: candidate.providerName || candidate.providerId,
           selectedProvider: candidate.providerId,
-          providerCost: candidate.price,
+          ...candidatePricingLog(candidate),
           providerPriority: candidate.providerPriority,
           executionResult: 'RULE_PROVIDER_FAILED',
           attemptNumber: i + 1,
@@ -611,7 +685,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
           routingStrategy: snapshot.routing_strategy,
           routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
           selectedProvider: candidate.providerId,
-          providerCost: candidate.price,
+          ...candidatePricingLog(candidate),
           providerPriority: candidate.providerPriority,
           executionResult: 'RETRY_FAILOVER',
           attemptNumber: i + 1,
@@ -636,10 +710,8 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
   }
 
   // Log MAX_RETRY_EXCEEDED and RECHARGE_FAILED
-  const lastAttemptCost =
-    attemptsLog.length > 0
-      ? attemptsLog[attemptsLog.length - 1]?.cost
-      : routingResult.selected?.price
+  const lastHopCandidate =
+    chain.length > 0 ? chain[Math.min(attemptsLog.length, chain.length) - 1] : routingResult.selected
 
   await insertDetailedRoutingLog({
     transactionId,
@@ -649,7 +721,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     routingStrategy: snapshot.routing_strategy,
     routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
     selectedProvider: routingResult.selected?.providerId,
-    providerCost: lastAttemptCost,
+    ...candidatePricingLog(lastHopCandidate ?? routingResult.selected),
     executionResult: 'MAX_RETRY_EXCEEDED',
     failureReason: 'All providers failed in failover chain',
   })
@@ -661,7 +733,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     routingStrategy: snapshot.routing_strategy,
     routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
     selectedProvider: routingResult.selected?.providerId,
-    providerCost: lastAttemptCost,
+    ...candidatePricingLog(lastHopCandidate ?? routingResult.selected),
     executionResult: 'RECHARGE_FAILED',
     failureReason: 'All providers failed',
   })

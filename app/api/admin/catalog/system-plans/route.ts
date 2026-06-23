@@ -23,7 +23,7 @@ export async function GET(request: Request) {
     })
     return NextResponse.json(payload)
   } catch (error) {
-    console.error('[admin/lcr/system-plans] GET failed:', error)
+    console.error('[admin/catalog/system-plans] GET failed:', error)
     return NextResponse.json({ error: 'Failed to load system plans' }, { status: 500 })
   }
 }
@@ -41,7 +41,7 @@ export async function PATCH(request: Request) {
     await patchAdminSystemPlanStatus({ id: body.id, active: body.active })
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('[admin/lcr/system-plans] PATCH failed:', error)
+    console.error('[admin/catalog/system-plans] PATCH failed:', error)
     return NextResponse.json({ error: 'Failed to update system plan status' }, { status: 500 })
   }
 }

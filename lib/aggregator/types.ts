@@ -151,4 +151,10 @@ export type AggregatorSyncResult = {
     inactivePlans: number
     websiteEligiblePlans: number
   }
+  pricingConsistency?: {
+    providerId: string
+    scanned: number
+    mismatches: unknown[]
+    ok: boolean
+  }
 }

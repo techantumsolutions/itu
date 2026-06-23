@@ -1,4 +1,5 @@
 import { fetchValuetopupCatalog } from '@/lib/valuetopup'
+import { resolveValueTopupPricing } from '@/lib/catalog/valuetopup-pricing'
 import { normalizeCountryIso3 } from '@/lib/lcr/countries'
 import { extractValidityDaysFromRaw } from '@/lib/aggregator/raw-validity'
 import type {
@@ -68,16 +69,18 @@ export const valuetopupConnector: ProviderConnector = {
         const operatorName = text(sku.operatorName)
         if (!countryIso3 || !operatorId) return null
 
-        // Prices:
-        const retailAmount = num(sku.min?.faceValue) || 0
-        const discountPercent = num(sku.discount) || 0
-        const wholesaleAmount = Math.round(retailAmount * (1 - discountPercent / 100) * 100) / 100
-        const currency = text(sku.min?.faceValueCurrency) || 'USD'
+        // Destination face value (subscriber receives).
+        const destinationAmount = num(sku.min?.faceValue) || num(sku.max?.faceValue) || 0
+        const destinationCurrency = text(sku.min?.faceValueCurrency) || text(sku.max?.faceValueCurrency) || 'USD'
+
+        const pricing = resolveValueTopupPricing(sku as Record<string, unknown>)
+        const wholesaleAmount = pricing.wholesaleAmount ?? 0
+        const wholesaleCurrency = pricing.wholesaleCurrency ?? destinationCurrency
 
         const benefit: NormalizedBenefit = {
           type: sku.category === 'Pin' ? 'AIRTIME' : sku.category === 'eSIM' || sku.category === 'Rtr' ? 'COMBO' : 'OTHER',
-          amountBase: retailAmount || undefined,
-          unit: currency,
+          amountBase: destinationAmount || undefined,
+          unit: destinationCurrency,
         }
 
         return {
@@ -92,10 +95,12 @@ export const valuetopupConnector: ProviderConnector = {
           tags: ['VALUETOPUP', text(sku.category).toUpperCase()],
           name: text(sku.skuName) || text(sku.productName),
           description: valuetopupPlanDescription(sku),
-          retailAmount,
-          retailCurrency: currency,
+          destinationAmount,
+          destinationUnit: destinationCurrency,
+          retailAmount: destinationAmount,
+          retailCurrency: destinationCurrency,
           wholesaleAmount,
-          wholesaleCurrency: currency,
+          wholesaleCurrency,
           validityDays: extractValidityDaysFromRaw(sku),
           benefits: [benefit],
           requiredFields: sku.category === 'Pin' ? [] : [['account']],

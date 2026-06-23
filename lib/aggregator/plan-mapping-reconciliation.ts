@@ -170,6 +170,33 @@ export async function syncPlanMappingPricingAndAvailability(input: {
   return true
 }
 
+/** Disable LCR mapping when provider product no longer exists in catalog. */
+async function disableInternalPlanMappingForMissingProduct(input: {
+  serviceProviderId: string
+  systemPlanId: string
+  providerPlanId: string
+}): Promise<void> {
+  const systemPlan = await loadSystemPlanContext(input.systemPlanId)
+  if (!systemPlan?.internalPlanId) return
+
+  await supabaseRest(
+    `internal_plan_provider_mapping?internal_plan_id=eq.${enc(systemPlan.internalPlanId)}&provider_id=eq.${enc(input.serviceProviderId)}&provider_plan_id=eq.${enc(input.providerPlanId)}`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        enabled: false,
+        last_verified_at: new Date().toISOString(),
+      }),
+    },
+  ).catch((err) => {
+    console.warn(
+      `[Step7 Reconciliation] Failed to disable stale internal_plan_provider_mapping for ${input.providerPlanId}:`,
+      err,
+    )
+  })
+}
+
 export async function reconcileSinglePlanMapping(input: {
   mapping: PlanMappingRow
   rawIndex: Map<string, ProviderRawPlanSnapshot>
@@ -184,7 +211,14 @@ export async function reconcileSinglePlanMapping(input: {
     providerPlanId,
     input.rawIndex,
   )
-  if (!freshRaw) return 'missing'
+  if (!freshRaw) {
+    await disableInternalPlanMappingForMissingProduct({
+      serviceProviderId: input.mapping.service_provider_id,
+      systemPlanId: input.mapping.system_plan_id,
+      providerPlanId,
+    })
+    return 'missing'
+  }
 
   const currentRawId = input.mapping.provider_plan_raw_id
   const needsRawRepair = !currentRawId || currentRawId !== freshRaw.id

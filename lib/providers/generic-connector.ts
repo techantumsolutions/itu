@@ -125,8 +125,10 @@ export const BUILT_IN_CONFIGS: Record<string, BuiltInProviderConfig> = {
       planType: 'category',
       retailAmount: 'min.faceValue',
       retailCurrency: 'min.faceValueCurrency',
-      wholesaleAmount: 'min.faceValue * (1 - discount / 100)',
-      wholesaleCurrency: 'min.faceValueCurrency',
+      wholesaleAmount: 'min.faceValueInWalletCurrency',
+      wholesaleCurrency: 'walletCurrency',
+      destinationAmount: 'min.faceValue',
+      destinationUnit: 'min.faceValueCurrency',
       description: 'productDescription',
     }
   },

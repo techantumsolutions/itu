@@ -49,6 +49,11 @@ export type RoutingLogRow = {
   routingType: RoutingType
   providerCost: number | null
   providerCurrency?: string | null
+  providerWholesaleAmount?: number | null
+  providerWholesaleCurrency?: string | null
+  destinationFaceValue?: number | null
+  destinationCurrency?: string | null
+  normalizedProviderPrice?: number | null
   userAmount?: number | null
   userCurrency?: string | null
   fallbackUsed: boolean
@@ -66,18 +71,33 @@ export type RoutingResolveInput = {
   productType?: string
 }
 
+import type { ProviderPayloadStrategy } from '@/lib/routing/provider-payload-strategy'
+
 export type RoutingProviderCandidate = {
   providerId: string
-  providerPlanId: string
+  providerPlanId?: string
   providerCode?: string
   providerName?: string
+  /** @deprecated Use provider_wholesale_amount — kept for routing logs */
   price: number
+  /** @deprecated Use provider_wholesale_currency */
   currency?: string
+  provider_wholesale_amount?: number
+  provider_wholesale_currency?: string
+  normalized_provider_price?: number
+  normalized_provider_currency?: string
+  destination_face_value?: number
+  destination_currency?: string
+  providerPayloadStrategy?: ProviderPayloadStrategy
   margin?: number
   providerPriority: number
   score?: number
   eligible: boolean
   reason?: string
+  filterReason?: string
+  mappingExists?: boolean
+  activeStatus?: boolean
+  onlineStatus?: string
 }
 
 export type RoutingResolveResult = {

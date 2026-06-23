@@ -1,5 +1,6 @@
 import { extractPricingFromRaw } from '@/lib/admin/provider-pricing-extractor'
 import type { NormalizedPlan } from '@/lib/providers/types'
+import { isValueTopupSkuRaw, resolveValueTopupPricing } from '@/lib/catalog/valuetopup-pricing'
 
 export type WholesalePricing = {
   wholesaleAmount: number | null
@@ -76,7 +77,21 @@ export function resolveWholesalePricing(input: {
     currencyCode(input.wholesaleCurrency) ??
     currencyCode(input.currency) ??
     currencyCode(input.retailCurrency) ??
-    currencyCode(extracted.currency)
+    null
+
+  // ValueTopup: explicit wallet price + independent destination fields.
+  if (input.rawJson && isValueTopupSkuRaw(input.rawJson)) {
+    const vt = resolveValueTopupPricing(input.rawJson as Record<string, unknown>)
+    return {
+      wholesaleAmount: vt.wholesaleAmount ?? wholesaleAmount,
+      wholesaleCurrency: vt.wholesaleCurrency ?? wholesaleCurrency,
+      destinationAmount: vt.destinationAmount ?? finiteAmount(input.destinationAmount) ?? finiteAmount(extracted.basePrice),
+      destinationCurrency:
+        vt.destinationCurrency ??
+        currencyCode(input.destinationCurrency) ??
+        (extracted.basePrice != null ? currencyCode(extracted.currency) : null),
+    }
+  }
 
   // If column amount equals destination face value, prefer extracted wholesale/send cost.
   if (

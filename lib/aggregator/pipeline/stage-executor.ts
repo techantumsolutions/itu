@@ -23,6 +23,7 @@ import { runStep7Promote } from './stages/step7-promote'
 import { runStep7MergeDuplicates } from './stages/step7-merge-duplicates'
 import { runStep8FilterBenefits } from './stages/step8-filter-benefits'
 import { calculateSyncVerificationDashboard } from './sync-verification'
+import { validateProviderPricingConsistency } from '@/lib/catalog/pricing-consistency-validator'
 
 export type PipelineStage =
   | 'step1_check'
@@ -185,6 +186,11 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
     const step75Data = stageResults['step7_merge_duplicates']?.data ?? {}
     const step8Data = stageResults['step8_filter_benefits']?.data ?? {}
 
+    const pricingConsistency = await validateProviderPricingConsistency(providerId).catch((err) => {
+      console.warn('[Sync] pricing consistency validation failed:', err)
+      return { providerId, scanned: 0, mismatches: [], ok: true }
+    })
+
     const verificationDashboard = await calculateSyncVerificationDashboard({
       duplicatePlansMerged: Number(step75Data.mergedPlans ?? step75Data.mergedCount ?? 0),
     }).catch((err) => {
@@ -206,6 +212,7 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
       durationMs,
       syncedCountries: resolveSyncCountries(config, options) || [],
       verificationDashboard: verificationDashboard ?? undefined,
+      pricingConsistency,
     }
 
     if (syncRunId) {

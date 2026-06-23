@@ -5,12 +5,18 @@ import {
   isRoutingEngineSchemaReady,
   listActiveRoutingRules,
   listProviderPriorities,
-  getMappingCount,
   insertDetailedRoutingLog,
 } from '@/lib/routing/repository'
 import { dbGetInternalPlan } from '@/lib/lcr-v2/recharge-db'
 import { planMappingPricingKey } from '@/lib/catalog/provider-wholesale-pricing'
 import { batchResolvePlanMappingPricing } from '@/lib/routing/plan-mapping-pricing'
+import { normalizeProviderCost } from '@/lib/routing/normalize-provider-cost'
+import { resolveProviderPayloadStrategy } from '@/lib/routing/provider-payload-strategy'
+import { LCR_BASE_CURRENCY } from '@/lib/routing/exchange-rates'
+import {
+  pricingFieldsFromCandidate,
+  detailedRoutingLogPricingInput,
+} from '@/lib/routing/provider-pricing-log-fields'
 import type {
   LcrEngineSettings,
   RoutingProviderCandidate,
@@ -95,9 +101,16 @@ export async function normalizeOperatorId(operatorId: string, countryIso3: strin
   return info.id
 }
 
-function weightedScore(input: { price: number; providerPriority: number; margin?: number }) {
+function weightedScore(input: { normalizedPrice: number; providerPriority: number; margin?: number }) {
   const marginBonus = (input.margin ?? 0) * -0.01
-  return input.price + input.providerPriority * 0.002 + marginBonus
+  return input.normalizedPrice + input.providerPriority * 0.002 + marginBonus
+}
+
+function routingSortPrice(candidate: RoutingProviderCandidate): number {
+  if (typeof candidate.normalized_provider_price === 'number' && Number.isFinite(candidate.normalized_provider_price)) {
+    return candidate.normalized_provider_price
+  }
+  return Infinity
 }
 
 function ruleMatches(rule: RoutingRuleRow, ctx: RoutingResolveInput): boolean {
@@ -124,6 +137,8 @@ type MappingRow = {
   provider_priority: number | null
   margin: number | null
   enabled?: boolean
+  destination_amount?: number | null
+  destination_currency?: string | null
 }
 
 async function loadCandidates(productId: string): Promise<{
@@ -155,11 +170,15 @@ async function loadCandidates(productId: string): Promise<{
         mapping.provider_price = resolved.wholesaleAmount
         mapping.provider_currency = resolved.wholesaleCurrency
       }
+      if (resolved?.destinationAmount != null) {
+        mapping.destination_amount = resolved.destinationAmount
+        mapping.destination_currency = resolved.destinationCurrency
+      }
     }
   }
 
   const providersRes = await supabaseRest(
-    `lcr_providers?select=id,code,name,is_active,priority,status,supported_countries`,
+    `lcr_providers?select=id,code,name,is_active,priority,status,supported_countries,adapter_key,credentials_encrypted`,
     { cache: 'no-store' },
   )
   const providerRows =
@@ -206,9 +225,20 @@ function evaluateCandidates(
     }
 
     const providerPlanId = mapping.provider_plan_id
-    const price = typeof mapping.provider_price === 'number' ? mapping.provider_price : Infinity
+    const provider_wholesale_amount =
+      typeof mapping.provider_price === 'number' && mapping.provider_price > 0
+        ? mapping.provider_price
+        : Infinity
+    const provider_wholesale_currency = (mapping.provider_currency ?? '').trim().toUpperCase() || undefined
+    const destination_face_value =
+      typeof mapping.destination_amount === 'number' && mapping.destination_amount > 0
+        ? mapping.destination_amount
+        : undefined
+    const destination_currency = mapping.destination_currency ?? undefined
     const margin = typeof mapping.margin === 'number' ? mapping.margin : 0
-    const currency = mapping.provider_currency ?? undefined
+    const price = provider_wholesale_amount
+    const currency = provider_wholesale_currency
+    const providerPayloadStrategy = resolveProviderPayloadStrategy(prov)
 
     if (mapping.enabled === false) {
       return {
@@ -260,12 +290,19 @@ function evaluateCandidates(
       eligible = false
     }
 
-    if (eligible && (!Number.isFinite(price) || price <= 0)) {
+    if (eligible && (!Number.isFinite(provider_wholesale_amount) || provider_wholesale_amount <= 0)) {
       filterReason = 'PRICE_MISSING'
       eligible = false
     }
 
-    const score = eligible ? weightedScore({ price, providerPriority: priority, margin }) : Infinity
+    if (eligible && !provider_wholesale_currency) {
+      filterReason = 'CURRENCY_MISSING'
+      eligible = false
+    }
+
+    const score = eligible
+      ? weightedScore({ normalizedPrice: provider_wholesale_amount, providerPriority: priority, margin })
+      : Infinity
 
     return {
       providerId,
@@ -283,8 +320,61 @@ function evaluateCandidates(
       reason: filterReason,
       score,
       currency,
+      provider_wholesale_amount: Number.isFinite(provider_wholesale_amount) ? provider_wholesale_amount : undefined,
+      provider_wholesale_currency,
+      destination_face_value,
+      destination_currency,
+      providerPayloadStrategy,
     }
   })
+}
+
+async function enrichCandidatesWithNormalizedCosts(
+  candidates: RoutingProviderCandidate[],
+): Promise<RoutingProviderCandidate[]> {
+  const enriched: RoutingProviderCandidate[] = []
+  for (const candidate of candidates) {
+    if (!candidate.eligible) {
+      enriched.push(candidate)
+      continue
+    }
+    const wholesaleAmount = candidate.provider_wholesale_amount ?? candidate.price
+    const wholesaleCurrency = candidate.provider_wholesale_currency ?? candidate.currency
+    if (wholesaleAmount == null || !wholesaleCurrency) {
+      enriched.push({
+        ...candidate,
+        eligible: false,
+        filterReason: 'CURRENCY_MISSING',
+        reason: 'CURRENCY_MISSING',
+      })
+      continue
+    }
+    const normalized = await normalizeProviderCost({
+      provider_price: wholesaleAmount,
+      provider_currency: wholesaleCurrency,
+      base_currency: LCR_BASE_CURRENCY,
+    })
+    if (!normalized.success) {
+      enriched.push({
+        ...candidate,
+        eligible: false,
+        filterReason: 'CURRENCY_NORMALIZATION_FAILED',
+        reason: 'CURRENCY_NORMALIZATION_FAILED',
+      })
+      continue
+    }
+    enriched.push({
+      ...candidate,
+      normalized_provider_price: normalized.normalized_provider_price,
+      normalized_provider_currency: normalized.normalized_provider_currency,
+      score: weightedScore({
+        normalizedPrice: normalized.normalized_provider_price,
+        providerPriority: candidate.providerPriority,
+        margin: candidate.margin,
+      }),
+    })
+  }
+  return enriched
 }
 
 function sortByStrategy(
@@ -295,7 +385,7 @@ function sortByStrategy(
   if (strategy === 'PRIORITY') {
     return [...eligible].sort((a, b) => {
       if (a.providerPriority !== b.providerPriority) return a.providerPriority - b.providerPriority
-      return (a.price ?? 0) - (b.price ?? 0)
+      return routingSortPrice(a) - routingSortPrice(b)
     })
   }
   if (strategy === 'HIGHEST_MARGIN') {
@@ -303,10 +393,10 @@ function sortByStrategy(
       const ma = a.margin ?? 0
       const mb = b.margin ?? 0
       if (ma !== mb) return mb - ma
-      return (a.price ?? 0) - (b.price ?? 0)
+      return routingSortPrice(a) - routingSortPrice(b)
     })
   }
-  return [...eligible].sort((a, b) => (a.price ?? 0) - (b.price ?? 0))
+  return [...eligible].sort((a, b) => routingSortPrice(a) - routingSortPrice(b))
 }
 
 function buildFallbackChain(
@@ -415,7 +505,8 @@ export class RoutingEngineService {
     const priorityMap = new Map(priorityRows.map((p) => [p.providerId, p.priority]))
 
     // Evaluate candidates
-    const evaluated = evaluateCandidates(mappings, providers, allProvidersList, normalizedInput, priorityMap)
+    let evaluated = evaluateCandidates(mappings, providers, allProvidersList, normalizedInput, priorityMap)
+    evaluated = await enrichCandidatesWithNormalizedCosts(evaluated)
 
     // Candidate providers count (providers that have a mapping)
     const candidate_provider_count = evaluated.filter((e) => e.mappingExists).length
@@ -508,10 +599,12 @@ export class RoutingEngineService {
             routingRuleId: rule.id,
             routingRuleProvider: forced.providerName || forced.providerId,
             selectedProvider: forced.providerId,
-            providerCost: forced.price,
             providerPriority: forced.providerPriority,
             executionResult: 'RULE_MATCHED',
             verificationMappingCount: mapping_count,
+            ...detailedRoutingLogPricingInput(pricingFieldsFromCandidate(forced), {
+              providerPlanId: forced.providerPlanId,
+            }),
           })
           return {
             routingType: 'RULE',
@@ -535,6 +628,9 @@ export class RoutingEngineService {
 
     const sorted = sortByStrategy(eligible, effectiveSettings)
     const selected = sorted[0]!
+    console.log(
+      `[ROUTING] Selected ${selected.providerName || selected.providerId} | wholesale=${selected.provider_wholesale_amount ?? selected.price} ${selected.provider_wholesale_currency ?? selected.currency} | normalized=${selected.normalized_provider_price} ${selected.normalized_provider_currency ?? LCR_BASE_CURRENCY}`,
+    )
     const fallbacks = effectiveSettings.autoFailover
       ? buildFallbackChain(sorted, selected, effectiveSettings)
       : sorted.slice(1)
@@ -555,10 +651,12 @@ export class RoutingEngineService {
           routingStrategy: effectiveSettings.routingStrategy,
           routingRuleMatched: 'No',
           selectedProvider: selected.providerId,
-          providerCost: selected.price,
           providerPriority: selected.providerPriority,
           executionResult: decisionReason,
           verificationMappingCount: mapping_count,
+          ...detailedRoutingLogPricingInput(pricingFieldsFromCandidate(selected), {
+            providerPlanId: selected.providerPlanId,
+          }),
         })
       : null
 
