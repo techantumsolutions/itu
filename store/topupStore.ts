@@ -40,7 +40,13 @@ type TopupSessionState = {
   pricing: TopupPricing | null
   fees: number
   totalAmount: number
-  currency: 'INR' | 'EUR'
+  /** Recharge currency of the selected plan (e.g. INR, USD, XCD). */
+  currency: string
+  /** System operator UUID used for routing/LCR. */
+  operatorProviderId: string
+  checkoutSessionId: string
+  rechargeAttemptId: string
+  selectedProviderName: string
   orderId: string
   transactionId: string
   providerRef: string
@@ -54,7 +60,14 @@ type TopupSessionActions = {
   setPhoneDetails: (payload: { countryCode: string; phoneNumber: string }) => void
   setOperator: (operator: string) => void
   selectPlan: (plan: TopupPlan) => void
-  calculatePricing: (payload?: { currency?: 'INR' | 'EUR'; fee?: number }) => void
+  calculatePricing: (payload?: { fee?: number }) => void
+  setCheckoutSession: (payload: {
+    checkoutSessionId: string
+    transactionId?: string
+    rechargeAttemptId?: string
+    selectedProviderName?: string
+    operatorProviderId?: string
+  }) => void
   setOrderId: (orderId: string) => void
   setTransactionResult: (result: {
     transactionId?: string
@@ -75,7 +88,11 @@ const initialState: TopupSessionState = {
   pricing: null,
   fees: 0,
   totalAmount: 0,
-  currency: 'EUR',
+  currency: 'INR',
+  operatorProviderId: '',
+  checkoutSessionId: '',
+  rechargeAttemptId: '',
+  selectedProviderName: '',
   orderId: '',
   transactionId: '',
   providerRef: '',
@@ -96,29 +113,36 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
         }),
       setOperator: (operator) => set({ operator }),
       selectPlan: (plan) => set({ selectedPlan: plan }),
-      calculatePricing: ({ currency, fee } = {}) => {
+      calculatePricing: ({ fee } = {}) => {
         const state = get()
-        const curr = currency ?? state.currency
         const f = typeof fee === 'number' ? fee : state.fees
         const plan = state.selectedPlan
         if (!plan) {
-          set({ pricing: null, totalAmount: 0, fees: f, currency: curr })
+          set({ pricing: null, totalAmount: 0, fees: f })
           return
         }
-        const localAmount = curr === 'INR' ? plan.price_inr : plan.price_eur
-        const localCurrency = curr
-        // For this flow we keep converted = local (real conversion should be server-side).
+        const localCurrency = (plan.recharge_currency || 'INR').trim().toUpperCase()
+        const localAmount = Number(plan.recharge_amount) > 0 ? Number(plan.recharge_amount) : 0
         const convertedAmount = localAmount
         const convertedCurrency = localCurrency
         const totalAmount = localAmount + f
         set({
-          currency: curr,
+          currency: localCurrency,
           fees: f,
           pricing: { localAmount, localCurrency, convertedAmount, convertedCurrency },
           totalAmount,
         })
       },
       setOrderId: (orderId) => set({ orderId }),
+      setCheckoutSession: (payload) =>
+        set({
+          checkoutSessionId: payload.checkoutSessionId,
+          transactionId: payload.transactionId ?? payload.checkoutSessionId,
+          rechargeAttemptId: payload.rechargeAttemptId ?? get().rechargeAttemptId,
+          selectedProviderName: payload.selectedProviderName ?? get().selectedProviderName,
+          providerName: payload.selectedProviderName ?? get().providerName,
+          operatorProviderId: payload.operatorProviderId ?? get().operatorProviderId,
+        }),
       setTransactionResult: (result) =>
         set({
           transactionId: result.transactionId ?? get().transactionId,
@@ -132,16 +156,20 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
     }),
     {
       name: 'topup-session-v1',
-      version: 1,
+      version: 3,
       partialize: (s) => ({
         countryCode: s.countryCode,
         phoneNumber: s.phoneNumber,
         operator: s.operator,
+        operatorProviderId: s.operatorProviderId,
         selectedPlan: s.selectedPlan,
         pricing: s.pricing,
         fees: s.fees,
         totalAmount: s.totalAmount,
         currency: s.currency,
+        checkoutSessionId: s.checkoutSessionId,
+        rechargeAttemptId: s.rechargeAttemptId,
+        selectedProviderName: s.selectedProviderName,
         orderId: s.orderId,
         transactionId: s.transactionId,
         providerRef: s.providerRef,

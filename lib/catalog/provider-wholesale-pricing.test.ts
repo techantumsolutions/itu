@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest'
 import {
   resolveWholesalePricing,
   wholesaleCostFromNormalizedPlan,
@@ -51,5 +50,38 @@ describe('resolveWholesalePricing', () => {
       },
     })
     expect(pricing.wholesaleAmount).toBe(334.49)
+  })
+
+  it('uses DT One source / prices.wholesale as provider cost (not destination face value)', () => {
+    const pricing = resolveWholesalePricing({
+      amount: 219,
+      currency: 'INR',
+      destinationAmount: 219,
+      destinationCurrency: 'INR',
+      rawJson: {
+        destination: { unit: 'INR', amount: 219 },
+        source: { unit: 'EUR', amount: 2.68 },
+        prices: {
+          retail: { amount: 3.5 },
+          wholesale: { amount: 2.68 },
+        },
+      },
+    })
+    expect(pricing.wholesaleAmount).toBe(2.68)
+    expect(pricing.wholesaleCurrency).toBe('EUR')
+    expect(pricing.destinationAmount).toBe(219)
+    expect(pricing.destinationCurrency).toBe('INR')
+  })
+
+  it('falls back to source.unit when prices.wholesale has no unit', () => {
+    const pricing = resolveWholesalePricing({
+      rawJson: {
+        destination: { unit: 'INR', amount: 299 },
+        source: { unit: 'EUR', amount: 3.1 },
+        prices: { wholesale: { amount: 3.1 } },
+      },
+    })
+    expect(pricing.wholesaleAmount).toBe(3.1)
+    expect(pricing.wholesaleCurrency).toBe('EUR')
   })
 })

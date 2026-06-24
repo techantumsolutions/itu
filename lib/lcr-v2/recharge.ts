@@ -11,6 +11,15 @@ import {
 } from '@/lib/lcr-v2/recharge-db'
 import { aggResolveInternalPlanIdForSystemPlan } from '@/lib/aggregator/repository'
 import { insertDetailedRoutingLog, getMappingCount } from '@/lib/routing/repository'
+import {
+  providerPreValidation,
+  isDingInsufficientBalance,
+  DING_INSUFFICIENT_BALANCE_LOG,
+} from '@/lib/lcr-v2/provider-pre-validation'
+import {
+  buildProviderExecutionContextFromCandidate,
+  logProviderExecutionContext,
+} from '@/lib/lcr-v2/provider-execution-context'
 
 export type LcrV2RechargeBody = {
   systemPlanId?: string
@@ -322,17 +331,65 @@ export async function processLcrV2Recharge(request: Request, body: LcrV2Recharge
     }
 
     const adapterKey = String(prov.adapter_key || '').toLowerCase()
-    logHint(`[Hop ${i + 1}/${chain.length}] Sending request to provider adapter "${adapterKey}" with DistributorRef: ${distributorRef}`)
 
-    const exec = await executeMappedRecharge({
+    const executionContext = buildProviderExecutionContextFromCandidate({
+      candidate: hop,
       adapterKey,
-      providerPlanId: hop.providerPlanId,
       phoneDigits,
       externalId: distributorRef,
-      sendAmount: body.sendAmount,
+      customer_payment_amount: typeof body.sendAmount === 'number' && body.sendAmount > 0 ? body.sendAmount : hop.destination_face_value ?? hop.price ?? 0,
+      customer_payment_currency: body.receiveCurrency?.trim().toUpperCase() || hop.destination_currency || 'INR',
     })
 
+    logProviderExecutionContext(executionContext, 'lcr-v2-hop')
+
+    const preCheck = await providerPreValidation({ executionContext })
+
+    if (!preCheck.eligible) {
+      const skipReason = preCheck.logMessage ?? preCheck.reason ?? 'Provider pre-validation failed'
+      logHint(`[Hop ${i + 1}/${chain.length}] ${skipReason}`)
+      attemptsLog.push({
+        providerId: hop.providerId,
+        providerName: hop.providerName || prov.name || hop.providerId,
+        providerPlanId: hop.providerPlanId,
+        cost: hop.price ?? 0,
+        source: currentSource,
+        ok: false,
+        skipped: true,
+        skipReason,
+        error: preCheck.reason ?? 'PROVIDER_PRE_VALIDATION_FAILED',
+        errorMessage: skipReason,
+      })
+      await insertDetailedRoutingLog({
+        transactionId: distributorRef,
+        countryCode: plan.country_iso3 ?? '',
+        operatorCode: plan.operator_ref ?? '',
+        planId: internalPlanId,
+        routingStrategy: snapshot.routing_strategy,
+        routingRuleMatched: decision.routingType === 'RULE' ? 'Yes' : 'No',
+        selectedProvider: hop.providerId,
+        providerPlanId: hop.providerPlanId,
+        providerCost: hop.price,
+        providerPriority: hop.providerPriority,
+        executionResult: 'PROVIDER_PRE_VALIDATION_SKIPPED',
+        attemptNumber: i + 1,
+        failureReason: skipReason,
+        responseCode: preCheck.reason ?? null,
+        responseMessage: skipReason,
+      })
+      await dbUpdateRechargeAttempt(attempt.id, { attempts: attemptsLog })
+      continue
+    }
+
+    logHint(`[Hop ${i + 1}/${chain.length}] Sending request to provider adapter "${adapterKey}" with DistributorRef: ${distributorRef}`)
+
+    const exec = await executeMappedRecharge(executionContext)
+
     logHint(`[Hop ${i + 1}/${chain.length}] Response status: ${exec.ok ? 'SUCCESS' : 'FAILED'}${exec.error ? ` | Error: ${exec.error}` : ''}`)
+
+    if (!exec.ok && adapterKey === 'ding' && isDingInsufficientBalance(exec.errorCode, exec.errorMessage)) {
+      console.log(DING_INSUFFICIENT_BALANCE_LOG)
+    }
 
     attemptsLog.push({
       providerId: hop.providerId,

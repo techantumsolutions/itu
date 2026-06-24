@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { executeCheckout } from '@/lib/topup/checkout-service'
+import { linkPaymentOrderToCheckoutSession } from '@/lib/topup/prepare-checkout-service'
 
 export async function POST(request: Request) {
   const user = getRequestUser(request)
@@ -12,14 +13,19 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}))
     const planId = typeof body.planId === 'string' ? body.planId.trim() : ''
+    const systemPlanId = typeof body.systemPlanId === 'string' ? body.systemPlanId.trim() : ''
     const mobileNumber = typeof body.mobileNumber === 'string' ? body.mobileNumber.trim() : ''
     const operatorId = typeof body.operatorId === 'string' ? body.operatorId.trim() : ''
     const countryId = typeof body.countryId === 'string' ? body.countryId.trim() : ''
     const amount = Number(body.amount)
     const currency = typeof body.currency === 'string' ? body.currency.trim().toUpperCase() : 'USD'
+    const checkoutSessionId = typeof body.checkoutSessionId === 'string' ? body.checkoutSessionId.trim() : ''
 
     if (!planId || !mobileNumber || !operatorId || !countryId || isNaN(amount) || amount <= 0) {
       return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 })
+    }
+    if (!checkoutSessionId) {
+      return NextResponse.json({ error: 'Missing checkoutSessionId — provider must be selected before payment' }, { status: 400 })
     }
 
     // 1. Fetch wallet max consumption percentage from settings
@@ -113,6 +119,39 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Failed to record checkout order' }, { status: 500 })
     }
 
+    const txnRes = await supabaseRest(
+      `transactions?id=eq.${encodeURIComponent(checkoutSessionId)}&select=metadata&limit=1`,
+      { cache: 'no-store' },
+    )
+    const txnRows = txnRes.ok ? ((await txnRes.json()) as Array<{ metadata?: Record<string, unknown> }>) : []
+    const txnMeta = txnRows[0]?.metadata ?? {}
+
+    await linkPaymentOrderToCheckoutSession({
+      paymentOrderId,
+      checkoutSessionId,
+      transactionId: checkoutSessionId,
+      rechargeAttemptId:
+        typeof txnMeta.recharge_attempt_id === 'string' ? txnMeta.recharge_attempt_id : undefined,
+      selectedProviderId:
+        typeof txnMeta.selected_provider_id === 'string' ? txnMeta.selected_provider_id : undefined,
+      selectedProviderName:
+        typeof txnMeta.selected_provider_name === 'string' ? txnMeta.selected_provider_name : undefined,
+      selectedProviderPlanId:
+        typeof txnMeta.selected_provider_plan_id === 'string' ? txnMeta.selected_provider_plan_id : undefined,
+      selectedProviderCost:
+        typeof txnMeta.selected_provider_cost === 'number' ? txnMeta.selected_provider_cost : null,
+      selectedProviderCurrency:
+        typeof txnMeta.selected_provider_currency === 'string' ? txnMeta.selected_provider_currency : null,
+      routingResult: txnMeta.routing_result,
+      lcrResult: txnMeta.lcr_result,
+      providerSelectionTimestamp:
+        typeof txnMeta.provider_selection_timestamp === 'string'
+          ? txnMeta.provider_selection_timestamp
+          : undefined,
+    })
+
+    console.log('[PAYMENT LOG] wallet payment initiated', { paymentOrderId, checkoutSessionId, amount, currency })
+
     // 5. Create the wallet deduction transaction
     if (walletCurrency !== currency) {
       const rateRes = await fetch('https://open.er-api.com/v6/latest/EUR', { cache: 'no-store' }).catch(() => null)
@@ -191,16 +230,19 @@ export async function POST(request: Request) {
     const result = await executeCheckout({
       paymentOrderId,
       planId,
+      systemPlanId: systemPlanId || undefined,
       mobileNumber,
       operatorId,
       countryId,
       amount,
       currency,
-      razorpayPaymentId: 'wallet',
+      razorpayPaymentId: `wallet-${paymentOrderId}`,
       userId: user.id,
       hideTransactionFromUser: walletCurrency !== currency,
       usedWalletBalance: amount,
       walletCurrency: walletCurrency,
+      checkoutSessionId,
+      pendingTransactionId: checkoutSessionId,
     })
 
     return NextResponse.json({

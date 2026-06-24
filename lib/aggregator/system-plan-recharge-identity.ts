@@ -3,7 +3,7 @@ import {
   normalizeDisplayAmount,
   type SystemPlanMergeRow,
 } from '@/lib/aggregator/plan-display-merge'
-import type { PlanRechargeValue } from '@/lib/catalog/plan-recharge-value'
+import type { PlanRechargeValue } from '@/lib/catalog/raw-plan-recharge'
 
 export type SystemPlanRechargeSource = 'system_price' | 'display_name' | 'mapping_raw'
 
@@ -20,9 +20,9 @@ function positiveAmount(value: unknown): number | null {
 /**
  * Recharge value for merge + admin popup parity.
  * Priority:
- * 1. system_plans.price / amount + currency
- * 2. Normalized face value from plan display name
- * 3. Mapping-derived recharge (admin popup provider_plans_raw path)
+ * 1. plan_mappings → provider_plans_raw (customer face value)
+ * 2. system_plans.amount + currency
+ * 3. Normalized face value from plan display name
  */
 export function resolveSystemPlanRechargeIdentity(input: {
   amount?: number | null
@@ -32,6 +32,15 @@ export function resolveSystemPlanRechargeIdentity(input: {
   countryCode?: string | null
   mappingRecharge?: PlanRechargeValue | null
 }): SystemPlanRechargeIdentity | null {
+  const mapping = input.mappingRecharge
+  if (mapping && positiveAmount(mapping.amount) != null && mapping.currency) {
+    return {
+      amount: mapping.amount,
+      currency: mapping.currency.toUpperCase(),
+      source: 'mapping_raw',
+    }
+  }
+
   const priceAmount = positiveAmount(input.price ?? input.amount)
   const priceCurrency = String(input.currency ?? '').trim().toUpperCase()
   if (priceAmount != null && priceCurrency) {
@@ -44,15 +53,6 @@ export function resolveSystemPlanRechargeIdentity(input: {
       amount: fromName.amount,
       currency: fromName.currency,
       source: 'display_name',
-    }
-  }
-
-  const mapping = input.mappingRecharge
-  if (mapping && positiveAmount(mapping.amount) != null && mapping.currency) {
-    return {
-      amount: mapping.amount,
-      currency: mapping.currency.toUpperCase(),
-      source: 'mapping_raw',
     }
   }
 

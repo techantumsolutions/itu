@@ -80,16 +80,33 @@ export async function GET(request: Request) {
       const parsed = parseStatus(log.status)
       if (parsed) {
         if (parsed.routingStrategy) strategy = parsed.routingStrategy
-        if (parsed.routingRuleMatched) ruleMatched = parsed.routingRuleMatched
+        if (parsed.routingRuleMatched === 'Yes') {
+          ruleMatched = 'Yes'
+        } else if (parsed.routingRuleMatched === 'No' && ruleMatched !== 'Yes') {
+          ruleMatched = 'No'
+        }
         if (parsed.routingRuleId) ruleId = parsed.routingRuleId
         if (parsed.routingRuleProvider) ruleProvider = parsed.routingRuleProvider
+        const event = parsed.event
+        if (
+          event === 'RULE_MATCHED' ||
+          event === 'RULE_PROVIDER_SELECTED'
+        ) {
+          ruleMatched = 'Yes'
+          if (parsed.routingRuleId) ruleId = parsed.routingRuleId
+          if (parsed.routingRuleProvider) ruleProvider = parsed.routingRuleProvider
+        }
         if (parsed.attemptNumber && parsed.attemptNumber > maxAttempt) {
           maxAttempt = parsed.attemptNumber
         }
-        if (typeof parsed.providerCurrency === 'string' && parsed.providerCurrency) {
+        if (typeof parsed.provider_wholesale_currency === 'string' && parsed.provider_wholesale_currency) {
+          resolvedProviderCurrency = String(parsed.provider_wholesale_currency).toUpperCase()
+        } else if (typeof parsed.providerCurrency === 'string' && parsed.providerCurrency) {
           resolvedProviderCurrency = String(parsed.providerCurrency).toUpperCase()
         }
-        if (typeof parsed.providerCost === 'number' && Number.isFinite(parsed.providerCost)) {
+        if (typeof parsed.provider_wholesale_amount === 'number' && Number.isFinite(parsed.provider_wholesale_amount)) {
+          resolvedCost = parsed.provider_wholesale_amount
+        } else if (typeof parsed.providerCost === 'number' && Number.isFinite(parsed.providerCost)) {
           resolvedCost = parsed.providerCost
         }
 
@@ -110,7 +127,6 @@ export async function GET(request: Request) {
         }
         if (log.providerId && !resolvedProviderId) resolvedProviderId = log.providerId
         
-        const event = parsed.event
         if (event === 'RECHARGE_SUCCESS') {
           outcomeStatus = 'success'
           finalLog = log

@@ -5,14 +5,14 @@ import {
 } from './system-plan-recharge-identity'
 
 describe('system-plan-recharge-identity', () => {
-  it('prefers system plan amount/currency as price', () => {
+  it('prefers mapping recharge over system plan amount', () => {
     const identity = resolveSystemPlanRechargeIdentity({
       amount: 349,
       currency: 'INR',
       systemPlanName: 'Airtel India Bundle 399 INR',
       mappingRecharge: { amount: 399, currency: 'INR' },
     })
-    expect(identity).toEqual({ amount: 349, currency: 'INR', source: 'system_price' })
+    expect(identity).toEqual({ amount: 399, currency: 'INR', source: 'mapping_raw' })
   })
 
   it('falls back to display-name face value when price missing', () => {

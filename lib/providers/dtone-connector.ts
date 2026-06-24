@@ -90,8 +90,9 @@ export const dtoneConnector: ProviderConnector = {
           destinationUnit: text(p?.destination?.unit) || undefined,
           retailAmount: num(p?.prices?.retail?.amount),
           retailCurrency: text(p?.prices?.retail?.unit) || undefined,
-          wholesaleAmount: num(p?.prices?.wholesale?.amount),
-          wholesaleCurrency: text(p?.prices?.wholesale?.unit) || undefined,
+          wholesaleAmount: num(p?.prices?.wholesale?.amount) ?? num(p?.source?.amount),
+          wholesaleCurrency:
+            text(p?.prices?.wholesale?.unit) || text(p?.source?.unit) || undefined,
           validityDays,
           benefits,
           requiredFields,

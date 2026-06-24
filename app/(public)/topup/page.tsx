@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,13 +10,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { CalendarDays, Check, ChevronDown, MessageSquareText, PhoneCall, Sparkles, Wifi } from 'lucide-react'
 import { useTopupStore, type TopupPlan } from '@/store/topupStore'
-import { useLocalePreferencesStore } from '@/lib/stores'
 import { getDialCode } from '@/lib/lcr/countries'
 import { flagEmojiFromIso } from '@/lib/lcr/countries'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { countriesList, getFlagEmoji } from '@/lib/country-codes'
 import { formatPlanRechargeValue } from '@/lib/catalog/plan-recharge-value'
+import {
+  computeRechargeProcessingFeeAmount,
+  DEFAULT_RECHARGE_PROCESSING_FEES,
+  parseRechargeProcessingFees,
+  type RechargeProcessingFees,
+} from '@/lib/settings/recharge-processing-fees'
 
 function cleanOperatorName(name: string): string {
   let val = (name ?? '').trim()
@@ -246,10 +251,9 @@ const tabs = [
 
 export default function TopupPlanSelectionPage() {
   const router = useRouter()
-  const { countryCode, phoneNumber, operator, setPhoneDetails, setOperator, selectPlan, calculatePricing } =
+  const searchParams = useSearchParams()
+  const { countryCode, phoneNumber, operator, setPhoneDetails, setOperator, selectPlan, calculatePricing, setCheckoutSession } =
     useTopupStore()
-  const { currencyCode, languageCode } = useLocalePreferencesStore()
-  const userCurrency: 'INR' | 'EUR' = currencyCode === 'INR' ? 'INR' : 'EUR'
   const selectedCountry = useMemo(() => {
     return countriesList.find((c) => c.code.toUpperCase() === countryCode.toUpperCase())
   }, [countryCode])
@@ -272,6 +276,37 @@ export default function TopupPlanSelectionPage() {
   const [selectedProviderCode, setSelectedProviderCode] = useState<string>('')
   const [manualOperatorOverride, setManualOperatorOverride] = useState<boolean>(false)
   const [phoneError, setPhoneError] = useState<boolean>(false)
+  const [buyingPlanId, setBuyingPlanId] = useState<string | null>(null)
+  const [processingFeePercents, setProcessingFeePercents] = useState<RechargeProcessingFees>(
+    DEFAULT_RECHARGE_PROCESSING_FEES,
+  )
+
+  useEffect(() => {
+    const loadFees = async () => {
+      try {
+        const res = await fetch('/api/settings/recharge-processing-fees', { cache: 'no-store' })
+        if (!res.ok) return
+        const data = await res.json()
+        setProcessingFeePercents(parseRechargeProcessingFees(data))
+      } catch {
+        // keep default
+      }
+    }
+    void loadFees()
+  }, [])
+  const urlCountryCode = (searchParams.get('country') ?? '').trim().toUpperCase()
+
+  useEffect(() => {
+    const applyCountryFromUrl = () => {
+      if (!urlCountryCode || !/^[A-Z]{2}$/.test(urlCountryCode)) return
+      if (!countriesList.some((c) => c.code.toUpperCase() === urlCountryCode)) return
+      setLocalPhone('')
+      setPhoneDetails({ countryCode: urlCountryCode, phoneNumber: '' })
+    }
+
+    applyCountryFromUrl()
+    return useTopupStore.persist.onFinishHydration(applyCountryFromUrl)
+  }, [urlCountryCode, setPhoneDetails])
 
   const effectiveOperatorId = resolvedProviderCode || selectedProviderCode
   const operatorReady = Boolean(effectiveOperatorId) || (Boolean(operator) && operator.toLowerCase() !== 'unknown')
@@ -281,22 +316,23 @@ export default function TopupPlanSelectionPage() {
     setPhoneDetails({ countryCode, phoneNumber: localPhone })
   }, [countryCode, localPhone, setPhoneDetails])
 
+  // Reset operator state when country changes — not on every phone digit (that was clearing plans mid-entry).
   useEffect(() => {
-    // Phone number or country changed → allow auto-detect to run again.
     setManualOperatorOverride(false)
     setSelectedProviderCode('')
     setResolvedProviderCode(undefined)
     setOperator('')
-  }, [localPhone, countryCode, setOperator])
+  }, [countryCode, setOperator])
 
   useEffect(() => {
     const run = async () => {
+      if (manualOperatorOverride) return
       if (!localPhone || localPhone.length < 10) {
         setResolvedProviderCode(undefined)
+        setSelectedProviderCode('')
         setOperator('')
         return
       }
-      if (manualOperatorOverride) return
       setDetecting(true)
       try {
         // Prepend the selected country's dial prefix if not already present
@@ -353,23 +389,25 @@ export default function TopupPlanSelectionPage() {
     void loadProviders()
   }, [countryCode])
 
-  // Sync selectedProviderCode with resolvedProviderCode
+  // Keep operator dropdown in sync with auto-detect / manual selection.
   useEffect(() => {
-    if (providers.length > 0) {
-      const initial =
-        resolvedProviderCode && providers.some((m) => m.code === resolvedProviderCode)
-          ? resolvedProviderCode
-          : ''
-      setSelectedProviderCode(initial)
+    if (!providers.length) return
+    if (manualOperatorOverride && selectedProviderCode) return
 
-      if (initial) {
-        const chosen = providers.find((p) => p.code === initial)
-        if (chosen && (!operator || operator === 'Unknown' || operator === '')) {
-          setOperator(chosen.shortName || chosen.name)
-        }
+    const initial =
+      resolvedProviderCode && providers.some((m) => m.code === resolvedProviderCode)
+        ? resolvedProviderCode
+        : ''
+
+    setSelectedProviderCode(initial)
+
+    if (initial) {
+      const chosen = providers.find((p) => p.code === initial)
+      if (chosen && (!operator || operator === 'Unknown' || operator === '')) {
+        setOperator(chosen.shortName || chosen.name)
       }
     }
-  }, [resolvedProviderCode, providers, operator, setOperator])
+  }, [resolvedProviderCode, providers, operator, setOperator, manualOperatorOverride, selectedProviderCode])
 
 
 
@@ -422,8 +460,10 @@ export default function TopupPlanSelectionPage() {
           }
         })
         setPlans(normalized)
+        console.log('Normalized plans:', normalized)
       } catch (err) {
-        // Suppress or handle error
+        console.error('Failed to load plans:', err)
+        setPlans([])
       } finally {
         setLoadingPlans(false)
       }
@@ -446,17 +486,67 @@ export default function TopupPlanSelectionPage() {
     return rows
   }, [plans, tab, sort])
 
-  const onBuy = (plan: TopupPlan) => {
+  const onBuy = async (plan: TopupPlan) => {
     if (localPhone.trim().length < 10) {
       setPhoneError(true)
       const el = document.getElementById('phone-input')
       if (el) el.focus()
       return
     }
+    if (!effectiveOperatorId) {
+      setPhoneError(true)
+      return
+    }
     setPhoneError(false)
-    selectPlan(plan)
-    calculatePricing({ currency: userCurrency, fee: 0.49 })
-    router.push('/topup/summary')
+    const subtotal =
+      Number(plan.recharge_amount) > 0
+        ? Number(plan.recharge_amount)
+        : Number(plan.price_inr) > 0
+          ? Number(plan.price_inr)
+          : 0
+    const { total: processingFee } = computeRechargeProcessingFeeAmount(subtotal, processingFeePercents)
+    const payableAmount = subtotal + processingFee
+    const rechargeCurrency = (plan.recharge_currency || 'INR').trim().toUpperCase()
+
+    setBuyingPlanId(plan.id)
+    try {
+      const res = await fetch('/api/topup/prepare-checkout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          planId: plan.internalPlanId || plan.id,
+          systemPlanId: plan.systemPlanId || plan.id,
+          mobileNumber: `+${dialPrefix}${localPhone}`,
+          operatorId: effectiveOperatorId,
+          countryId: countryCode,
+          amount: payableAmount,
+          currency: rechargeCurrency,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data?.ok) {
+        console.error('Provider selection failed:', data?.error)
+        alert(data?.error || 'No provider available for this plan. Please try another plan or operator.')
+        return
+      }
+
+      selectPlan(plan)
+      calculatePricing({ fee: processingFee })
+      setCheckoutSession({
+        checkoutSessionId: data.checkoutSessionId,
+        transactionId: data.transactionId,
+        rechargeAttemptId: data.rechargeAttemptId,
+        selectedProviderName: data.selectedProviderName,
+        operatorProviderId: effectiveOperatorId,
+      })
+      router.push('/topup/summary')
+    } catch (err) {
+      console.error('prepare-checkout failed:', err)
+      alert('Failed to prepare checkout. Please try again.')
+    } finally {
+      setBuyingPlanId(null)
+    }
   }
 
   return (
@@ -538,7 +628,7 @@ export default function TopupPlanSelectionPage() {
             </div>
             <div className="flex items-center rounded-xl bg-white ring-1 ring-black/10 w-full px-2">
               <Select
-                value={selectedProviderCode}
+                value={selectedProviderCode || resolvedProviderCode || ''}
                 onValueChange={(val) => {
                   const chosen = providers.find((p) => p.code === val)
                   if (chosen) {
@@ -740,8 +830,9 @@ export default function TopupPlanSelectionPage() {
                               'h-9 rounded-full bg-[var(--hero-cta-orange)] px-6 text-[11px] font-bold uppercase tracking-wide text-white shadow-none hover:brightness-105',
                             )}
                             onClick={() => onBuy(plan)}
+                            disabled={buyingPlanId === plan.id}
                           >
-                            Buy Now
+                            {buyingPlanId === plan.id ? 'Selecting...' : 'Buy Now'}
                           </Button>
                         </div>
                       </div>

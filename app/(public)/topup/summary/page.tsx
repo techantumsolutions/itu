@@ -11,7 +11,21 @@ import { useTopupStore } from '@/store/topupStore'
 import { useAuthStore } from '@/lib/stores'
 import { Check, ChevronDown, ChevronRight, Eye, EyeOff, Loader2, LogIn, Shield, Smartphone } from 'lucide-react'
 
+import {
+  buildPayableCurrencyOptions,
+  convertUsingEurBaseRates,
+  crossRateUsingEurBase,
+  formatMoney,
+  normalizeCurrencyCode,
+} from '@/lib/topup/currency-conversion'
+import { formatPlanRechargeValue } from '@/lib/catalog/plan-recharge-value'
 import { getDialCode } from '@/lib/lcr/countries'
+import {
+  computeRechargeProcessingFeeAmount,
+  DEFAULT_RECHARGE_PROCESSING_FEES,
+  parseRechargeProcessingFees,
+  type RechargeProcessingFees,
+} from '@/lib/settings/recharge-processing-fees'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Command,
@@ -483,6 +497,8 @@ export default function TopupSummaryPage() {
     phoneNumber,
     countryCode,
     operator,
+    operatorProviderId,
+    checkoutSessionId,
     selectedPlan,
     pricing,
     fees,
@@ -505,10 +521,44 @@ export default function TopupSummaryPage() {
   const [useWallet, setUseWallet] = useState<boolean>(false)
   const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null)
   const [isLoadingBalance, setIsLoadingBalance] = useState<boolean>(false)
+  const [selectedPayableCurrency, setSelectedPayableCurrency] = useState<string | null>(null)
+  const [processingFeePercents, setProcessingFeePercents] = useState<RechargeProcessingFees>(
+    DEFAULT_RECHARGE_PROCESSING_FEES,
+  )
+
+  const rechargeCurrency = useMemo(() => {
+    return normalizeCurrencyCode(
+      selectedPlan?.recharge_currency || pricing?.localCurrency || 'INR',
+    )
+  }, [selectedPlan, pricing])
 
   useEffect(() => {
-    if (!selectedPlan || !pricing) router.replace('/topup')
-  }, [selectedPlan, pricing, router])
+    setSelectedPayableCurrency(rechargeCurrency)
+  }, [rechargeCurrency])
+
+  useEffect(() => {
+    const loadFees = async () => {
+      try {
+        const res = await fetch('/api/settings/recharge-processing-fees', { cache: 'no-store' })
+        if (!res.ok) return
+        const data = await res.json()
+        setProcessingFeePercents(parseRechargeProcessingFees(data))
+      } catch {
+        // keep default
+      }
+    }
+    void loadFees()
+  }, [])
+
+  useEffect(() => {
+    if (!selectedPlan || !pricing) {
+      router.replace('/topup')
+      return
+    }
+    if (!checkoutSessionId) {
+      router.replace('/topup')
+    }
+  }, [selectedPlan, pricing, checkoutSessionId, router])
 
   // Fetch wallet balance
   useEffect(() => {
@@ -562,16 +612,15 @@ export default function TopupSummaryPage() {
     void getBalance()
   }, [isAuthenticated, user])
 
-  // Fetch exchange rates
+  // Fetch exchange rates for payable-currency conversion and wallet balances
   useEffect(() => {
-    if (!isAuthenticated) return
     const getRates = async () => {
       try {
         const res = await fetch('https://open.er-api.com/v6/latest/EUR', { cache: 'no-store' })
         if (res.ok) {
           const data = await res.json()
           if (data && data.rates) {
-            setExchangeRates(data.rates)
+            setExchangeRates({ EUR: 1, ...data.rates })
           }
         }
       } catch (err) {
@@ -579,74 +628,107 @@ export default function TopupSummaryPage() {
       }
     }
     void getRates()
-  }, [isAuthenticated])
+  }, [])
+
+  const payableCurrencyOptions = useMemo(
+    () =>
+      buildPayableCurrencyOptions({
+        rechargeCurrency,
+        userCurrency: user?.currency,
+        walletCurrencies: allWallets.map((w) => w.currency),
+      }),
+    [rechargeCurrency, user?.currency, allWallets],
+  )
+
+  const payableCurrency = normalizeCurrencyCode(
+    selectedPayableCurrency || rechargeCurrency,
+  )
 
   const amounts = useMemo(() => {
-    const userPreferredCurrency = user?.currency
     const ratesData = exchangeRates
-    
-    let displayCurrency = pricing?.localCurrency ?? 'INR'
-    let planPrice = pricing?.localAmount ?? 0
-    let fee = fees ?? 0
-    
-    if (userPreferredCurrency) {
-      displayCurrency = userPreferredCurrency
+
+    const planPrice =
+      Number(selectedPlan?.recharge_amount) > 0
+        ? Number(selectedPlan!.recharge_amount)
+        : (pricing?.localAmount ?? 0)
+    const subtotal = planPrice
+    const feeParts = computeRechargeProcessingFeeAmount(subtotal, processingFeePercents)
+    const serviceFee = feeParts.platformFee + feeParts.paymentGatewayFee
+    const tax = feeParts.tax
+    const fee = fees ?? feeParts.total
+    const totalInRecharge = subtotal + fee
+
+    let totalPayable = totalInRecharge
+    let conversionFailed = false
+    if (payableCurrency !== rechargeCurrency) {
       if (ratesData) {
-        const rate = ratesData[userPreferredCurrency] ?? 1
-        planPrice = selectedPlan.price_eur * rate
-        fee = 0.49 * rate
+        const converted = convertUsingEurBaseRates(
+          totalInRecharge,
+          rechargeCurrency,
+          payableCurrency,
+          ratesData,
+        )
+        if (converted == null) {
+          conversionFailed = true
+        } else {
+          totalPayable = converted
+        }
       } else {
-        // Fallback while loading
-        planPrice = selectedPlan.price_eur
-        fee = 0.49
+        conversionFailed = true
       }
     }
-    
-    const subtotal = planPrice
-    const total = subtotal + fee
-    
+
     let walletBalInPayCurrency = 0
     let maxAllowedDeduction = 0
     let usedWalletAmount = 0
-    
+
     if (isAuthenticated && walletBalance !== null) {
-      const activeCurrency = selectedWalletCurrency || walletCurrency || 'USD'
+      const activeCurrency = normalizeCurrencyCode(
+        selectedWalletCurrency || walletCurrency || 'USD',
+      )
       const activeWallet = allWallets.find((w) => w.currency === activeCurrency)
       const activeBalance = activeWallet ? activeWallet.balance : walletBalance
 
-      if (activeCurrency === displayCurrency) {
+      if (activeCurrency === payableCurrency) {
         walletBalInPayCurrency = activeBalance
       } else if (ratesData) {
-        const rateWallet = ratesData[activeCurrency] ?? 1
-        const ratePayment = ratesData[displayCurrency] ?? 1
-        walletBalInPayCurrency = activeBalance * (ratePayment / rateWallet)
-      } else {
-        walletBalInPayCurrency = activeBalance
+        const walletInPayable = convertUsingEurBaseRates(
+          activeBalance,
+          activeCurrency,
+          payableCurrency,
+          ratesData,
+        )
+        walletBalInPayCurrency = walletInPayable ?? 0
       }
-      
+
       maxAllowedDeduction = walletBalInPayCurrency * (maxConsumptionPercentage / 100)
       if (useWallet) {
-        usedWalletAmount = Math.min(total, walletBalInPayCurrency, maxAllowedDeduction)
+        usedWalletAmount = Math.min(totalPayable, walletBalInPayCurrency, maxAllowedDeduction)
       }
     }
-    
-    const grand = Math.max(0, total - usedWalletAmount)
-    
+
+    const grand = Math.max(0, totalPayable - usedWalletAmount)
+
     return {
       subtotal,
+      serviceFee,
+      tax,
       fee,
-      total,
+      totalInRecharge,
+      totalPayable,
       walletBalInPayCurrency,
       maxAllowedDeduction,
       usedWalletAmount,
       grand,
-      currency: displayCurrency,
+      rechargeCurrency,
+      payableCurrency,
+      conversionFailed,
     }
   }, [
     selectedPlan,
     pricing,
     fees,
-    user,
+    processingFeePercents,
     exchangeRates,
     isAuthenticated,
     walletBalance,
@@ -655,16 +737,22 @@ export default function TopupSummaryPage() {
     selectedWalletCurrency,
     maxConsumptionPercentage,
     useWallet,
+    rechargeCurrency,
+    payableCurrency,
   ])
 
-  const currency = amounts.currency
+  const currency = amounts.payableCurrency
+  const lineCurrency = amounts.rechargeCurrency
 
   const conversionRate = useMemo(() => {
-    if (!exchangeRates || !selectedWalletCurrency || !amounts.currency) return null
-    const rateWallet = exchangeRates[selectedWalletCurrency] ?? 1
-    const ratePayment = exchangeRates[amounts.currency] ?? 1
-    return ratePayment / rateWallet
-  }, [exchangeRates, selectedWalletCurrency, amounts.currency])
+    if (!exchangeRates || payableCurrency === rechargeCurrency) return null
+    return crossRateUsingEurBase(rechargeCurrency, payableCurrency, exchangeRates)
+  }, [exchangeRates, payableCurrency, rechargeCurrency])
+
+  const walletConversionRate = useMemo(() => {
+    if (!exchangeRates || !selectedWalletCurrency || !amounts.payableCurrency) return null
+    return crossRateUsingEurBase(selectedWalletCurrency, amounts.payableCurrency, exchangeRates)
+  }, [exchangeRates, selectedWalletCurrency, amounts.payableCurrency])
 
   const startPayment = useCallback(async () => {
     if (!selectedPlan || !pricing || isSubmitting) return
@@ -689,12 +777,14 @@ export default function TopupSummaryPage() {
           headers,
           body: JSON.stringify({
             planId: selectedPlan.internalPlanId || selectedPlan.id,
+            systemPlanId: selectedPlan.systemPlanId || selectedPlan.id,
             mobileNumber: `+${getDialCode(countryCode)}${phoneNumber}`,
-            operatorId: operator,
+            operatorId: operatorProviderId || operator,
             countryId: countryCode,
-            amount: amounts.total,
-            currency: amounts.currency,
+            amount: amounts.totalPayable,
+            currency: amounts.payableCurrency,
             walletCurrency: activeWalletCurrency,
+            checkoutSessionId,
           }),
         })
         const data = await res.json()
@@ -725,13 +815,15 @@ export default function TopupSummaryPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           planId: selectedPlan.internalPlanId || selectedPlan.id,
+          systemPlanId: selectedPlan.systemPlanId || selectedPlan.id,
           amount: amounts.grand,
-          currency: amounts.currency,
+          currency: amounts.payableCurrency,
           mobileNumber: `+${getDialCode(countryCode)}${phoneNumber}`,
-          operatorId: operator,
+          operatorId: operatorProviderId || operator,
           countryId: countryCode,
           usedWalletBalance: amounts.usedWalletAmount,
           walletCurrency: activeWalletCurrency,
+          checkoutSessionId,
         }),
       })
       const createData = await createRes.json()
@@ -817,6 +909,8 @@ export default function TopupSummaryPage() {
     countryCode,
     phoneNumber,
     operator,
+    operatorProviderId,
+    checkoutSessionId,
     setTransactionResult,
     router,
     selectedWalletCurrency,
@@ -886,7 +980,13 @@ export default function TopupSummaryPage() {
                   <DetailRow label="Mobile Number" value={`+${getDialCode(countryCode)} ${phoneNumber}`} />
                   <DetailRow label="Country" value={countryCode} />
                   <DetailRow label="Operator" value={operator} />
-                  <DetailRow label="Plan Name" value={selectedPlan.planName || `₹${selectedPlan.price_inr} • ${selectedPlan.validity}`} />
+                  <DetailRow
+                    label="Plan Name"
+                    value={
+                      selectedPlan.planName ||
+                      `${formatPlanRechargeValue(selectedPlan.recharge_amount, selectedPlan.recharge_currency)} • ${selectedPlan.validity}`
+                    }
+                  />
                   <DetailRow label="Validity" value={selectedPlan.validity} />
                 </div>
 
@@ -934,21 +1034,27 @@ export default function TopupSummaryPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-neutral-500">Recharge Amount (MRP)</span>
                     <span className="font-semibold text-neutral-900">
-                      {amounts.currency === 'INR' ? (
-                        `₹${amounts.subtotal.toFixed(2)}`
-                      ) : amounts.currency === 'EUR' ? (
-                        `€${amounts.subtotal.toFixed(2)}`
-                      ) : (
-                        `${amounts.subtotal.toFixed(2)} ${amounts.currency}`
-                      )}
+                      {formatMoney(amounts.subtotal, lineCurrency)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-neutral-500">Processing Fee</span>
+                    <span className="text-neutral-500">Service Fee</span>
                     <span className="font-semibold text-neutral-900">
-                      {amounts.fee > 0 ? `${amounts.fee.toFixed(2)} ${currency}` : 'Free'}
+                      {amounts.serviceFee > 0 ? formatMoney(amounts.serviceFee, lineCurrency) : 'Free'}
                     </span>
                   </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-500">Tax</span>
+                    <span className="font-semibold text-neutral-900">
+                      {amounts.tax > 0 ? formatMoney(amounts.tax, lineCurrency) : 'Free'}
+                    </span>
+                  </div>
+                  {payableCurrency !== lineCurrency && (
+                    <div className="flex items-center justify-between text-xs text-neutral-500">
+                      <span>Subtotal in {lineCurrency}</span>
+                      <span>{formatMoney(amounts.totalInRecharge, lineCurrency)}</span>
+                    </div>
+                  )}
 
                   <div className="mt-3 space-y-2">
                     <div
@@ -979,8 +1085,8 @@ export default function TopupSummaryPage() {
                               </span>
                             ) : walletBalance !== null ? (
                               <span className="shrink-0 font-extrabold text-neutral-900">
-                                {amounts.walletBalInPayCurrency.toFixed(2)} {amounts.currency}
-                                {selectedWalletCurrency && selectedWalletCurrency !== amounts.currency && (
+                                {formatMoney(amounts.walletBalInPayCurrency, amounts.payableCurrency)}
+                                {selectedWalletCurrency && selectedWalletCurrency !== amounts.payableCurrency && (
                                   <span className="text-[10px] font-normal text-neutral-500 ml-1">
                                     ({(allWallets.find(w => w.currency === selectedWalletCurrency)?.balance ?? walletBalance ?? 0).toFixed(2)} {selectedWalletCurrency})
                                   </span>
@@ -1052,11 +1158,11 @@ export default function TopupSummaryPage() {
                                   </div>
                                 ))}
                               </div>
-                              {selectedWalletCurrency && selectedWalletCurrency !== amounts.currency && conversionRate && (
+                              {selectedWalletCurrency && selectedWalletCurrency !== amounts.payableCurrency && walletConversionRate && (
                                 <div className="pt-1.5 border-t border-neutral-100 flex justify-between text-[10px] text-neutral-400">
                                   <span>Conversion Rate</span>
                                   <span className="font-semibold text-neutral-500">
-                                    1 {selectedWalletCurrency} ≈ {conversionRate.toFixed(4)} {amounts.currency}
+                                    1 {selectedWalletCurrency} ≈ {walletConversionRate.toFixed(4)} {amounts.payableCurrency}
                                   </span>
                                 </div>
                               )}
@@ -1075,16 +1181,43 @@ export default function TopupSummaryPage() {
                     <div className="flex items-center justify-between text-emerald-600 font-semibold mt-1">
                       <span className="text-xs">Wallet Deduction</span>
                       <span className="text-xs">
-                        -{amounts.usedWalletAmount.toFixed(2)} {amounts.currency}
+                        -{formatMoney(amounts.usedWalletAmount, amounts.payableCurrency)}
                       </span>
                     </div>
                   )}
 
                   <div className="my-3 h-px bg-neutral-200" />
-                  <div className="flex items-center justify-between">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider block">
+                      Pay in currency
+                    </label>
+                    <select
+                      value={payableCurrency}
+                      onChange={(e) => setSelectedPayableCurrency(e.target.value)}
+                      className="block w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-800 focus:border-[var(--hero-cta-orange)] focus:ring-[var(--hero-cta-orange)] focus:outline-none"
+                    >
+                      {payableCurrencyOptions.map((code) => (
+                        <option key={code} value={code}>
+                          {code}
+                          {code === lineCurrency ? ' (plan currency)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {payableCurrency !== lineCurrency && conversionRate && (
+                      <p className="text-[10px] text-neutral-400">
+                        1 {lineCurrency} ≈ {conversionRate.toFixed(4)} {payableCurrency}
+                      </p>
+                    )}
+                    {amounts.conversionFailed && payableCurrency !== lineCurrency && (
+                      <p className="text-[10px] font-medium text-amber-700">
+                        Exchange rate unavailable. Select {lineCurrency} or try again shortly.
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between pt-2">
                     <span className="font-semibold text-neutral-700">Total Payable</span>
                     <span className="text-lg font-bold text-neutral-900">
-                      {amounts.grand.toFixed(2)} {currency}
+                      {formatMoney(amounts.grand, currency)}
                     </span>
                   </div>
                 </div>
@@ -1100,7 +1233,7 @@ export default function TopupSummaryPage() {
                     'bg-[var(--hero-cta-orange)]',
                   )}
                   onClick={proceedToPay}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || amounts.conversionFailed}
                 >
                   {isSubmitting ? (
                     <>

@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { formatMoney } from '@/lib/routing/log-pricing'
+import { formatMoney, formatProviderCostDual } from '@/lib/routing/log-pricing'
 
 type LogRow = {
   id: string
@@ -29,6 +29,9 @@ type LogRow = {
   routingType: 'RULE' | 'LCR'
   providerCost: number | null
   providerCurrency?: string | null
+  providerCostDisplay?: string | null
+  providerCostEur?: number | null
+  providerCostInr?: number | null
   userAmount?: number | null
   userCurrency?: string | null
   fallbackUsed: boolean
@@ -262,7 +265,10 @@ export default function RoutingLogsPage() {
                             <TableCell className="font-semibold text-center">{totalAttempts}</TableCell>
                             <TableCell className="text-center">{log.providerName ?? log.providerCode ?? '—'}</TableCell>
                             <TableCell className="text-xs text-center">{formatMoney(log.userAmount, log.userCurrency)}</TableCell>
-                            <TableCell className="text-xs text-center">{formatMoney(log.providerCost, log.providerCurrency)}</TableCell>
+                            <TableCell className="text-xs text-center">
+                              {log.providerCostDisplay ??
+                                formatProviderCostDual(log.providerCost, log.providerCurrency).providerCostDisplay}
+                            </TableCell>
                             <TableCell className="text-center">
                               <Badge 
                                 variant={
@@ -299,8 +305,12 @@ export default function RoutingLogsPage() {
                                     <div className="font-semibold">{formatMoney(detail.send_amount, detail.user_currency)}</div>
                                   </div>
                                   <div>
-                                    <div className="text-muted-foreground text-xs">Provider cost</div>
-                                    <div className="font-semibold">{formatMoney(detail.provider_cost, detail.provider_currency)}</div>
+                                    <div className="text-muted-foreground text-xs">Provider cost (EUR / INR)</div>
+                                    <div className="font-semibold">
+                                      {detail.provider_cost_display ??
+                                        formatProviderCostDual(detail.provider_cost, detail.provider_currency)
+                                          .providerCostDisplay}
+                                    </div>
                                   </div>
                                   <div>
                                     <div className="text-muted-foreground text-xs">Rule Matched</div>
@@ -334,6 +344,73 @@ export default function RoutingLogsPage() {
                                       <div className="col-span-2">
                                         <div className="text-muted-foreground">Internal Plan ID</div>
                                         <div className="font-semibold font-mono break-all">{detail.internal_plan_id ?? '—'}</div>
+                                      </div>
+                                      <div className="col-span-2">
+                                        <div className="text-muted-foreground">Plan mapping (catalog)</div>
+                                        {detail.plan_mapping ? (
+                                          <div className="mt-1 space-y-1 font-mono text-[11px] break-all">
+                                            <div>
+                                              SKU:{' '}
+                                              <span className="font-semibold text-foreground">
+                                                {detail.plan_mapping.provider_plan_id ?? '—'}
+                                              </span>
+                                            </div>
+                                            <div>
+                                              Wholesale:{' '}
+                                              <span className="font-semibold text-foreground">
+                                                {formatProviderCostDual(
+                                                  detail.plan_mapping.provider_wholesale_amount,
+                                                  detail.plan_mapping.provider_wholesale_currency,
+                                                ).providerCostDisplay}
+                                              </span>
+                                            </div>
+                                            <div>
+                                              Destination:{' '}
+                                              <span className="font-semibold text-foreground">
+                                                {formatMoney(
+                                                  detail.plan_mapping.destination_face_value,
+                                                  detail.plan_mapping.destination_currency,
+                                                )}
+                                              </span>
+                                            </div>
+                                          </div>
+                                        ) : Array.isArray(detail.plan_mappings_catalog) &&
+                                          detail.plan_mappings_catalog.length > 0 ? (
+                                          <div className="mt-1 space-y-2">
+                                            <div className="text-[11px] text-muted-foreground">
+                                              Selected provider unavailable — showing plan_mappings (admin/products source):
+                                            </div>
+                                            {detail.plan_mappings_catalog.map((row: any) => (
+                                              <div
+                                                key={`${row.provider_id}:${row.provider_plan_id}`}
+                                                className="rounded border bg-muted/30 p-2 font-mono text-[11px] break-all space-y-0.5"
+                                              >
+                                                <div className="font-semibold text-foreground">
+                                                  {row.provider_name ?? row.provider_id}
+                                                </div>
+                                                <div>SKU: {row.provider_plan_id ?? '—'}</div>
+                                                <div>
+                                                  Wholesale:{' '}
+                                                  {formatProviderCostDual(
+                                                    row.provider_wholesale_amount,
+                                                    row.provider_wholesale_currency,
+                                                  ).providerCostDisplay}
+                                                </div>
+                                                <div>
+                                                  Destination:{' '}
+                                                  {formatMoney(
+                                                    row.destination_face_value,
+                                                    row.destination_currency,
+                                                  )}
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <div className="font-semibold text-amber-700">
+                                            No plan_mappings row resolved
+                                          </div>
+                                        )}
                                       </div>
                                       <div>
                                         <div className="text-muted-foreground">Mapping Count</div>
@@ -369,13 +446,20 @@ export default function RoutingLogsPage() {
                                         return Array.isArray(evaluatedList) && evaluatedList.length > 0 ? (
                                           evaluatedList.map((ev: any, idx: number) => {
                                             const providerName = ev.providerName || ev.providerId || ev.provider || '—'
-                                            const isEligible = ev.eligibility ?? ev.eligible ?? false
-                                            const cost = ev.costPrice ?? ev.cost
-                                            const currency = ev.currency
+                                            const isSkipped = ev.skipped === true
+                                            const isEligible = !isSkipped && (ev.eligibility ?? ev.eligible ?? false)
+                                            const cost = ev.provider_wholesale_amount ?? ev.costPrice ?? ev.cost
+                                            const currency = ev.provider_wholesale_currency ?? ev.currency
+                                            const costDisplay = formatProviderCostDual(cost, currency).providerCostDisplay
                                             const margin = ev.margin
                                             const priority = ev.priority
-                                            const reason = ev.filterReason ?? ev.reason
-                                            const isSelected = ev.providerId === detail.routing_decision?.selected_provider || ev.provider === detail.routing_decision?.selected_provider || providerName === detail.routing_decision?.selected_provider
+                                            const reason =
+                                              ev.skipReason ?? ev.filterReason ?? ev.reason
+                                            const isSelected =
+                                              ev.providerId === detail.routing_decision?.selected_provider_id ||
+                                              ev.providerId === detail.routing_decision?.selected_provider ||
+                                              ev.provider === detail.routing_decision?.selected_provider ||
+                                              providerName === detail.routing_decision?.selected_provider
 
                                             return (
                                               <div 
@@ -383,26 +467,39 @@ export default function RoutingLogsPage() {
                                                 className={`flex flex-col p-3 rounded border text-xs gap-1 ${
                                                   isSelected 
                                                     ? 'border-primary bg-primary/5 shadow-sm' 
-                                                    : isEligible 
-                                                      ? 'bg-muted/20' 
-                                                      : 'bg-muted/10 opacity-60'
+                                                    : isSkipped
+                                                      ? 'border-amber-300 bg-amber-50/40'
+                                                      : isEligible 
+                                                        ? 'bg-muted/20' 
+                                                        : 'bg-muted/10 opacity-60'
                                                 }`}
                                               >
                                                 <div className="flex justify-between items-center">
                                                   <span className="font-semibold text-sm">{providerName}</span>
                                                   <div className="flex gap-2">
                                                     {priority != null && <Badge variant="outline" className="text-[10px]">Priority {priority}</Badge>}
-                                                    <Badge variant={isEligible ? 'success' : 'destructive'} className="text-[10px]">
-                                                      {isEligible ? 'Eligible' : 'Filtered'}
-                                                    </Badge>
+                                                    {isSkipped ? (
+                                                      <Badge variant="outline" className="text-[10px] border-amber-500 text-amber-800 bg-amber-50">
+                                                        Skipped
+                                                      </Badge>
+                                                    ) : (
+                                                      <Badge variant={isEligible ? 'success' : 'destructive'} className="text-[10px]">
+                                                        {isEligible ? 'Eligible' : 'Filtered'}
+                                                      </Badge>
+                                                    )}
                                                   </div>
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-2 mt-1 text-muted-foreground">
-                                                  <div>Cost: <span className="font-medium text-foreground">{formatMoney(cost, ev.currency)}</span></div>
-                                                  <div>Margin: <span className="font-medium text-foreground">{margin != null ? `${margin}%` : 'N/A'}</span></div>
+                                                  <div>Cost: <span className="font-medium text-foreground">{costDisplay}</span></div>
+                                                  {/* <div>Margin: <span className="font-medium text-foreground">{margin != null ? `${margin}%` : 'N/A'}</span></div> */}
                                                 </div>
-                                                {!isEligible && reason && (
-                                                  <div className="text-destructive mt-1 font-medium bg-destructive/5 px-1.5 py-0.5 rounded border border-destructive/10">Reason: {reason}</div>
+                                                {isSkipped && reason && (
+                                                  <div className="text-amber-900 mt-1 font-medium bg-amber-100/60 px-1.5 py-0.5 rounded border border-amber-200">
+                                                    Skipped: {reason}
+                                                  </div>
+                                                )}
+                                                {!isSkipped && !isEligible && reason && (
+                                                  <div className="text-destructive mt-1 font-medium bg-destructive/5 px-1.5 py-0.5 rounded border border-destructive/10">Filtered: {reason}</div>
                                                 )}
                                               </div>
                                             )
@@ -425,7 +522,9 @@ export default function RoutingLogsPage() {
                                             <span className={`absolute -left-[31px] top-1.5 flex h-4 w-4 items-center justify-center rounded-full border text-[9px] font-bold ${
                                               hop.ok 
                                                 ? 'bg-emerald-500 border-emerald-600 text-white shadow shadow-emerald-500/20' 
-                                                : 'bg-rose-500 border-rose-600 text-white shadow shadow-rose-500/20'
+                                                : hop.skipped
+                                                  ? 'bg-amber-500 border-amber-600 text-white shadow shadow-amber-500/20'
+                                                  : 'bg-rose-500 border-rose-600 text-white shadow shadow-rose-500/20'
                                             }`}>
                                               {idx + 1}
                                             </span>
@@ -434,19 +533,52 @@ export default function RoutingLogsPage() {
                                                 <span className="font-semibold text-xs text-foreground">
                                                   Attempt #{idx + 1}: {hop.providerName}
                                                 </span>
-                                                <Badge variant={hop.ok ? 'success' : 'destructive'} className="text-[10px]">
-                                                  {hop.ok ? 'Success' : 'Failed'}
+                                                <Badge variant={hop.ok ? 'success' : hop.skipped ? 'outline' : 'destructive'} className="text-[10px]">
+                                                  {hop.ok ? 'Success' : hop.skipped ? 'Skipped' : 'Failed'}
                                                 </Badge>
                                               </div>
                                               <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground">
                                                 <div>Source: <span className="font-medium text-foreground">{hop.source}</span></div>
-                                                <div>Cost: <span className="font-medium text-foreground">{formatMoney(hop.cost, hop.currency)}</span></div>
+                                                <div>Cost: <span className="font-medium text-foreground">{hop.costDisplay ?? formatProviderCostDual(hop.cost, hop.currency).providerCostDisplay}</span></div>
                                               </div>
+                                              {(hop.requestUrl || hop.requestBody) && (
+                                                <div className="text-[10px] p-2 rounded border mt-1 font-mono bg-muted/30 border-muted space-y-1">
+                                                  {hop.requestMethod && hop.requestUrl && (
+                                                    <div>
+                                                      <span className="text-muted-foreground">API: </span>
+                                                      <span className="font-medium text-foreground break-all">
+                                                        {hop.requestMethod} {hop.requestUrl}
+                                                      </span>
+                                                    </div>
+                                                  )}
+                                                  {hop.requestBody && (
+                                                    <div>
+                                                      <span className="text-muted-foreground block">Body:</span>
+                                                      <pre className="whitespace-pre-wrap break-all text-[9px] mt-0.5">
+                                                        {JSON.stringify(hop.requestBody, null, 2)}
+                                                      </pre>
+                                                    </div>
+                                                  )}
+                                                </div>
+                                              )}
                                               {!hop.ok && (
-                                                <div className="text-[10px] text-destructive bg-rose-50/50 p-2 rounded border border-rose-100 mt-1 font-mono">
-                                                  {hop.error || 'Unknown Error'}
-                                                  {hop.errorCode && <span className="block font-semibold">Error Code: {hop.errorCode}</span>}
-                                                  {hop.errorMessage && <span className="block">Message: {hop.errorMessage}</span>}
+                                                <div className={`text-[10px] p-2 rounded border mt-1 font-mono ${
+                                                  hop.skipped
+                                                    ? 'text-amber-800 bg-amber-50/50 border-amber-100'
+                                                    : 'text-destructive bg-rose-50/50 border-rose-100'
+                                                }`}>
+                                                  {hop.skipped ? (
+                                                    <>
+                                                      <span className="block font-semibold">Skipped before API call</span>
+                                                      <span className="block">{hop.skipReason || hop.errorMessage || hop.error || 'Pre-validation failed'}</span>
+                                                    </>
+                                                  ) : (
+                                                    <>
+                                                      {hop.error || 'Unknown Error'}
+                                                      {hop.errorCode && <span className="block font-semibold">Error Code: {hop.errorCode}</span>}
+                                                      {hop.errorMessage && <span className="block">Message: {hop.errorMessage}</span>}
+                                                    </>
+                                                  )}
                                                 </div>
                                               )}
                                             </div>

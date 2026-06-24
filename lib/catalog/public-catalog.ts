@@ -23,11 +23,14 @@ import {
 import { countriesList } from '@/lib/country-codes'
 import {
   batchLoadInternalPlanRechargeValues,
-  batchLoadSystemPlanRechargeValues,
   derivedDisplayPrices,
   formatPlanRechargeValue,
   type PlanRechargeValue,
 } from '@/lib/catalog/plan-recharge-value'
+import {
+  batchLoadSystemPlanMappedDetails,
+  type SystemPlanMappedDetails,
+} from '@/lib/catalog/system-plan-mapped-details'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -505,12 +508,16 @@ export async function fetchPublicOperators(countryInput: string): Promise<Public
 function systemPlanToPublic(
   row: Record<string, unknown>,
   operatorId: string,
-  recharge: PlanRechargeValue,
+  mapped: SystemPlanMappedDetails,
 ): PublicPlan {
+  const recharge = mapped.recharge
   const { price_inr: priceInr, price_eur: priceEur } = derivedDisplayPrices(
     recharge.amount,
     recharge.currency,
   )
+  const planTypeRaw = mapped.planType ?? row.plan_type ?? row.category ?? 'topup'
+  const planName = mapped.planName || String(row.system_plan_name ?? 'Plan')
+  const benefits = mapped.description || String(row.description ?? row.system_plan_name ?? '')
   return {
     id: String(row.id),
     systemPlanId: String(row.id),
@@ -520,16 +527,12 @@ function systemPlanToPublic(
     recharge_currency: recharge.currency,
     price_inr: priceInr,
     price_eur: priceEur,
-    validity: String(row.validity ?? ''),
-    data: row.data_volume != null ? String(row.data_volume) : undefined,
-    benefits: String(row.description ?? row.system_plan_name ?? ''),
+    validity: mapped.validity || String(row.validity ?? ''),
+    data: mapped.dataVolume ?? (row.data_volume != null ? String(row.data_volume) : undefined),
+    benefits,
     tag: 'none',
-    type: mapPlanType(
-      String(row.plan_type ?? row.category ?? 'topup'),
-      String(row.system_plan_name ?? 'Plan'),
-      String(row.description ?? row.system_plan_name ?? '')
-    ),
-    planName: String(row.system_plan_name ?? 'Plan'),
+    type: mapPlanType(String(planTypeRaw), planName, benefits),
+    planName,
     currency: recharge.currency,
   }
 }
@@ -714,14 +717,14 @@ export async function fetchPublicPlans(input: {
       const activeMobilePlans = rows.filter((row) => isMobileCatalogPlan(row as { status?: string; service_domain?: string }))
       const eligibleRows = await filterWebsiteEligibleSystemPlans(activeMobilePlans, operatorId)
       if (eligibleRows.length) {
-        const rechargeMap = await batchLoadSystemPlanRechargeValues(
+        const mappedDetails = await batchLoadSystemPlanMappedDetails(
           eligibleRows.map((r) => String(r.id)),
         )
         plans = eligibleRows
           .map((r) => {
-            const recharge = rechargeMap.get(String(r.id))
-            if (!recharge) return null
-            return systemPlanToPublic(r, operatorId, recharge)
+            const mapped = mappedDetails.get(String(r.id))
+            if (!mapped) return null
+            return systemPlanToPublic(r, operatorId, mapped)
           })
           .filter((p): p is PublicPlan => p != null)
       }

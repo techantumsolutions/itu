@@ -1,13 +1,9 @@
 /**
- * Post-payment checkout service.
+ * Checkout service.
  *
- * After Razorpay payment is verified, this service:
- *   1. Creates a PENDING recharge transaction
- *   2. Executes the routing engine to select a provider
- *   3. Sends the recharge through the selected provider
- *   4. Updates all records with the result
- *
- * Does NOT modify the routing engine, LCR engine, or provider connectors.
+ * Pre-payment (Buy Now): `prepareCheckout` runs routing + LCR and locks one provider.
+ * Post-payment: `executeCheckout` with `checkoutSessionId` executes the stored provider only (no re-LCR).
+ * Legacy path: `executeCheckout` without `checkoutSessionId` still runs the full post-payment routing flow.
  */
 
 import { supabaseRest } from '@/lib/db/supabase-rest'
@@ -16,37 +12,45 @@ import { executeMappedRecharge } from '@/lib/lcr-v2/execute-provider'
 import { dbGetProvider, dbGetInternalPlan, dbInsertRechargeAttempt, dbUpdateRechargeAttempt } from '@/lib/lcr-v2/recharge-db'
 import { insertDetailedRoutingLog } from '@/lib/routing/repository'
 import { processRewardsForTransaction } from '@/lib/rewards/reward-service'
+import {
+  providerPreValidation,
+  isDingInsufficientBalance,
+  DING_INSUFFICIENT_BALANCE_LOG,
+} from '@/lib/lcr-v2/provider-pre-validation'
+import {
+  buildRechargeProviderExecutionContext,
+} from '@/lib/recharge-orchestration/provider-execution-context'
+import {
+  assertAuthoritativeProviderForRecharge,
+  ORPHAN_RUNTIME_PROVIDER,
+} from '@/lib/recharge-orchestration/validate-orchestration-provider'
+import { resolveSystemPlanFromInternalPlan } from '@/lib/recharge-orchestration/resolve-system-plan-from-internal-plan'
+import type { RechargeRoutingSource } from '@/lib/recharge-orchestration/routing-log-fields'
+import { logProviderExecutionContext } from '@/lib/lcr-v2/provider-execution-context'
+import {
+  pricingFieldsFromCandidate,
+  detailedRoutingLogPricingInput,
+} from '@/lib/routing/provider-pricing-log-fields'
+import type { RoutingProviderCandidate } from '@/lib/routing/types'
+import type { CheckoutInput, CheckoutResult } from '@/lib/topup/checkout-types'
+import { executePostPaymentRecharge } from '@/lib/topup/post-payment-recharge'
+
+function routingSourceForHop(
+  hopIndex: number,
+  routingType: string,
+): RechargeRoutingSource {
+  if (hopIndex === 0 && routingType === 'RULE') return 'ROUTING_RULE'
+  if (hopIndex > 0) return 'FALLBACK'
+  return 'LCR'
+}
+function candidatePricingLog(candidate: RoutingProviderCandidate | null | undefined) {
+  return detailedRoutingLogPricingInput(pricingFieldsFromCandidate(candidate), {
+    providerPlanId: candidate?.providerPlanId,
+  })
+}
 
 function enc(v: string): string {
   return encodeURIComponent(v)
-}
-
-export type CheckoutInput = {
-  paymentOrderId: string
-  planId: string
-  mobileNumber: string
-  operatorId: string
-  countryId: string
-  amount: number
-  currency: string
-  razorpayPaymentId: string
-  userId?: string
-  hideTransactionFromUser?: boolean
-  usedWalletBalance?: number
-  walletCurrency?: string
-}
-
-export type CheckoutResult = {
-  ok: boolean
-  transactionId?: string
-  rechargeOrderId?: string
-  providerRef?: string
-  providerName?: string
-  providerCode?: string
-  status: 'success' | 'failed'
-  error?: string
-  hints?: string[]
-  rewardPointsEarned?: number
 }
 
 /** Sum the reward points earned for a specific transaction from reward_ledger. */
@@ -172,6 +176,10 @@ async function updateRechargeOrder(id: string, patch: Record<string, unknown>) {
  * Payment verified → Create transaction → Route → Execute provider → Update status
  */
 export async function executeCheckout(input: CheckoutInput): Promise<CheckoutResult> {
+  if (input.checkoutSessionId || input.pendingTransactionId) {
+    return executePostPaymentRecharge(input)
+  }
+
   const hints: string[] = []
   const logHint = (msg: string) => {
     const formatted = `[RECHARGE HINT] ${msg}`
@@ -224,6 +232,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
       countryId: normalizedInput.countryId,
       operatorId: normalizedInput.operatorId,
       productId: normalizedInput.planId,
+      systemPlanId: normalizedInput.systemPlanId,
       transactionId,
     })
   } catch (e) {
@@ -260,7 +269,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
       routingStrategy: routingResult.settings?.routingStrategy || 'LEAST_COST',
       routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
       selectedProvider: e.providerId,
-      providerCost: e.price !== Infinity ? e.price : undefined,
+      ...candidatePricingLog(e),
       providerPriority: e.providerPriority,
       executionResult: isFiltered ? 'LCR_PROVIDER_FILTERED' : 'LCR_PROVIDER_DISCOVERED',
       failureReason: isFiltered ? filterReason : undefined,
@@ -277,8 +286,11 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
       activeStatus: e.activeStatus ?? e.eligible,
       onlineStatus: e.onlineStatus ?? 'unknown',
       mappingExists: e.mappingExists ?? true,
-      costPrice: e.price,
-      currency: e.currency ?? null,
+      costPrice: e.provider_wholesale_amount ?? e.price,
+      currency: e.provider_wholesale_currency ?? e.currency ?? null,
+      destinationFaceValue: e.destination_face_value ?? null,
+      destinationCurrency: e.destination_currency ?? null,
+      normalizedPrice: e.normalized_provider_price ?? null,
       margin: e.margin ?? 0,
       priority: e.providerPriority ?? 100,
       eligibility: e.eligible,
@@ -304,7 +316,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
       routingStrategy: routingResult.settings?.routingStrategy || 'LEAST_COST',
       routingRuleMatched: 'No',
       selectedProvider: bestPricedCandidate?.providerId,
-      providerCost: bestPricedCandidate?.price !== Infinity ? bestPricedCandidate?.price : undefined,
+      ...candidatePricingLog(bestPricedCandidate),
       executionResult: reason,
     })
     await updateTransactionStatus(transactionId, 'failed', { error: errMsg, routing: routingResult })
@@ -318,7 +330,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     return { ok: false, transactionId, rechargeOrderId: rechargeOrderId ?? undefined, status: 'failed', error: errMsg, hints, rewardPointsEarned }
   }
 
-  logHint(`Primary Provider Assigned: ${routingResult.selected.providerName || routingResult.selected.providerId} (Plan SKU: ${routingResult.selected.providerPlanId}, Cost: ${routingResult.selected.price} ${routingResult.selected.currency || 'EUR'})`)
+  logHint(`Primary Provider Assigned: ${routingResult.selected.providerName || routingResult.selected.providerId} (Plan SKU: ${routingResult.selected.providerPlanId}, Wholesale: ${routingResult.selected.provider_wholesale_amount ?? routingResult.selected.price} ${(routingResult.selected.provider_wholesale_currency ?? routingResult.selected.currency) || 'EUR'}, Normalized: ${routingResult.selected.normalized_provider_price ?? 'N/A'})`)
 
   const retrySettings = routingResult.settings
   const selected = routingResult.selected
@@ -330,9 +342,16 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
   const filtered_provider_count = candidate_provider_count - eligible_provider_count
   const routingDecisionReason = routingResult.routing_decision_reason || (routingResult.routingType === 'RULE' ? 'RULE_MATCHED' : 'LEAST_COST_SELECTED')
 
+  const planLink = await resolveSystemPlanFromInternalPlan(
+    normalizedInput.systemPlanId || normalizedInput.planId,
+  )
+  const canonicalInternalPlanId = planLink?.internalPlanId ?? normalizedInput.planId
+  const canonicalSystemPlanId = normalizedInput.systemPlanId ?? planLink?.systemPlanId ?? null
+
   const snapshot = {
     transaction_id: transactionId,
-    internal_plan_id: normalizedInput.planId,
+    internal_plan_id: canonicalInternalPlanId,
+    system_plan_id: canonicalSystemPlanId,
     routing_strategy: retrySettings?.routingStrategy || 'LEAST_COST',
     routing_rule_matched: routingResult.routingType === 'RULE',
     routing_rule_id: routingResult.ruleId || null,
@@ -345,7 +364,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     routing_decision_reason: routingDecisionReason,
     evaluated_providers,
     // Integrity check parameters
-    internal_plan_id_verify: normalizedInput.planId,
+    internal_plan_id_verify: canonicalInternalPlanId,
     mapping_count: routingResult.mapping_count ?? candidate_provider_count,
   }
 
@@ -353,7 +372,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
   const attempt = await dbInsertRechargeAttempt({
     idempotencyKey: input.razorpayPaymentId || null,
     distributorRef: transactionId,
-    internalPlanId: normalizedInput.planId,
+    internalPlanId: canonicalInternalPlanId,
     phoneNumber: normalizedInput.mobileNumber.replace(/\D/g, ''),
     sendAmount: input.amount,
     currency: input.currency || 'INR',
@@ -363,7 +382,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     return null
   })
 
-  logHint(`Provider failover chain established. Trying providers: ${chain.map(c => `${c.providerName || c.providerId} (Cost: ${c.price ?? 'N/A'} ${c.currency || 'EUR'})`).join(' -> ')}`)
+  logHint(`Provider failover chain established. Trying providers: ${chain.map((c) => `${c.providerName || c.providerId} (normalized=${c.normalized_provider_price ?? 'N/A'} ${c.normalized_provider_currency ?? ''}, wholesale=${c.provider_wholesale_amount ?? c.price} ${c.provider_wholesale_currency ?? c.currency})`).join(' -> ')}`)
 
   const attemptsLog: Array<{ 
     providerId: string
@@ -375,6 +394,10 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     error?: string
     errorCode?: string
     errorMessage?: string
+    requestMethod?: string
+    requestUrl?: string
+    requestPath?: string
+    requestBody?: Record<string, unknown>
   }> = []
 
   // Try providers in routing order (primary + fallbacks)
@@ -402,7 +425,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
         routingRuleId: routingResult.ruleId,
         routingRuleProvider: candidate.providerName || candidate.providerId,
         selectedProvider: candidate.providerId,
-        providerCost: candidate.price,
+        ...candidatePricingLog(candidate),
         providerPriority: candidate.providerPriority,
         executionResult: 'RULE_PROVIDER_SELECTED',
         attemptNumber: i + 1,
@@ -416,7 +439,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
         routingStrategy: snapshot.routing_strategy,
         routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
         selectedProvider: candidate.providerId,
-        providerCost: candidate.price,
+        ...candidatePricingLog(candidate),
         providerPriority: candidate.providerPriority,
         executionResult: 'RETRY_STARTED',
         attemptNumber: i + 1,
@@ -429,14 +452,14 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
         routingStrategy: snapshot.routing_strategy,
         routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
         selectedProvider: candidate.providerId,
-        providerCost: candidate.price,
+        ...candidatePricingLog(candidate),
         providerPriority: candidate.providerPriority,
         executionResult: 'RETRY_PROVIDER_SELECTED',
         attemptNumber: i + 1,
       })
     }
 
-    logHint(`[Hop ${i + 1}/${chain.length}] Attempting provider: ${candidate.providerName || candidate.providerId} (Plan SKU: ${candidate.providerPlanId}, Cost: ${candidate.price ?? 'N/A'} ${candidate.currency || 'EUR'})`)
+    logHint(`[Hop ${i + 1}/${chain.length}] Attempting provider: ${candidate.providerName || candidate.providerId} (Plan SKU: ${candidate.providerPlanId}, Wholesale: ${candidate.provider_wholesale_amount ?? candidate.price ?? 'N/A'} ${(candidate.provider_wholesale_currency ?? candidate.currency) || 'EUR'})`)
 
     const provider = await dbGetProvider(candidate.providerId)
     if (!provider) {
@@ -445,7 +468,8 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
         providerId: candidate.providerId, 
         providerName: candidate.providerId,
         providerPlanId: candidate.providerPlanId, 
-        cost: candidate.price ?? 0,
+        cost: candidate.provider_wholesale_amount ?? candidate.price ?? 0,
+        currency: candidate.provider_wholesale_currency ?? candidate.currency ?? null,
         source: currentSource,
         ok: false, 
         error: 'PROVIDER_NOT_FOUND' 
@@ -460,28 +484,143 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     const phoneDigits = input.mobileNumber.replace(/\D/g, '')
     const externalId = `TXN-${transactionId.slice(0, 8).toUpperCase()}-${Date.now()}`
 
-    logHint(`[Hop ${i + 1}/${chain.length}] Sending request to provider adapter "${adapterKey}" with ExternalRef: ${externalId}`)
+    const routingSource = routingSourceForHop(i, routingResult.routingType)
 
-    const exec = await executeMappedRecharge({
-      adapterKey,
+    const orphanCheck = await assertAuthoritativeProviderForRecharge({
+      internalPlanId: canonicalInternalPlanId,
+      systemPlanId: canonicalSystemPlanId,
+      providerId: candidate.providerId,
       providerPlanId: candidate.providerPlanId,
-      phoneDigits,
-      externalId,
-      sendAmount: input.amount,
     })
 
+    if (!orphanCheck.ok) {
+      const skipReason =
+        orphanCheck.reason === ORPHAN_RUNTIME_PROVIDER
+          ? 'Orphan runtime provider detected.'
+          : orphanCheck.reason ?? 'Authoritative provider validation failed'
+      logHint(`[Hop ${i + 1}/${chain.length}] ${skipReason}`)
+      attemptsLog.push({
+        providerId: candidate.providerId,
+        providerName: candidate.providerName || provider.name || candidate.providerId,
+        providerPlanId: candidate.providerPlanId,
+        cost: candidate.provider_wholesale_amount ?? candidate.price ?? 0,
+        currency: candidate.provider_wholesale_currency ?? candidate.currency ?? null,
+        source: currentSource,
+        ok: false,
+        skipped: true,
+        skipReason,
+        error: orphanCheck.reason ?? ORPHAN_RUNTIME_PROVIDER,
+        errorMessage: skipReason,
+      })
+      if (attempt) {
+        await dbUpdateRechargeAttempt(attempt.id, { attempts: attemptsLog }).catch(() => {})
+      }
+      await insertDetailedRoutingLog({
+        transactionId,
+        countryCode,
+        operatorCode,
+        planId: normalizedInput.planId,
+        internalPlanId: normalizedInput.planId,
+        systemPlanId: orphanCheck.systemPlanId ?? null,
+        routingStrategy: snapshot.routing_strategy,
+        routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
+        selectedProvider: candidate.providerId,
+        providerPlanId: candidate.providerPlanId,
+        ...candidatePricingLog(candidate),
+        providerPriority: candidate.providerPriority,
+        routingSource,
+        executionResult: 'ORPHAN_RUNTIME_PROVIDER',
+        attemptNumber: i + 1,
+        failureReason: skipReason,
+        responseCode: orphanCheck.reason ?? ORPHAN_RUNTIME_PROVIDER,
+        responseMessage: skipReason,
+      })
+      continue
+    }
+
+    const executionContext = buildRechargeProviderExecutionContext({
+      candidate,
+      adapterKey,
+      phoneDigits,
+      externalId,
+      customer_payment_amount: input.amount,
+      customer_payment_currency: input.currency || 'INR',
+      systemPlanId: orphanCheck.systemPlanId ?? null,
+      internalPlanId: normalizedInput.planId,
+      providerPlanRawId: orphanCheck.providerPlanRawId ?? null,
+    })
+
+    logProviderExecutionContext(executionContext, 'checkout-hop')
+    logHint(
+      `[Hop ${i + 1}/${chain.length}] customer_payment=${executionContext.customer_payment_amount} ${executionContext.customer_payment_currency} | wholesale=${executionContext.provider_wholesale_amount} ${executionContext.provider_wholesale_currency} | destination_face=${executionContext.destination_face_value} ${executionContext.destination_currency}`,
+    )
+
+    const preCheck = await providerPreValidation({ executionContext })
+
+    if (!preCheck.eligible) {
+      const skipReason = preCheck.logMessage ?? preCheck.reason ?? 'Provider pre-validation failed'
+      logHint(`[Hop ${i + 1}/${chain.length}] ${skipReason}`)
+      attemptsLog.push({
+        providerId: candidate.providerId,
+        providerName: candidate.providerName || provider.name || candidate.providerId,
+        providerPlanId: candidate.providerPlanId,
+        cost: candidate.provider_wholesale_amount ?? candidate.price ?? 0,
+        currency: candidate.provider_wholesale_currency ?? candidate.currency ?? null,
+        source: currentSource,
+        ok: false,
+        skipped: true,
+        skipReason,
+        error: preCheck.reason ?? 'PROVIDER_PRE_VALIDATION_FAILED',
+        errorMessage: skipReason,
+      })
+      if (attempt) {
+        await dbUpdateRechargeAttempt(attempt.id, { attempts: attemptsLog }).catch(() => {})
+      }
+      await insertDetailedRoutingLog({
+        transactionId,
+        countryCode,
+        operatorCode,
+        planId: normalizedInput.planId,
+        routingStrategy: snapshot.routing_strategy,
+        routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
+        selectedProvider: candidate.providerId,
+        providerPlanId: candidate.providerPlanId,
+        ...candidatePricingLog(candidate),
+        providerPriority: candidate.providerPriority,
+        executionResult: 'PROVIDER_PRE_VALIDATION_SKIPPED',
+        attemptNumber: i + 1,
+        failureReason: skipReason,
+        responseCode: preCheck.reason ?? null,
+        responseMessage: skipReason,
+      })
+      continue
+    }
+
+    logHint(`[Hop ${i + 1}/${chain.length}] Sending request to provider adapter "${adapterKey}" with ExternalRef: ${externalId}`)
+
+    const exec = await executeMappedRecharge(executionContext)
+
     logHint(`[Hop ${i + 1}/${chain.length}] Response status: ${exec.ok ? 'SUCCESS' : 'FAILED'}${exec.error ? ` | Error: ${exec.error}` : ''}`)
+
+    if (!exec.ok && adapterKey === 'ding' && isDingInsufficientBalance(exec.errorCode, exec.errorMessage)) {
+      console.log(DING_INSUFFICIENT_BALANCE_LOG)
+    }
 
     attemptsLog.push({
       providerId: candidate.providerId,
       providerName: candidate.providerName || provider.name || candidate.providerId,
       providerPlanId: candidate.providerPlanId,
-      cost: candidate.price ?? 0,
+      cost: candidate.provider_wholesale_amount ?? candidate.price ?? 0,
+      currency: candidate.provider_wholesale_currency ?? candidate.currency ?? null,
       source: currentSource,
       ok: exec.ok,
       error: exec.error,
       errorCode: exec.errorCode,
       errorMessage: exec.errorMessage,
+      requestMethod: exec.requestAudit?.method,
+      requestUrl: exec.requestAudit?.url,
+      requestPath: exec.requestAudit?.path ?? exec.requestAudit?.url,
+      requestBody: exec.requestAudit?.body,
     })
 
     if (attempt) {
@@ -511,15 +650,18 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
         countryCode,
         operatorCode,
         planId: normalizedInput.planId,
+        internalPlanId: normalizedInput.planId,
+        systemPlanId: executionContext.systemPlanId,
+        providerPlanRawId: executionContext.providerPlanRawId,
         routingStrategy: snapshot.routing_strategy,
         routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
         selectedProvider: candidate.providerId,
         providerPlanId: candidate.providerPlanId,
-        providerCost: candidate.price,
-        providerCurrency: candidate.currency ?? null,
+        ...candidatePricingLog(candidate),
         userAmount: input.amount,
         userCurrency: input.currency || 'INR',
         providerPriority: candidate.providerPriority,
+        routingSource,
         executionResult: 'RECHARGE_SUCCESS',
         attemptNumber: i + 1,
       })
@@ -536,7 +678,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
           routingStrategy: snapshot.routing_strategy,
           routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
           selectedProvider: candidate.providerId,
-          providerCost: candidate.price,
+          ...candidatePricingLog(candidate),
           providerPriority: candidate.providerPriority,
           executionResult: 'INCONSISTENT_PROVIDER_RESOLUTION',
           attemptNumber: i + 1,
@@ -600,7 +742,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
           routingRuleId: routingResult.ruleId,
           routingRuleProvider: candidate.providerName || candidate.providerId,
           selectedProvider: candidate.providerId,
-          providerCost: candidate.price,
+          ...candidatePricingLog(candidate),
           providerPriority: candidate.providerPriority,
           executionResult: 'RULE_PROVIDER_FAILED',
           attemptNumber: i + 1,
@@ -617,7 +759,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
           routingStrategy: snapshot.routing_strategy,
           routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
           selectedProvider: candidate.providerId,
-          providerCost: candidate.price,
+          ...candidatePricingLog(candidate),
           providerPriority: candidate.providerPriority,
           executionResult: 'RETRY_FAILOVER',
           attemptNumber: i + 1,
@@ -642,10 +784,8 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
   }
 
   // Log MAX_RETRY_EXCEEDED and RECHARGE_FAILED
-  const lastAttemptCost =
-    attemptsLog.length > 0
-      ? attemptsLog[attemptsLog.length - 1]?.cost
-      : routingResult.selected?.price
+  const lastHopCandidate =
+    chain.length > 0 ? chain[Math.min(attemptsLog.length, chain.length) - 1] : routingResult.selected
 
   await insertDetailedRoutingLog({
     transactionId,
@@ -655,7 +795,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     routingStrategy: snapshot.routing_strategy,
     routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
     selectedProvider: routingResult.selected?.providerId,
-    providerCost: lastAttemptCost,
+    ...candidatePricingLog(lastHopCandidate ?? routingResult.selected),
     executionResult: 'MAX_RETRY_EXCEEDED',
     failureReason: 'All providers failed in failover chain',
   })
@@ -667,7 +807,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     routingStrategy: snapshot.routing_strategy,
     routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
     selectedProvider: routingResult.selected?.providerId,
-    providerCost: lastAttemptCost,
+    ...candidatePricingLog(lastHopCandidate ?? routingResult.selected),
     executionResult: 'RECHARGE_FAILED',
     failureReason: 'All providers failed',
   })
@@ -682,3 +822,5 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
   const rewardPointsEarned = await getEarnedPoints(transactionId).catch(() => 0)
   return { ok: false, transactionId, rechargeOrderId: rechargeOrderId ?? undefined, status: 'failed', error: errMsg, hints, rewardPointsEarned }
 }
+
+export type { CheckoutInput, CheckoutResult } from '@/lib/topup/checkout-types'

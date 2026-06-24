@@ -23,6 +23,8 @@ import { runStep7Promote } from './stages/step7-promote'
 import { runStep7MergeDuplicates } from './stages/step7-merge-duplicates'
 import { runStep8FilterBenefits } from './stages/step8-filter-benefits'
 import { calculateSyncVerificationDashboard } from './sync-verification'
+import { validateProviderPricingConsistency } from '@/lib/catalog/pricing-consistency-validator'
+import { mirrorPlanMappingsToInternalCache } from '@/lib/recharge-orchestration/mirror-internal-plan-mapping-cache'
 
 export type PipelineStage =
   | 'step1_check'
@@ -63,8 +65,15 @@ export async function runPipelineStage(
       return runStep5FilterTelecom(providerId, config, syncRunId)
     case 'step6_merge':
       return runStep6Merge(providerId, config, syncRunId)
-    case 'step7_promote':
-      return runStep7Promote(providerId, config, syncRunId)
+    case 'step7_promote': {
+      const result = await runStep7Promote(providerId, config, syncRunId)
+      if (result.success) {
+        await mirrorPlanMappingsToInternalCache({ providerId }).catch((err) => {
+          console.warn('[Step7] plan_mappings → internal cache mirror failed:', err)
+        })
+      }
+      return result
+    }
     case 'step7_merge_duplicates':
       return runStep7MergeDuplicates(providerId, config, syncRunId)
     case 'step8_filter_benefits':
@@ -185,6 +194,11 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
     const step75Data = stageResults['step7_merge_duplicates']?.data ?? {}
     const step8Data = stageResults['step8_filter_benefits']?.data ?? {}
 
+    const pricingConsistency = await validateProviderPricingConsistency(providerId).catch((err) => {
+      console.warn('[Sync] pricing consistency validation failed:', err)
+      return { providerId, scanned: 0, mismatches: [], ok: true }
+    })
+
     const verificationDashboard = await calculateSyncVerificationDashboard({
       duplicatePlansMerged: Number(step75Data.mergedPlans ?? step75Data.mergedCount ?? 0),
     }).catch((err) => {
@@ -206,6 +220,7 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
       durationMs,
       syncedCountries: resolveSyncCountries(config, options) || [],
       verificationDashboard: verificationDashboard ?? undefined,
+      pricingConsistency,
     }
 
     if (syncRunId) {

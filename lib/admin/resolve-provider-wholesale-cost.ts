@@ -1,4 +1,5 @@
 import { resolveWholesalePricing } from '@/lib/catalog/provider-wholesale-pricing'
+import { isValueTopupSkuRaw } from '@/lib/catalog/valuetopup-pricing'
 import { extractPricingFromRaw } from '@/lib/admin/provider-pricing-extractor'
 
 export type RawPlanPricingRow = {
@@ -118,20 +119,6 @@ export function extractPricingAmounts(
   })
   const extracted = extractPricingFromRaw(raw.raw_json ?? null)
 
-  const wholesale_amount =
-    positiveAmount(raw.wholesale_amount) ??
-    positiveAmount(raw.amount) ??
-    readJsonAmount(raw.raw_json, [
-      'wholesale_amount',
-      'wholesaleAmount',
-      'wholesaleprice',
-      'sendvalue',
-      'providercost',
-    ]) ??
-    positiveAmount(wholesale.wholesaleAmount) ??
-    positiveAmount(extracted.providerCost) ??
-    null
-
   const destination_amount =
     positiveAmount(raw.destination_amount) ??
     readJsonAmount(raw.raw_json, [
@@ -151,19 +138,67 @@ export function extractPricingAmounts(
     readJsonAmount(raw.raw_json, ['source_amount', 'sourceAmount', 'sourcevalue']) ??
     null
 
+  let columnAmount = positiveAmount(raw.amount)
+  const isValueTopup = isValueTopupSkuRaw(raw.raw_json)
+  if (
+    !isValueTopup &&
+    columnAmount != null &&
+    destination_amount != null &&
+    columnAmount === destination_amount &&
+    positiveAmount(wholesale.wholesaleAmount) != null
+  ) {
+    columnAmount = null
+  }
+
+  const wholesale_amount = isValueTopup
+    ? (positiveAmount(raw.amount) ??
+      positiveAmount(wholesale.wholesaleAmount) ??
+      positiveAmount(raw.wholesale_amount) ??
+      positiveAmount(extracted.providerCost) ??
+      positiveAmount(source_amount) ??
+      readJsonAmount(raw.raw_json, [
+        'wholesale_amount',
+        'wholesaleAmount',
+        'wholesaleprice',
+        'sendvalue',
+        'providercost',
+      ]) ??
+      null)
+    : (positiveAmount(raw.wholesale_amount) ??
+      positiveAmount(wholesale.wholesaleAmount) ??
+      positiveAmount(extracted.providerCost) ??
+      positiveAmount(source_amount) ??
+      readJsonAmount(raw.raw_json, [
+        'wholesale_amount',
+        'wholesaleAmount',
+        'wholesaleprice',
+        'sendvalue',
+        'providercost',
+      ]) ??
+      columnAmount ??
+      null)
+
   const retail_amount =
     positiveAmount(raw.retail_amount) ??
     readJsonAmount(raw.raw_json, ['retail_amount', 'retailAmount', 'retailprice']) ??
     positiveAmount(extracted.finalPrice) ??
     null
 
-  const wholesale_currency =
-    normalizeCurrency(raw.wholesale_currency) ??
-    normalizeCurrency(raw.currency) ??
-    wholesale.wholesaleCurrency ??
-    readJsonCurrency(raw.raw_json, ['wholesalecurrency', 'sendcurrency', 'sourcecurrency']) ??
-    extracted.currency ??
-    null
+  const wholesale_currency = isValueTopup
+    ? (normalizeCurrency(raw.currency) ??
+      wholesale.wholesaleCurrency ??
+      normalizeCurrency(raw.wholesale_currency) ??
+      normalizeCurrency(raw.source_currency) ??
+      readJsonCurrency(raw.raw_json, ['wholesalecurrency', 'sendcurrency', 'sourcecurrency']) ??
+      extracted.currency ??
+      null)
+    : (normalizeCurrency(raw.wholesale_currency) ??
+      wholesale.wholesaleCurrency ??
+      normalizeCurrency(raw.source_currency) ??
+      readJsonCurrency(raw.raw_json, ['wholesalecurrency', 'sendcurrency', 'sourcecurrency']) ??
+      (positiveAmount(wholesale.wholesaleAmount) != null ? null : normalizeCurrency(raw.currency)) ??
+      extracted.currency ??
+      null)
 
   const destination_currency =
     normalizeCurrency(raw.destination_currency) ??

@@ -1,7 +1,14 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
-import { mergeRoutingLogPricing, parseRoutingLogStatus } from '@/lib/routing/log-pricing'
+import { mergeRoutingLogPricing, parseRoutingLogStatus, formatProviderCostDual } from '@/lib/routing/log-pricing'
+import type { RechargeRoutingSource } from '@/lib/recharge-orchestration/routing-log-fields'
 import { planMappingPricingKey } from '@/lib/catalog/provider-wholesale-pricing'
 import { batchResolvePlanMappingPricing } from '@/lib/routing/plan-mapping-pricing'
+import {
+  authoritativePricingKey,
+  resolveProviderPricingForInternalPlan,
+} from '@/lib/catalog/resolve-provider-pricing-for-system-plan'
+import { logAuthoritativeMappingMissing } from '@/lib/catalog/system-plan-pricing-consistency'
+import type { ProviderPricingDebugMeta } from '@/lib/catalog/provider-pricing-debug'
 import type {
   LcrEngineSettings,
   ProviderPriorityRow,
@@ -307,12 +314,22 @@ export async function listRoutingLogs(filters: {
 function mapRoutingLogRow(row: Record<string, unknown>): RoutingLogRow {
   const prov = row.lcr_providers as { code?: string; name?: string } | null
   const status = String(row.status ?? 'SELECTED')
+  const meta = parseRoutingLogStatus(status)
   const pricing = mergeRoutingLogPricing({
     providerCost: row.provider_cost != null ? Number(row.provider_cost) : null,
     providerId: row.provider_id != null ? String(row.provider_id) : null,
     providerName: prov?.name,
     status,
   })
+
+  const wholesaleAmount =
+    typeof meta.provider_wholesale_amount === 'number'
+      ? meta.provider_wholesale_amount
+      : pricing.providerCost
+  const wholesaleCurrency =
+    typeof meta.provider_wholesale_currency === 'string'
+      ? meta.provider_wholesale_currency
+      : pricing.providerCurrency
 
   return {
     id: String(row.id),
@@ -324,8 +341,16 @@ function mapRoutingLogRow(row: Record<string, unknown>): RoutingLogRow {
     providerCode: prov?.code,
     providerName: prov?.name,
     routingType: String(row.routing_type ?? 'LCR') as RoutingLogRow['routingType'],
-    providerCost: pricing.providerCost,
-    providerCurrency: pricing.providerCurrency,
+    providerCost: wholesaleAmount,
+    providerCurrency: wholesaleCurrency,
+    providerWholesaleAmount: wholesaleAmount,
+    providerWholesaleCurrency: wholesaleCurrency,
+    destinationFaceValue:
+      typeof meta.destination_face_value === 'number' ? meta.destination_face_value : null,
+    destinationCurrency:
+      typeof meta.destination_currency === 'string' ? meta.destination_currency : null,
+    normalizedProviderPrice:
+      typeof meta.normalized_provider_price === 'number' ? meta.normalized_provider_price : null,
     userAmount: pricing.userAmount,
     userCurrency: pricing.userCurrency,
     fallbackUsed: Boolean(row.fallback_used),
@@ -400,15 +425,86 @@ export async function enrichRoutingLogsWithPricing<T extends RoutingLogRow>(logs
 
   const wholesaleByKey = await batchResolvePlanMappingPricing(planMappingLookups)
 
+  const internalPlanIds = [
+    ...new Set(logs.map((log) => log.productId).filter((id): id is string => Boolean(id))),
+  ]
+  const authoritativeByInternalPlan = new Map<
+    string,
+    Awaited<ReturnType<typeof resolveProviderPricingForInternalPlan>>
+  >()
+  for (const internalPlanId of internalPlanIds) {
+    const resolution = await resolveProviderPricingForInternalPlan(internalPlanId)
+    if (resolution) authoritativeByInternalPlan.set(internalPlanId, resolution)
+  }
+
   return logs.map((log) => {
     const attempt = log.transactionId ? attemptByRef.get(log.transactionId) : undefined
     const tx = log.transactionId ? transactionById.get(log.transactionId) : undefined
     const providerId = log.providerId ?? attempt?.selected_provider_id ?? null
     const providerPlanId = attempt?.selected_provider_plan_id ?? null
-    const resolvedWholesale =
+
+    const authoritative =
+      log.productId != null ? authoritativeByInternalPlan.get(log.productId) : undefined
+    const authRow =
       log.productId && providerId
-        ? wholesaleByKey.get(planMappingPricingKey(log.productId, providerId, providerPlanId)) ??
-          wholesaleByKey.get(planMappingPricingKey(log.productId, providerId, null))
+        ? (providerPlanId
+            ? authoritative?.byKey.get(authoritativePricingKey(providerId, providerPlanId))
+            : null) ?? authoritative?.byProviderId.get(providerId)
+        : undefined
+
+    if (log.productId && providerId && !authRow) {
+      logAuthoritativeMappingMissing({
+        context: 'enrichRoutingLogsWithPricing',
+        internalPlanId: log.productId,
+        providerId,
+        providerName: log.providerName,
+        providerPlanId,
+      })
+    }
+
+    const resolvedWholesale =
+      authRow != null
+        ? {
+            wholesaleAmount: authRow.provider_wholesale_amount,
+            wholesaleCurrency: authRow.provider_wholesale_currency,
+            destinationAmount: authRow.destination_face_value,
+            destinationCurrency: authRow.destination_currency,
+          }
+        : log.productId && providerId
+          ? wholesaleByKey.get(planMappingPricingKey(log.productId, providerId, providerPlanId)) ??
+            wholesaleByKey.get(planMappingPricingKey(log.productId, providerId, null))
+          : undefined
+
+    const pricingSource: ProviderPricingDebugMeta | undefined = authRow
+      ? {
+          providerName: authRow.providerName,
+          providerPlanId: authRow.providerPlanId,
+          providerPlanRawId: authRow.providerPlanRawId,
+          provider_wholesale_amount: authRow.provider_wholesale_amount,
+          provider_wholesale_currency: authRow.provider_wholesale_currency,
+          destination_face_value: authRow.destination_face_value,
+          destination_currency: authRow.destination_currency,
+          sourceTable: authRow.sourceTable,
+          sourceFile: authRow.sourceFile,
+          sourceQuery: authRow.sourceQuery,
+          existsInPlanMappings: true,
+        }
+      : providerId
+        ? {
+            providerName: log.providerName ?? providerId,
+            providerPlanId,
+            providerPlanRawId: null,
+            provider_wholesale_amount: resolvedWholesale?.wholesaleAmount ?? log.providerCost ?? null,
+            provider_wholesale_currency:
+              resolvedWholesale?.wholesaleCurrency ?? log.providerCurrency ?? null,
+            destination_face_value: resolvedWholesale?.destinationAmount ?? log.destinationFaceValue ?? null,
+            destination_currency: resolvedWholesale?.destinationCurrency ?? log.destinationCurrency ?? null,
+            sourceTable: null,
+            sourceFile: null,
+            sourceQuery: null,
+            existsInPlanMappings: false,
+            orphanInternalMapping: true,
+          }
         : undefined
 
     const pricing = mergeRoutingLogPricing(
@@ -427,15 +523,30 @@ export async function enrichRoutingLogsWithPricing<T extends RoutingLogRow>(logs
       },
     )
 
+    const dual = formatProviderCostDual(
+      resolvedWholesale?.wholesaleAmount ?? pricing.providerCost,
+      resolvedWholesale?.wholesaleCurrency ?? pricing.providerCurrency,
+    )
+
     return {
       ...log,
       providerId: providerId ?? log.providerId,
       userAmount: pricing.userAmount,
       userCurrency: pricing.userCurrency,
-      providerCost: pricing.providerCost,
-      providerCurrency: pricing.providerCurrency,
+      providerCost: resolvedWholesale?.wholesaleAmount ?? pricing.providerCost,
+      providerCurrency: resolvedWholesale?.wholesaleCurrency ?? pricing.providerCurrency,
+      providerWholesaleAmount: resolvedWholesale?.wholesaleAmount ?? log.providerWholesaleAmount ?? pricing.providerCost,
+      providerWholesaleCurrency:
+        resolvedWholesale?.wholesaleCurrency ?? log.providerWholesaleCurrency ?? pricing.providerCurrency,
+      destinationFaceValue: resolvedWholesale?.destinationAmount ?? log.destinationFaceValue ?? null,
+      destinationCurrency: resolvedWholesale?.destinationCurrency ?? log.destinationCurrency ?? null,
+      normalizedProviderPrice: log.normalizedProviderPrice ?? null,
+      providerCostEur: dual.providerCostEur,
+      providerCostInr: dual.providerCostInr,
+      providerCostDisplay: dual.providerCostDisplay,
       providerDestinationAmount: resolvedWholesale?.destinationAmount ?? null,
       providerDestinationCurrency: resolvedWholesale?.destinationCurrency ?? null,
+      pricingSource,
     }
   })
 }
@@ -470,8 +581,14 @@ export async function insertDetailedRoutingLog(input: {
   routingRuleProvider?: string | null
   selectedProvider?: string | null
   attemptNumber?: number
+  /** @deprecated Use providerWholesaleAmount — kept for routing_logs.provider_cost column */
   providerCost?: number
   providerCurrency?: string | null
+  providerWholesaleAmount?: number | null
+  providerWholesaleCurrency?: string | null
+  destinationFaceValue?: number | null
+  destinationCurrency?: string | null
+  normalizedProviderPrice?: number | null
   userAmount?: number | null
   userCurrency?: string | null
   providerPlanId?: string | null
@@ -483,7 +600,16 @@ export async function insertDetailedRoutingLog(input: {
   responseCode?: string | null
   responseMessage?: string | null
   verificationMappingCount?: number | null
+  systemPlanId?: string | null
+  internalPlanId?: string | null
+  providerPlanRawId?: string | null
+  routingSource?: RechargeRoutingSource | null
 }): Promise<string | null> {
+  const wholesaleAmount = input.providerWholesaleAmount ?? input.providerCost ?? null
+  const wholesaleCurrency = input.providerWholesaleCurrency ?? input.providerCurrency ?? null
+  const destinationFace = input.destinationFaceValue ?? input.providerDestinationAmount ?? null
+  const destinationCurrency = input.destinationCurrency ?? input.providerDestinationCurrency ?? null
+
   const details = {
     routingStrategy: input.routingStrategy,
     routingRuleMatched: input.routingRuleMatched,
@@ -491,16 +617,28 @@ export async function insertDetailedRoutingLog(input: {
     routingRuleProvider: input.routingRuleProvider ?? null,
     attemptNumber: input.attemptNumber ?? null,
     providerPriority: input.providerPriority ?? null,
-    providerCurrency: input.providerCurrency ?? null,
+    providerCurrency: wholesaleCurrency,
     providerPlanId: input.providerPlanId ?? null,
-    providerDestinationAmount: input.providerDestinationAmount ?? null,
-    providerDestinationCurrency: input.providerDestinationCurrency ?? null,
+    providerDestinationAmount: destinationFace,
+    providerDestinationCurrency: destinationCurrency,
+    provider_wholesale_amount: wholesaleAmount,
+    provider_wholesale_currency: wholesaleCurrency,
+    destination_face_value: destinationFace,
+    destination_currency: destinationCurrency,
+    normalized_provider_price: input.normalizedProviderPrice ?? null,
+    selected_provider: input.selectedProvider ?? null,
     userAmount: input.userAmount ?? null,
     userCurrency: input.userCurrency ?? null,
     failureReason: input.failureReason ?? null,
     responseCode: input.responseCode ?? null,
     responseMessage: input.responseMessage ?? null,
     verificationMappingCount: input.verificationMappingCount ?? null,
+    system_plan_id: input.systemPlanId ?? null,
+    internal_plan_id: input.internalPlanId ?? input.planId ?? null,
+    provider_id: input.selectedProvider ?? null,
+    provider_plan_id: input.providerPlanId ?? null,
+    provider_plan_raw_id: input.providerPlanRawId ?? null,
+    routing_source: input.routingSource ?? null,
   }
 
   const res = await supabaseRest('routing_logs', {
@@ -513,7 +651,7 @@ export async function insertDetailedRoutingLog(input: {
       product_id: input.planId,
       provider_id: input.selectedProvider || null,
       routing_type: input.routingRuleMatched === 'Yes' ? 'RULE' : 'LCR',
-      provider_cost: input.providerCost ?? null,
+      provider_cost: wholesaleAmount,
       fallback_used: (input.attemptNumber ?? 1) > 1,
       status: JSON.stringify({
         event: input.executionResult,
@@ -557,10 +695,110 @@ export type RoutingAuditDetail = {
     currency?: string | null
     source: 'RULE' | 'LCR'
     ok: boolean
+    skipped?: boolean
+    skipReason?: string
     error?: string
     errorCode?: string
     errorMessage?: string
   }>
+}
+
+export type RoutingAuditAttempt = RoutingAuditDetail['attempts'][number]
+
+export type EvaluatedProviderAuditRow = {
+  providerId?: string
+  providerName?: string
+  provider?: string
+  costPrice?: number | null
+  currency?: string | null
+  margin?: number | null
+  priority?: number | null
+  eligibility?: boolean
+  eligible?: boolean
+  skipped?: boolean
+  filterReason?: string | null
+  reason?: string | null
+  skipReason?: string | null
+}
+
+function normalizeAuditHop(hop: RoutingAuditAttempt): RoutingAuditAttempt {
+  return {
+    ...hop,
+    providerName: hop.providerName || '—',
+    skipped: Boolean(hop.skipped),
+    skipReason: hop.skipReason ?? hop.errorMessage ?? (hop.skipped ? hop.error : undefined),
+  }
+}
+
+/** Overlay skip / pre-validation failures onto evaluated provider snapshots. */
+export function mergeEvaluatedProvidersWithSkipEvents(
+  base: EvaluatedProviderAuditRow[],
+  skipSources: Array<{
+    providerId?: string | null
+    providerName?: string | null
+    skipReason?: string | null
+    filterReason?: string | null
+    skipped?: boolean
+  }>,
+): EvaluatedProviderAuditRow[] {
+  const result = base.map((ev) => ({ ...ev }))
+
+  const findIndex = (id?: string | null, name?: string | null) =>
+    result.findIndex(
+      (ev) =>
+        (id != null && id !== '' && ev.providerId === id) ||
+        (name != null &&
+          name !== '' &&
+          (ev.providerName === name || ev.provider === name || ev.providerId === name)),
+    )
+
+  for (const skip of skipSources) {
+    if (!skip.skipped && !skip.skipReason && !skip.filterReason) continue
+    const reason = skip.skipReason ?? skip.filterReason ?? 'Skipped'
+    const idx = findIndex(skip.providerId, skip.providerName)
+    if (idx >= 0) {
+      result[idx] = {
+        ...result[idx],
+        eligibility: false,
+        eligible: false,
+        skipped: true,
+        filterReason: reason,
+        reason,
+        skipReason: reason,
+      }
+    } else if (skip.providerId || skip.providerName) {
+      result.push({
+        providerId: skip.providerId ?? undefined,
+        providerName: skip.providerName ?? skip.providerId ?? '—',
+        eligibility: false,
+        eligible: false,
+        skipped: true,
+        filterReason: reason,
+        reason,
+        skipReason: reason,
+      })
+    }
+  }
+
+  return result
+}
+
+/** Combine recharge-attempt hops with routing_log skip events (deduped). */
+export function mergeRoutingAttempts(
+  fromAttempt: RoutingAuditAttempt[],
+  fromLogs: RoutingAuditAttempt[],
+): RoutingAuditAttempt[] {
+  const merged = fromAttempt.map(normalizeAuditHop)
+  for (const hop of fromLogs.map(normalizeAuditHop)) {
+    const exists = merged.some(
+      (h) =>
+        h.providerName === hop.providerName &&
+        Boolean(h.skipped) === Boolean(hop.skipped) &&
+        (h.skipReason ?? h.error ?? '') === (hop.skipReason ?? hop.error ?? ''),
+    )
+    if (!exists) merged.push(hop)
+  }
+  return merged
 }
 
 export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingAuditDetail | null {
@@ -592,7 +830,9 @@ export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingA
       margin: number | null
       priority: number | null
       eligibility: boolean
+      skipped?: boolean
       filterReason: string | null
+      skipReason?: string | null
     }
   >()
 
@@ -637,10 +877,24 @@ export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingA
       event === 'HIGHEST_MARGIN_SELECTED' ||
       event === 'LEAST_COST_SELECTED' ||
       event === 'PRIORITY_SELECTED' ||
-      event === 'RULE_MATCHED'
+      event === 'RULE_MATCHED' ||
+      event === 'NO_VIABLE_ROUTING_RULE'
     ) {
+      if (event === 'RULE_MATCHED') {
+        routingRuleMatched = true
+        if (typeof meta.routingRuleProvider === 'string' && meta.routingRuleProvider) {
+          routingRuleProvider = meta.routingRuleProvider
+        }
+      }
       routingDecisionReason = event
       selectedProvider = log.providerName || log.providerCode || log.providerId || selectedProvider
+    }
+
+    if (meta.routingRuleMatched === 'Yes') {
+      routingRuleMatched = true
+      if (typeof meta.routingRuleProvider === 'string' && meta.routingRuleProvider) {
+        routingRuleProvider = meta.routingRuleProvider
+      }
     }
 
     if (
@@ -680,6 +934,100 @@ export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingA
         error: typeof meta.failureReason === 'string' ? meta.failureReason : event,
         errorCode: typeof meta.responseCode === 'string' ? meta.responseCode : undefined,
         errorMessage: typeof meta.responseMessage === 'string' ? meta.responseMessage : undefined,
+      })
+    }
+
+    if (event === 'PROVIDER_PRE_VALIDATION_SKIPPED') {
+      const skipReason =
+        typeof meta.failureReason === 'string'
+          ? meta.failureReason
+          : typeof meta.responseMessage === 'string'
+            ? meta.responseMessage
+            : 'Pre-validation skipped'
+      const providerKey = log.providerId ?? log.providerName ?? log.providerCode ?? ''
+      if (providerKey) {
+        if (evaluatedMap.has(providerKey)) {
+          const existing = evaluatedMap.get(providerKey)!
+          evaluatedMap.set(providerKey, {
+            ...existing,
+            eligibility: false,
+            skipped: true,
+            filterReason: skipReason,
+            skipReason,
+          })
+        } else {
+          evaluatedMap.set(providerKey, {
+            providerId: log.providerId ?? providerKey,
+            providerName: log.providerName || log.providerCode || providerKey,
+            costPrice: log.providerCost,
+            currency:
+              log.providerCurrency ?? (typeof meta.providerCurrency === 'string' ? meta.providerCurrency : null),
+            margin: null,
+            priority: typeof meta.providerPriority === 'number' ? meta.providerPriority : null,
+            eligibility: false,
+            skipped: true,
+            filterReason: skipReason,
+            skipReason,
+          })
+        }
+      }
+      attempts.push({
+        providerName: log.providerName || log.providerCode || '—',
+        cost: log.providerCost,
+        currency: log.providerCurrency ?? (typeof meta.providerCurrency === 'string' ? meta.providerCurrency : null),
+        source: meta.routingRuleMatched === 'Yes' ? 'RULE' : 'LCR',
+        ok: false,
+        skipped: true,
+        skipReason,
+        error: typeof meta.responseCode === 'string' ? meta.responseCode : 'PROVIDER_PRE_VALIDATION_SKIPPED',
+        errorMessage: skipReason,
+      })
+    }
+
+    if (event === 'ORPHAN_RUNTIME_PROVIDER') {
+      const skipReason =
+        typeof meta.failureReason === 'string'
+          ? meta.failureReason
+          : typeof meta.responseMessage === 'string'
+            ? meta.responseMessage
+            : 'Orphan runtime provider detected'
+      const providerKey = log.providerId ?? log.providerName ?? log.providerCode ?? ''
+      if (providerKey) {
+        if (evaluatedMap.has(providerKey)) {
+          const existing = evaluatedMap.get(providerKey)!
+          evaluatedMap.set(providerKey, {
+            ...existing,
+            eligibility: false,
+            skipped: true,
+            filterReason: skipReason,
+            skipReason,
+          })
+        } else {
+          evaluatedMap.set(providerKey, {
+            providerId: log.providerId ?? providerKey,
+            providerName: log.providerName || log.providerCode || providerKey,
+            costPrice: log.providerCost,
+            currency:
+              log.providerCurrency ?? (typeof meta.providerCurrency === 'string' ? meta.providerCurrency : null),
+            margin: null,
+            priority: typeof meta.providerPriority === 'number' ? meta.providerPriority : null,
+            eligibility: false,
+            skipped: true,
+            filterReason: skipReason,
+            skipReason,
+          })
+        }
+      }
+      attempts.push({
+        providerName: log.providerName || log.providerCode || '—',
+        cost: log.providerCost,
+        currency: log.providerCurrency ?? (typeof meta.providerCurrency === 'string' ? meta.providerCurrency : null),
+        source: meta.routingRuleMatched === 'Yes' ? 'RULE' : 'LCR',
+        ok: false,
+        skipped: true,
+        skipReason,
+        error: 'ORPHAN_RUNTIME_PROVIDER',
+        errorMessage: skipReason,
       })
     }
   }

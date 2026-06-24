@@ -54,6 +54,9 @@ export async function dbInsertRechargeAttempt(input: {
   sendAmount?: number | null
   currency?: string | null
   routingDecision: unknown
+  status?: string
+  selectedProviderId?: string | null
+  selectedProviderPlanId?: string | null
 }): Promise<RechargeAttemptRow> {
   const res = await supabaseRest('lcr_v2_recharge_attempts', {
     method: 'POST',
@@ -65,9 +68,11 @@ export async function dbInsertRechargeAttempt(input: {
       phone_number: input.phoneNumber,
       send_amount: input.sendAmount ?? null,
       currency: input.currency ?? null,
-      status: 'processing',
+      status: input.status ?? 'processing',
       routing_decision: input.routingDecision ?? {},
       attempts: [],
+      selected_provider_id: input.selectedProviderId ?? null,
+      selected_provider_plan_id: input.selectedProviderPlanId ?? null,
     }),
   })
   if (!res.ok) throw new Error(await res.text())
@@ -87,6 +92,7 @@ export async function dbUpdateRechargeAttempt(
     provider_ref: string | null
     provider_response: unknown
     error: string | null
+    idempotency_key: string | null
   }>
 ) {
   const res = await supabaseRest(`lcr_v2_recharge_attempts?id=eq.${enc(id)}`, {

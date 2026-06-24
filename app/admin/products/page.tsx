@@ -229,7 +229,7 @@ export default function AdminProductsPage() {
     setTogglingId(id)
     const newActive = !currentActive
     try {
-      const res = await fetch(`/api/admin/lcr/system-plans`, {
+      const res = await fetch(`/api/admin/catalog/system-plans`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, active: newActive }),
@@ -338,7 +338,7 @@ export default function AdminProductsPage() {
         category: categoryFilter,
         status: statusFilter,
       })
-      const res = await fetch(`/api/admin/lcr/system-plans${query}`, { credentials: 'include', cache: 'no-store' })
+      const res = await fetch(`/api/admin/catalog/system-plans${query}`, { credentials: 'include', cache: 'no-store' })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error ?? 'Failed to load products')
       setPlans(Array.isArray(data?.systemPlans) ? data.systemPlans : [])

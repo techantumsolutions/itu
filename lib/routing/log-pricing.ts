@@ -1,3 +1,5 @@
+import { normalizeProviderCostSync } from '@/lib/routing/normalize-provider-cost'
+
 export function formatMoney(
   amount: number | null | undefined,
   currency: string | null | undefined,
@@ -6,6 +8,46 @@ export function formatMoney(
   if (amount == null || !Number.isFinite(amount)) return fallback
   const code = String(currency ?? '').trim().toUpperCase()
   return code ? `${amount.toFixed(2)} ${code}` : amount.toFixed(2)
+}
+
+export type ProviderCostDualDisplay = {
+  providerCostEur: number | null
+  providerCostInr: number | null
+  providerCostDisplay: string
+}
+
+/** Show wholesale provider cost in EUR and INR for admin routing logs. */
+export function formatProviderCostDual(
+  amount: number | null | undefined,
+  currency: string | null | undefined,
+): ProviderCostDualDisplay {
+  if (amount == null || !Number.isFinite(amount) || amount <= 0) {
+    return { providerCostEur: null, providerCostInr: null, providerCostDisplay: '—' }
+  }
+  const wholesaleCurrency = (currency ?? 'EUR').trim().toUpperCase()
+  const inr = normalizeProviderCostSync({
+    provider_price: amount,
+    provider_currency: wholesaleCurrency,
+    base_currency: 'INR',
+  })
+  const eur = normalizeProviderCostSync({
+    provider_price: amount,
+    provider_currency: wholesaleCurrency,
+    base_currency: 'EUR',
+  })
+  const providerCostEur =
+    wholesaleCurrency === 'EUR' ? amount : eur.success ? eur.normalized_provider_price : null
+  const providerCostInr =
+    wholesaleCurrency === 'INR' ? amount : inr.success ? inr.normalized_provider_price : null
+
+  const eurLabel = formatMoney(providerCostEur, 'EUR')
+  const inrLabel = formatMoney(providerCostInr, 'INR')
+  const providerCostDisplay =
+    providerCostEur != null && providerCostInr != null
+      ? `${eurLabel} / ${inrLabel}`
+      : formatMoney(amount, wholesaleCurrency)
+
+  return { providerCostEur, providerCostInr, providerCostDisplay }
 }
 
 export function parseRoutingLogStatus(status: string): Record<string, unknown> {
@@ -79,6 +121,7 @@ export function mergeRoutingLogPricing(
 
   const providerCurrency =
     extras?.providerCurrency ??
+    (typeof meta.provider_wholesale_currency === 'string' ? meta.provider_wholesale_currency : null) ??
     (typeof meta.providerCurrency === 'string' ? meta.providerCurrency : null) ??
     providerCurrencyFromRoutingDecision(
       extras?.routingDecision,
@@ -88,6 +131,7 @@ export function mergeRoutingLogPricing(
 
   const resolvedProviderCost =
     extras?.providerCost ??
+    (typeof meta.provider_wholesale_amount === 'number' ? meta.provider_wholesale_amount : null) ??
     base.providerCost ??
     (typeof meta.providerCost === 'number' ? meta.providerCost : null) ??
     providerCostFromRoutingDecision(extras?.routingDecision, base.providerId, base.providerName)

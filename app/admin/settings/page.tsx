@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { User, Bell, Shield, Palette, Globe, Save, Settings, ArrowRight, LayoutDashboard, Clock, Eye, EyeOff, Lock, Camera, Loader2, Mail, Phone, CheckCircle2, Check, ChevronDown, History, Search, RefreshCw, FileJson } from "lucide-react"
+import { User, Bell, Shield, Palette, Globe, Save, Settings, ArrowRight, LayoutDashboard, Clock, Eye, EyeOff, Lock, Camera, Loader2, Mail, Phone, CheckCircle2, Check, ChevronDown, History, Search, RefreshCw, FileJson, Receipt } from "lucide-react"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -98,6 +98,14 @@ function SettingsContent() {
   const [isSaving, setIsSaving] = useState(false)
   const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "profile")
 
+  const [rechargeFees, setRechargeFees] = useState({
+    taxPercent: 0,
+    platformFeePercent: 2,
+    paymentGatewayFeePercent: 0,
+  })
+  const [loadingRechargeFees, setLoadingRechargeFees] = useState(false)
+  const [savingRechargeFees, setSavingRechargeFees] = useState(false)
+
   const isSuperAdmin = isClientSuperAdmin(user)
   const [passwords, setPasswords] = useState<Record<string, string>>({})
   const [showPassMap, setShowPassMap] = useState<Record<string, boolean>>({})
@@ -137,6 +145,56 @@ function SettingsContent() {
       toast.error('Failed to load activity logs')
     } finally {
       setLoadingLogs(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab !== 'system') return
+    const loadRechargeFees = async () => {
+      setLoadingRechargeFees(true)
+      try {
+        const res = await fetch('/api/admin/settings/recharge-fees')
+        if (res.ok) {
+          const data = await res.json()
+          setRechargeFees({
+            taxPercent: Number(data.taxPercent) || 0,
+            platformFeePercent: Number(data.platformFeePercent) || 0,
+            paymentGatewayFeePercent: Number(data.paymentGatewayFeePercent) || 0,
+          })
+        } else {
+          toast.error('Failed to load recharge processing fees')
+        }
+      } catch {
+        toast.error('Failed to load recharge processing fees')
+      } finally {
+        setLoadingRechargeFees(false)
+      }
+    }
+    void loadRechargeFees()
+  }, [activeTab])
+
+  const handleSaveRechargeFees = async () => {
+    if (!isSuperAdmin) {
+      toast.error('Only super administrators can update recharge processing fees.')
+      return
+    }
+    setSavingRechargeFees(true)
+    try {
+      const res = await fetch('/api/admin/settings/recharge-fees', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rechargeFees),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.ok) {
+        toast.success('Recharge processing fees saved')
+      } else {
+        toast.error(data.error ?? 'Failed to save recharge processing fees')
+      }
+    } catch {
+      toast.error('Failed to save recharge processing fees')
+    } finally {
+      setSavingRechargeFees(false)
     }
   }
 
@@ -1112,6 +1170,120 @@ function SettingsContent() {
                     Open
                     <ArrowRight className="ml-2 size-4" />
                   </a>
+                </Button>
+              </CardFooter>
+            </Card>
+            <Card className="flex h-full flex-col md:col-span-2 xl:col-span-3">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Receipt className="size-5 text-primary" />
+                  Recharge Processing Fees
+                </CardTitle>
+                <CardDescription>
+                  Configure tax, platform fee, and payment gateway fee as percentages of the recharge amount.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {loadingRechargeFees ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                    Loading fee settings…
+                  </div>
+                ) : (
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="recharge-tax">Tax (%)</Label>
+                      <Input
+                        id="recharge-tax"
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.01"
+                        value={rechargeFees.taxPercent}
+                        onChange={(e) =>
+                          setRechargeFees((prev) => ({
+                            ...prev,
+                            taxPercent: Number(e.target.value) || 0,
+                          }))
+                        }
+                        disabled={!isSuperAdmin}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="recharge-platform-fee">Platform Fee (%)</Label>
+                      <Input
+                        id="recharge-platform-fee"
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.01"
+                        value={rechargeFees.platformFeePercent}
+                        onChange={(e) =>
+                          setRechargeFees((prev) => ({
+                            ...prev,
+                            platformFeePercent: Number(e.target.value) || 0,
+                          }))
+                        }
+                        disabled={!isSuperAdmin}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="recharge-gateway-fee">Payment Gateway Fee (%)</Label>
+                      <Input
+                        id="recharge-gateway-fee"
+                        type="number"
+                        min={0}
+                        max={100}
+                        step="0.01"
+                        value={rechargeFees.paymentGatewayFeePercent}
+                        onChange={(e) =>
+                          setRechargeFees((prev) => ({
+                            ...prev,
+                            paymentGatewayFeePercent: Number(e.target.value) || 0,
+                          }))
+                        }
+                        disabled={!isSuperAdmin}
+                      />
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Combined processing fee rate:{' '}
+                  <span className="font-semibold text-foreground">
+                    {(
+                      rechargeFees.taxPercent +
+                      rechargeFees.platformFeePercent +
+                      rechargeFees.paymentGatewayFeePercent
+                    ).toFixed(2)}
+                    %
+                  </span>
+                  {' — '}
+                  e.g. on a ₹100 recharge, fees would be ₹
+                  {((100 *
+                    (rechargeFees.taxPercent +
+                      rechargeFees.platformFeePercent +
+                      rechargeFees.paymentGatewayFeePercent)) /
+                    100).toFixed(2)}
+                  {!isSuperAdmin && ' — only super administrators can edit these values.'}
+                </p>
+              </CardContent>
+              <CardFooter>
+                <Button
+                  onClick={handleSaveRechargeFees}
+                  disabled={savingRechargeFees || loadingRechargeFees || !isSuperAdmin}
+                  className="w-full sm:w-auto"
+                >
+                  {savingRechargeFees ? (
+                    <>
+                      <Loader2 className="mr-2 size-4 animate-spin" />
+                      Saving…
+                    </>
+                  ) : (
+                    <>
+                      <Save className="mr-2 size-4" />
+                      Save Fees
+                    </>
+                  )}
                 </Button>
               </CardFooter>
             </Card>

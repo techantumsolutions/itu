@@ -1,7 +1,10 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import {
+  authoritativePricingKey,
+  resolveProviderPricingForSystemPlan,
+} from '@/lib/catalog/resolve-provider-pricing-for-system-plan'
+import {
   planMappingPricingKey,
-  resolveWholesalePricing,
   type WholesalePricing,
 } from '@/lib/catalog/provider-wholesale-pricing'
 
@@ -65,62 +68,7 @@ async function resolvePlanIds(planId: string): Promise<PlanIds | null> {
   return null
 }
 
-type RawPlanRow = {
-  id: string
-  provider_id: string
-  provider_plan_id: string
-  amount?: number | null
-  currency?: string | null
-  destination_amount?: number | null
-  destination_currency?: string | null
-  raw_json?: unknown
-}
-
-type PlanMappingRow = {
-  system_plan_id: string
-  service_provider_id: string
-  provider_plan_raw_id?: string | null
-  provider_plan_id?: string | null
-}
-
-function pricingFromRawRow(rawPlan: RawPlanRow | null | undefined): WholesalePricing {
-  if (!rawPlan) {
-    return {
-      wholesaleAmount: null,
-      wholesaleCurrency: null,
-      destinationAmount: null,
-      destinationCurrency: null,
-    }
-  }
-  return resolveWholesalePricing({
-    rawJson: rawPlan.raw_json,
-    amount: rawPlan.amount,
-    currency: rawPlan.currency,
-    destinationAmount: rawPlan.destination_amount,
-    destinationCurrency: rawPlan.destination_currency,
-  })
-}
-
-function pickPlanMapping(
-  mappings: PlanMappingRow[],
-  systemPlanId: string,
-  providerId: string,
-  providerPlanId?: string | null,
-): PlanMappingRow | null {
-  const scoped = mappings.filter(
-    (m) => m.system_plan_id === systemPlanId && m.service_provider_id === providerId,
-  )
-  if (!scoped.length) return null
-  if (providerPlanId) {
-    const exact = scoped.find(
-      (m) => m.provider_plan_id === providerPlanId || m.provider_plan_id?.trim() === providerPlanId,
-    )
-    if (exact) return exact
-  }
-  return scoped[0] ?? null
-}
-
-/** Resolve wholesale pricing via plan_mappings → provider_plans_raw for each plan/provider pair. */
+/** Resolve wholesale pricing via authoritative plan_mappings → provider_plans_raw service. */
 export async function batchResolvePlanMappingPricing(
   lookups: PlanMappingPricingLookup[],
 ): Promise<Map<string, ResolvedPlanMappingPricing>> {
@@ -144,35 +92,13 @@ export async function batchResolvePlanMappingPricing(
     ),
   ]
 
-  const planMappings: PlanMappingRow[] = []
-  for (let i = 0; i < systemPlanIds.length; i += 50) {
-    const chunk = systemPlanIds.slice(i, i + 50)
-    const res = await supabaseRest(
-      `plan_mappings?system_plan_id=in.(${chunk.map(enc).join(',')})&select=system_plan_id,service_provider_id,provider_plan_raw_id,provider_plan_id`,
-      { cache: 'no-store' },
-    )
-    if (!res.ok) continue
-    const rows = (await res.json()) as PlanMappingRow[]
-    planMappings.push(...rows)
-  }
-
-  const rawIds = [
-    ...new Set(
-      planMappings.map((m) => m.provider_plan_raw_id).filter((id): id is string => Boolean(id)),
-    ),
-  ]
-  const rawById = new Map<string, RawPlanRow>()
-  for (let i = 0; i < rawIds.length; i += 100) {
-    const chunk = rawIds.slice(i, i + 100)
-    const res = await supabaseRest(
-      `provider_plans_raw?id=in.(${chunk.map(enc).join(',')})&select=id,provider_id,provider_plan_id,amount,currency,destination_amount,destination_currency,raw_json`,
-      { cache: 'no-store' },
-    )
-    if (!res.ok) continue
-    const rows = (await res.json()) as RawPlanRow[]
-    for (const row of rows) {
-      if (row.id) rawById.set(row.id, row)
-    }
+  const authoritativeBySystemPlan = new Map<
+    string,
+    Awaited<ReturnType<typeof resolveProviderPricingForSystemPlan>>
+  >()
+  for (const systemPlanId of systemPlanIds) {
+    const resolution = await resolveProviderPricingForSystemPlan(systemPlanId)
+    if (resolution) authoritativeBySystemPlan.set(systemPlanId, resolution)
   }
 
   for (const lookup of lookups) {
@@ -180,24 +106,20 @@ export async function batchResolvePlanMappingPricing(
     const ids = planIdsByInput.get(lookup.planId)
     if (!ids?.systemPlanId) continue
 
-    const mapping = pickPlanMapping(
-      planMappings,
-      ids.systemPlanId,
-      lookup.providerId,
-      lookup.providerPlanId,
-    )
-    const rawPlan = mapping?.provider_plan_raw_id
-      ? rawById.get(mapping.provider_plan_raw_id) ?? null
-      : null
-    const pricing = pricingFromRawRow(rawPlan)
-    const providerPlanId =
-      lookup.providerPlanId ??
-      mapping?.provider_plan_id ??
-      rawPlan?.provider_plan_id ??
-      null
+    const authoritative = authoritativeBySystemPlan.get(ids.systemPlanId)
+    const authRow =
+      (lookup.providerPlanId
+        ? authoritative?.byKey.get(authoritativePricingKey(lookup.providerId, lookup.providerPlanId))
+        : null) ?? authoritative?.byProviderId.get(lookup.providerId)
 
+    if (!authRow) continue
+
+    const providerPlanId = lookup.providerPlanId ?? authRow.providerPlanId ?? null
     const resolved: ResolvedPlanMappingPricing = {
-      ...pricing,
+      wholesaleAmount: authRow.provider_wholesale_amount,
+      wholesaleCurrency: authRow.provider_wholesale_currency,
+      destinationAmount: authRow.destination_face_value,
+      destinationCurrency: authRow.destination_currency,
       internalPlanId: ids.internalPlanId,
       systemPlanId: ids.systemPlanId,
       providerPlanId,
