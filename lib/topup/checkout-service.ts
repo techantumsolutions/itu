@@ -22,15 +22,28 @@ import {
   DING_INSUFFICIENT_BALANCE_LOG,
 } from '@/lib/lcr-v2/provider-pre-validation'
 import {
-  buildProviderExecutionContextFromCandidate,
-  logProviderExecutionContext,
-} from '@/lib/lcr-v2/provider-execution-context'
+  buildRechargeProviderExecutionContext,
+} from '@/lib/recharge-orchestration/provider-execution-context'
+import {
+  assertAuthoritativeProviderForRecharge,
+  ORPHAN_RUNTIME_PROVIDER,
+} from '@/lib/recharge-orchestration/validate-orchestration-provider'
+import type { RechargeRoutingSource } from '@/lib/recharge-orchestration/routing-log-fields'
+import { logProviderExecutionContext } from '@/lib/lcr-v2/provider-execution-context'
 import {
   pricingFieldsFromCandidate,
   detailedRoutingLogPricingInput,
 } from '@/lib/routing/provider-pricing-log-fields'
 import type { RoutingProviderCandidate } from '@/lib/routing/types'
 
+function routingSourceForHop(
+  hopIndex: number,
+  routingType: string,
+): RechargeRoutingSource {
+  if (hopIndex === 0 && routingType === 'RULE') return 'ROUTING_RULE'
+  if (hopIndex > 0) return 'FALLBACK'
+  return 'LCR'
+}
 function candidatePricingLog(candidate: RoutingProviderCandidate | null | undefined) {
   return detailedRoutingLogPricingInput(pricingFieldsFromCandidate(candidate), {
     providerPlanId: candidate?.providerPlanId,
@@ -462,7 +475,8 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
         providerId: candidate.providerId, 
         providerName: candidate.providerId,
         providerPlanId: candidate.providerPlanId, 
-        cost: candidate.price ?? 0,
+        cost: candidate.provider_wholesale_amount ?? candidate.price ?? 0,
+        currency: candidate.provider_wholesale_currency ?? candidate.currency ?? null,
         source: currentSource,
         ok: false, 
         error: 'PROVIDER_NOT_FOUND' 
@@ -477,13 +491,69 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     const phoneDigits = input.mobileNumber.replace(/\D/g, '')
     const externalId = `TXN-${transactionId.slice(0, 8).toUpperCase()}-${Date.now()}`
 
-    const executionContext = buildProviderExecutionContextFromCandidate({
+    const routingSource = routingSourceForHop(i, routingResult.routingType)
+
+    const orphanCheck = await assertAuthoritativeProviderForRecharge({
+      internalPlanId: normalizedInput.planId,
+      providerId: candidate.providerId,
+      providerPlanId: candidate.providerPlanId,
+    })
+
+    if (!orphanCheck.ok) {
+      const skipReason =
+        orphanCheck.reason === ORPHAN_RUNTIME_PROVIDER
+          ? 'Orphan runtime provider detected.'
+          : orphanCheck.reason ?? 'Authoritative provider validation failed'
+      logHint(`[Hop ${i + 1}/${chain.length}] ${skipReason}`)
+      attemptsLog.push({
+        providerId: candidate.providerId,
+        providerName: candidate.providerName || provider.name || candidate.providerId,
+        providerPlanId: candidate.providerPlanId,
+        cost: candidate.provider_wholesale_amount ?? candidate.price ?? 0,
+        currency: candidate.provider_wholesale_currency ?? candidate.currency ?? null,
+        source: currentSource,
+        ok: false,
+        skipped: true,
+        skipReason,
+        error: orphanCheck.reason ?? ORPHAN_RUNTIME_PROVIDER,
+        errorMessage: skipReason,
+      })
+      if (attempt) {
+        await dbUpdateRechargeAttempt(attempt.id, { attempts: attemptsLog }).catch(() => {})
+      }
+      await insertDetailedRoutingLog({
+        transactionId,
+        countryCode,
+        operatorCode,
+        planId: normalizedInput.planId,
+        internalPlanId: normalizedInput.planId,
+        systemPlanId: orphanCheck.systemPlanId ?? null,
+        routingStrategy: snapshot.routing_strategy,
+        routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
+        selectedProvider: candidate.providerId,
+        providerPlanId: candidate.providerPlanId,
+        ...candidatePricingLog(candidate),
+        providerPriority: candidate.providerPriority,
+        routingSource,
+        executionResult: 'ORPHAN_RUNTIME_PROVIDER',
+        attemptNumber: i + 1,
+        failureReason: skipReason,
+        responseCode: orphanCheck.reason ?? ORPHAN_RUNTIME_PROVIDER,
+        responseMessage: skipReason,
+      })
+      continue
+    }
+
+    const executionContext = buildRechargeProviderExecutionContext({
       candidate,
       adapterKey,
       phoneDigits,
       externalId,
       customer_payment_amount: input.amount,
       customer_payment_currency: input.currency || 'INR',
+      systemPlanId: orphanCheck.systemPlanId ?? null,
+      internalPlanId: normalizedInput.planId,
+      providerPlanRawId: orphanCheck.providerPlanRawId ?? null,
     })
 
     logProviderExecutionContext(executionContext, 'checkout-hop')
@@ -500,7 +570,8 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
         providerId: candidate.providerId,
         providerName: candidate.providerName || provider.name || candidate.providerId,
         providerPlanId: candidate.providerPlanId,
-        cost: candidate.price ?? 0,
+        cost: candidate.provider_wholesale_amount ?? candidate.price ?? 0,
+        currency: candidate.provider_wholesale_currency ?? candidate.currency ?? null,
         source: currentSource,
         ok: false,
         skipped: true,
@@ -545,7 +616,8 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
       providerId: candidate.providerId,
       providerName: candidate.providerName || provider.name || candidate.providerId,
       providerPlanId: candidate.providerPlanId,
-      cost: candidate.price ?? 0,
+      cost: candidate.provider_wholesale_amount ?? candidate.price ?? 0,
+      currency: candidate.provider_wholesale_currency ?? candidate.currency ?? null,
       source: currentSource,
       ok: exec.ok,
       error: exec.error,
@@ -580,6 +652,9 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
         countryCode,
         operatorCode,
         planId: normalizedInput.planId,
+        internalPlanId: normalizedInput.planId,
+        systemPlanId: executionContext.systemPlanId,
+        providerPlanRawId: executionContext.providerPlanRawId,
         routingStrategy: snapshot.routing_strategy,
         routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
         selectedProvider: candidate.providerId,
@@ -588,6 +663,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
         userAmount: input.amount,
         userCurrency: input.currency || 'INR',
         providerPriority: candidate.providerPriority,
+        routingSource,
         executionResult: 'RECHARGE_SUCCESS',
         attemptNumber: i + 1,
       })

@@ -8,8 +8,17 @@ import {
   insertDetailedRoutingLog,
 } from '@/lib/routing/repository'
 import { dbGetInternalPlan } from '@/lib/lcr-v2/recharge-db'
-import { planMappingPricingKey } from '@/lib/catalog/provider-wholesale-pricing'
-import { batchResolvePlanMappingPricing } from '@/lib/routing/plan-mapping-pricing'
+import {
+  authoritativePricingKey,
+  resolveProviderPricingForInternalPlan,
+  type AuthoritativeProviderPricingRow,
+} from '@/lib/catalog/resolve-provider-pricing-for-system-plan'
+import { logAuthoritativeMappingMissing } from '@/lib/catalog/system-plan-pricing-consistency'
+import {
+  loadAuthoritativeCandidateBundle,
+  shouldUseAuthoritativeDiscovery,
+  type CandidateMappingRow,
+} from '@/lib/recharge-orchestration/authoritative-candidate-loader'
 import { normalizeProviderCost } from '@/lib/routing/normalize-provider-cost'
 import { resolveProviderPayloadStrategy } from '@/lib/routing/provider-payload-strategy'
 import { LCR_BASE_CURRENCY } from '@/lib/routing/exchange-rates'
@@ -129,22 +138,15 @@ function pickRoutingRule(rules: RoutingRuleRow[], ctx: RoutingResolveInput): Rou
   return matched[0] ?? null
 }
 
-type MappingRow = {
-  provider_id: string
-  provider_plan_id: string
-  provider_price: number | null
-  provider_currency: string | null
-  provider_priority: number | null
-  margin: number | null
-  enabled?: boolean
-  destination_amount?: number | null
-  destination_currency?: string | null
-}
+type MappingRow = CandidateMappingRow
 
-async function loadCandidates(productId: string): Promise<{
+async function loadLegacyCandidates(productId: string): Promise<{
   mappings: MappingRow[]
   providers: Map<string, Record<string, unknown>>
-  allProvidersList: Record<string, unknown>[]
+  providersToEvaluate: Record<string, unknown>[]
+  authoritativeByKey: Map<string, AuthoritativeProviderPricingRow>
+  systemPlanId: string | null
+  discoverySource: 'legacy_internal_cache'
 }> {
   const mapRes = await supabaseRest(
     `internal_plan_provider_mapping?internal_plan_id=eq.${enc(productId)}&select=provider_id,provider_plan_id,provider_price,provider_currency,provider_priority,margin,enabled`,
@@ -153,27 +155,23 @@ async function loadCandidates(productId: string): Promise<{
   if (!mapRes.ok) throw new Error(await mapRes.text())
   const mappings = (await mapRes.json()) as MappingRow[]
 
-  if (mappings.length) {
-    const wholesaleByKey = await batchResolvePlanMappingPricing(
-      mappings.map((mapping) => ({
-        planId: productId,
-        providerId: mapping.provider_id,
-        providerPlanId: mapping.provider_plan_id,
-      })),
+  const authoritative = await resolveProviderPricingForInternalPlan(productId)
+  const authoritativeByKey = authoritative?.byKey ?? new Map<string, AuthoritativeProviderPricingRow>()
+
+  for (const mapping of mappings) {
+    const authRow = authoritativeByKey.get(
+      authoritativePricingKey(mapping.provider_id, mapping.provider_plan_id),
     )
-    for (const mapping of mappings) {
-      const resolved =
-        wholesaleByKey.get(
-          planMappingPricingKey(productId, mapping.provider_id, mapping.provider_plan_id),
-        ) ?? wholesaleByKey.get(planMappingPricingKey(productId, mapping.provider_id, null))
-      if (resolved?.wholesaleAmount != null) {
-        mapping.provider_price = resolved.wholesaleAmount
-        mapping.provider_currency = resolved.wholesaleCurrency
-      }
-      if (resolved?.destinationAmount != null) {
-        mapping.destination_amount = resolved.destinationAmount
-        mapping.destination_currency = resolved.destinationCurrency
-      }
+    if (authRow) {
+      mapping.provider_price = authRow.provider_wholesale_amount
+      mapping.provider_currency = authRow.provider_wholesale_currency
+      mapping.destination_amount = authRow.destination_face_value
+      mapping.destination_currency = authRow.destination_currency
+    } else {
+      mapping.provider_price = null
+      mapping.provider_currency = null
+      mapping.destination_amount = null
+      mapping.destination_currency = null
     }
   }
 
@@ -184,19 +182,67 @@ async function loadCandidates(productId: string): Promise<{
   const providerRows =
     providersRes && providersRes.ok ? ((await providersRes.json()) as Record<string, unknown>[]) : []
   const providers = new Map<string, Record<string, unknown>>(providerRows.map((p) => [String(p.id), p]))
-  return { mappings, providers, allProvidersList: providerRows }
+
+  return {
+    mappings,
+    providers,
+    providersToEvaluate: providerRows,
+    authoritativeByKey,
+    systemPlanId: authoritative?.systemPlanId ?? null,
+    discoverySource: 'legacy_internal_cache',
+  }
+}
+
+async function loadCandidates(productId: string): Promise<{
+  mappings: MappingRow[]
+  providers: Map<string, Record<string, unknown>>
+  providersToEvaluate: Record<string, unknown>[]
+  authoritativeByKey: Map<string, AuthoritativeProviderPricingRow>
+  systemPlanId: string | null
+  discoverySource: 'plan_mappings' | 'legacy_internal_cache'
+}> {
+  const authoritativeBundle = await loadAuthoritativeCandidateBundle(productId)
+  const useAuthoritative = shouldUseAuthoritativeDiscovery(authoritativeBundle?.parity ?? null)
+
+  if (useAuthoritative && authoritativeBundle) {
+    if (authoritativeBundle.parity && !authoritativeBundle.parity.ok) {
+      console.warn(
+        '[ROUTING] Using authoritative plan_mappings discovery (forced or env); parity warnings:',
+        authoritativeBundle.parity.errors,
+      )
+    }
+    return {
+      mappings: authoritativeBundle.mappings,
+      providers: authoritativeBundle.providers,
+      providersToEvaluate: authoritativeBundle.providersToEvaluate,
+      authoritativeByKey: authoritativeBundle.authoritativeByKey,
+      systemPlanId: authoritativeBundle.systemPlanId,
+      discoverySource: 'plan_mappings',
+    }
+  }
+
+  if (authoritativeBundle?.parity && !authoritativeBundle.parity.ok) {
+    console.warn(
+      '[ROUTING] Parity check failed — falling back to legacy internal_plan_provider_mapping discovery:',
+      authoritativeBundle.parity.errors,
+    )
+  }
+
+  return loadLegacyCandidates(productId)
 }
 
 function evaluateCandidates(
   mappings: MappingRow[],
   providers: Map<string, Record<string, unknown>>,
-  allProvidersList: Record<string, unknown>[],
+  providersToEvaluate: Record<string, unknown>[],
   ctx: RoutingResolveInput,
   priorityMap: Map<string, number>,
+  authoritativeByKey: Map<string, AuthoritativeProviderPricingRow>,
+  internalPlanId: string,
 ): RoutingProviderCandidate[] {
   const country = (ctx.countryId ?? '').toUpperCase()
 
-  return allProvidersList.map((prov) => {
+  return providersToEvaluate.map((prov) => {
     const providerId = String(prov.id)
     const providerName = String(prov.name ?? prov.code ?? providerId)
     const providerCode = prov.code != null ? String(prov.code) : undefined
@@ -225,16 +271,48 @@ function evaluateCandidates(
     }
 
     const providerPlanId = mapping.provider_plan_id
+    const authoritative = authoritativeByKey.get(
+      authoritativePricingKey(providerId, providerPlanId),
+    )
+
+    if (!authoritative) {
+      logAuthoritativeMappingMissing({
+        context: 'routing-engine-evaluateCandidates',
+        internalPlanId,
+        providerId,
+        providerName,
+        providerPlanId,
+      })
+      return {
+        providerId,
+        providerName,
+        providerPlanId,
+        providerCode,
+        activeStatus,
+        onlineStatus,
+        mappingExists,
+        price: Infinity,
+        margin: typeof mapping.margin === 'number' ? mapping.margin : 0,
+        providerPriority: priority,
+        eligible: false,
+        filterReason: 'AUTHORITATIVE_MAPPING_MISSING',
+        reason: 'AUTHORITATIVE_MAPPING_MISSING',
+      }
+    }
+
     const provider_wholesale_amount =
-      typeof mapping.provider_price === 'number' && mapping.provider_price > 0
-        ? mapping.provider_price
+      typeof authoritative.provider_wholesale_amount === 'number' &&
+      authoritative.provider_wholesale_amount > 0
+        ? authoritative.provider_wholesale_amount
         : Infinity
-    const provider_wholesale_currency = (mapping.provider_currency ?? '').trim().toUpperCase() || undefined
+    const provider_wholesale_currency =
+      (authoritative.provider_wholesale_currency ?? '').trim().toUpperCase() || undefined
     const destination_face_value =
-      typeof mapping.destination_amount === 'number' && mapping.destination_amount > 0
-        ? mapping.destination_amount
+      typeof authoritative.destination_face_value === 'number' &&
+      authoritative.destination_face_value > 0
+        ? authoritative.destination_face_value
         : undefined
-    const destination_currency = mapping.destination_currency ?? undefined
+    const destination_currency = authoritative.destination_currency ?? undefined
     const margin = typeof mapping.margin === 'number' ? mapping.margin : 0
     const price = provider_wholesale_amount
     const currency = provider_wholesale_currency
@@ -465,9 +543,12 @@ export class RoutingEngineService {
     }
 
     // 2. Load mappings and providers
-    const { mappings, providers, allProvidersList } = await loadCandidates(normalizedInput.productId)
+    const { mappings, providers, providersToEvaluate, authoritativeByKey, systemPlanId, discoverySource } =
+      await loadCandidates(normalizedInput.productId)
     const mapping_count = mappings.length
-    console.log(`[ROUTING] internal_plan_id: ${normalizedInput.productId} | mapping_count: ${mapping_count}`)
+    console.log(
+      `[ROUTING] internal_plan_id: ${normalizedInput.productId} | system_plan_id: ${systemPlanId ?? 'n/a'} | discovery: ${discoverySource} | mapping_count: ${mapping_count}`,
+    )
 
     // If mapping_count = 0
     if (mapping_count === 0) {
@@ -505,7 +586,15 @@ export class RoutingEngineService {
     const priorityMap = new Map(priorityRows.map((p) => [p.providerId, p.priority]))
 
     // Evaluate candidates
-    let evaluated = evaluateCandidates(mappings, providers, allProvidersList, normalizedInput, priorityMap)
+    let evaluated = evaluateCandidates(
+      mappings,
+      providers,
+      providersToEvaluate,
+      normalizedInput,
+      priorityMap,
+      authoritativeByKey,
+      normalizedInput.productId,
+    )
     evaluated = await enrichCandidatesWithNormalizedCosts(evaluated)
 
     // Candidate providers count (providers that have a mapping)

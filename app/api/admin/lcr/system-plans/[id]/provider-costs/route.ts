@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { loadSystemPlanProviderCostBreakdown } from '@/lib/admin/provider-cost-breakdown'
+import { buildSystemPlanPricingConsistencyReport } from '@/lib/catalog/system-plan-pricing-consistency'
 
 type RouteContext = { params: Promise<{ id: string }> }
 
@@ -20,10 +21,13 @@ export async function GET(request: Request, context: RouteContext) {
     if (!breakdown) {
       return NextResponse.json({ error: 'System plan not found' }, { status: 404 })
     }
+    const consistencyReport = await buildSystemPlanPricingConsistencyReport(systemPlanId)
     return NextResponse.json({
       breakdown,
       plan: breakdown.plan,
       providers: breakdown.providers,
+      pricing_debug: breakdown.providers.map((p) => p.pricingSource).filter(Boolean),
+      consistency_report: consistencyReport,
     })
   } catch (error) {
     console.error('Failed to load provider cost breakdown:', error)

@@ -1,7 +1,14 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
-import { mergeRoutingLogPricing, parseRoutingLogStatus } from '@/lib/routing/log-pricing'
+import { mergeRoutingLogPricing, parseRoutingLogStatus, formatProviderCostDual } from '@/lib/routing/log-pricing'
+import type { RechargeRoutingSource } from '@/lib/recharge-orchestration/routing-log-fields'
 import { planMappingPricingKey } from '@/lib/catalog/provider-wholesale-pricing'
 import { batchResolvePlanMappingPricing } from '@/lib/routing/plan-mapping-pricing'
+import {
+  authoritativePricingKey,
+  resolveProviderPricingForInternalPlan,
+} from '@/lib/catalog/resolve-provider-pricing-for-system-plan'
+import { logAuthoritativeMappingMissing } from '@/lib/catalog/system-plan-pricing-consistency'
+import type { ProviderPricingDebugMeta } from '@/lib/catalog/provider-pricing-debug'
 import type {
   LcrEngineSettings,
   ProviderPriorityRow,
@@ -418,15 +425,86 @@ export async function enrichRoutingLogsWithPricing<T extends RoutingLogRow>(logs
 
   const wholesaleByKey = await batchResolvePlanMappingPricing(planMappingLookups)
 
+  const internalPlanIds = [
+    ...new Set(logs.map((log) => log.productId).filter((id): id is string => Boolean(id))),
+  ]
+  const authoritativeByInternalPlan = new Map<
+    string,
+    Awaited<ReturnType<typeof resolveProviderPricingForInternalPlan>>
+  >()
+  for (const internalPlanId of internalPlanIds) {
+    const resolution = await resolveProviderPricingForInternalPlan(internalPlanId)
+    if (resolution) authoritativeByInternalPlan.set(internalPlanId, resolution)
+  }
+
   return logs.map((log) => {
     const attempt = log.transactionId ? attemptByRef.get(log.transactionId) : undefined
     const tx = log.transactionId ? transactionById.get(log.transactionId) : undefined
     const providerId = log.providerId ?? attempt?.selected_provider_id ?? null
     const providerPlanId = attempt?.selected_provider_plan_id ?? null
-    const resolvedWholesale =
+
+    const authoritative =
+      log.productId != null ? authoritativeByInternalPlan.get(log.productId) : undefined
+    const authRow =
       log.productId && providerId
-        ? wholesaleByKey.get(planMappingPricingKey(log.productId, providerId, providerPlanId)) ??
-          wholesaleByKey.get(planMappingPricingKey(log.productId, providerId, null))
+        ? (providerPlanId
+            ? authoritative?.byKey.get(authoritativePricingKey(providerId, providerPlanId))
+            : null) ?? authoritative?.byProviderId.get(providerId)
+        : undefined
+
+    if (log.productId && providerId && !authRow) {
+      logAuthoritativeMappingMissing({
+        context: 'enrichRoutingLogsWithPricing',
+        internalPlanId: log.productId,
+        providerId,
+        providerName: log.providerName,
+        providerPlanId,
+      })
+    }
+
+    const resolvedWholesale =
+      authRow != null
+        ? {
+            wholesaleAmount: authRow.provider_wholesale_amount,
+            wholesaleCurrency: authRow.provider_wholesale_currency,
+            destinationAmount: authRow.destination_face_value,
+            destinationCurrency: authRow.destination_currency,
+          }
+        : log.productId && providerId
+          ? wholesaleByKey.get(planMappingPricingKey(log.productId, providerId, providerPlanId)) ??
+            wholesaleByKey.get(planMappingPricingKey(log.productId, providerId, null))
+          : undefined
+
+    const pricingSource: ProviderPricingDebugMeta | undefined = authRow
+      ? {
+          providerName: authRow.providerName,
+          providerPlanId: authRow.providerPlanId,
+          providerPlanRawId: authRow.providerPlanRawId,
+          provider_wholesale_amount: authRow.provider_wholesale_amount,
+          provider_wholesale_currency: authRow.provider_wholesale_currency,
+          destination_face_value: authRow.destination_face_value,
+          destination_currency: authRow.destination_currency,
+          sourceTable: authRow.sourceTable,
+          sourceFile: authRow.sourceFile,
+          sourceQuery: authRow.sourceQuery,
+          existsInPlanMappings: true,
+        }
+      : providerId
+        ? {
+            providerName: log.providerName ?? providerId,
+            providerPlanId,
+            providerPlanRawId: null,
+            provider_wholesale_amount: resolvedWholesale?.wholesaleAmount ?? log.providerCost ?? null,
+            provider_wholesale_currency:
+              resolvedWholesale?.wholesaleCurrency ?? log.providerCurrency ?? null,
+            destination_face_value: resolvedWholesale?.destinationAmount ?? log.destinationFaceValue ?? null,
+            destination_currency: resolvedWholesale?.destinationCurrency ?? log.destinationCurrency ?? null,
+            sourceTable: null,
+            sourceFile: null,
+            sourceQuery: null,
+            existsInPlanMappings: false,
+            orphanInternalMapping: true,
+          }
         : undefined
 
     const pricing = mergeRoutingLogPricing(
@@ -445,6 +523,11 @@ export async function enrichRoutingLogsWithPricing<T extends RoutingLogRow>(logs
       },
     )
 
+    const dual = formatProviderCostDual(
+      resolvedWholesale?.wholesaleAmount ?? pricing.providerCost,
+      resolvedWholesale?.wholesaleCurrency ?? pricing.providerCurrency,
+    )
+
     return {
       ...log,
       providerId: providerId ?? log.providerId,
@@ -458,8 +541,12 @@ export async function enrichRoutingLogsWithPricing<T extends RoutingLogRow>(logs
       destinationFaceValue: resolvedWholesale?.destinationAmount ?? log.destinationFaceValue ?? null,
       destinationCurrency: resolvedWholesale?.destinationCurrency ?? log.destinationCurrency ?? null,
       normalizedProviderPrice: log.normalizedProviderPrice ?? null,
+      providerCostEur: dual.providerCostEur,
+      providerCostInr: dual.providerCostInr,
+      providerCostDisplay: dual.providerCostDisplay,
       providerDestinationAmount: resolvedWholesale?.destinationAmount ?? null,
       providerDestinationCurrency: resolvedWholesale?.destinationCurrency ?? null,
+      pricingSource,
     }
   })
 }
@@ -513,6 +600,10 @@ export async function insertDetailedRoutingLog(input: {
   responseCode?: string | null
   responseMessage?: string | null
   verificationMappingCount?: number | null
+  systemPlanId?: string | null
+  internalPlanId?: string | null
+  providerPlanRawId?: string | null
+  routingSource?: RechargeRoutingSource | null
 }): Promise<string | null> {
   const wholesaleAmount = input.providerWholesaleAmount ?? input.providerCost ?? null
   const wholesaleCurrency = input.providerWholesaleCurrency ?? input.providerCurrency ?? null
@@ -542,6 +633,12 @@ export async function insertDetailedRoutingLog(input: {
     responseCode: input.responseCode ?? null,
     responseMessage: input.responseMessage ?? null,
     verificationMappingCount: input.verificationMappingCount ?? null,
+    system_plan_id: input.systemPlanId ?? null,
+    internal_plan_id: input.internalPlanId ?? input.planId ?? null,
+    provider_id: input.selectedProvider ?? null,
+    provider_plan_id: input.providerPlanId ?? null,
+    provider_plan_raw_id: input.providerPlanRawId ?? null,
+    routing_source: input.routingSource ?? null,
   }
 
   const res = await supabaseRest('routing_logs', {

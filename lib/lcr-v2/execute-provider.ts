@@ -62,7 +62,12 @@ export async function executeMappedRecharge(ctx: ProviderExecutionContext): Prom
 
   logProviderExecutionContext(ctx, 'payload-build')
   const built = buildProviderPayloadFromContext(ctx)
-  console.log('[Provider Execution]', `payload=${built.logLine}`)
+  console.log(
+    '[Provider Execution]',
+    `payload=${built.logLine}`,
+    `recharge_wholesale=${ctx.provider_wholesale_amount} ${ctx.provider_wholesale_currency}`,
+    `recharge_destination=${ctx.destination_face_value} ${ctx.destination_currency}`,
+  )
 
   const key = ctx.adapterKey
 

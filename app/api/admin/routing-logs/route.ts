@@ -86,10 +86,14 @@ export async function GET(request: Request) {
         if (parsed.attemptNumber && parsed.attemptNumber > maxAttempt) {
           maxAttempt = parsed.attemptNumber
         }
-        if (typeof parsed.providerCurrency === 'string' && parsed.providerCurrency) {
+        if (typeof parsed.provider_wholesale_currency === 'string' && parsed.provider_wholesale_currency) {
+          resolvedProviderCurrency = String(parsed.provider_wholesale_currency).toUpperCase()
+        } else if (typeof parsed.providerCurrency === 'string' && parsed.providerCurrency) {
           resolvedProviderCurrency = String(parsed.providerCurrency).toUpperCase()
         }
-        if (typeof parsed.providerCost === 'number' && Number.isFinite(parsed.providerCost)) {
+        if (typeof parsed.provider_wholesale_amount === 'number' && Number.isFinite(parsed.provider_wholesale_amount)) {
+          resolvedCost = parsed.provider_wholesale_amount
+        } else if (typeof parsed.providerCost === 'number' && Number.isFinite(parsed.providerCost)) {
           resolvedCost = parsed.providerCost
         }
 

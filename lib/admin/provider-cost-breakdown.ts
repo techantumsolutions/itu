@@ -1,11 +1,12 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { extractPricingFromRaw } from '@/lib/admin/provider-pricing-extractor'
-import { resolveWholesalePricing } from '@/lib/catalog/provider-wholesale-pricing'
 import {
   resolveProviderWholesaleCost,
   resolveRechargeCostDisplay,
 } from '@/lib/admin/resolve-provider-wholesale-cost'
 import { resolveRawPlanForMapping } from '@/lib/aggregator/plan-mapping-reconciliation'
+import { resolveProviderPricingForSystemPlan } from '@/lib/catalog/resolve-provider-pricing-for-system-plan'
+import type { ProviderPricingDebugMeta } from '@/lib/catalog/provider-pricing-debug'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -83,6 +84,8 @@ export type ProviderCostBreakdownItem = {
   rawPlanCurrency: string | null
   rawPlanName: string | null
   rawData: unknown
+  /** Authoritative pricing lineage (additive debug — UI unchanged). */
+  pricingSource?: ProviderPricingDebugMeta
 }
 
 export type SystemPlanProviderCostBreakdown = {
@@ -182,7 +185,9 @@ export async function loadSystemPlanProviderCostBreakdown(
   }
 
   const planMappings = (await planMappingsRes.json()) as PlanMappingRow[]
-  if (!planMappings.length) {
+  const authoritative = await resolveProviderPricingForSystemPlan(systemPlanId)
+
+  if (!planMappings.length || !authoritative?.providers.length) {
     return {
       plan: { ...planMeta, providerCount: 0 },
       providers: [],
@@ -190,43 +195,7 @@ export async function loadSystemPlanProviderCostBreakdown(
     }
   }
 
-  type ResolvedMapping = {
-    providerId: string
-    providerPlanId: string
-    rawPlan: RawPlanRow | null
-    matchingScore: number | null
-    isVerified: boolean
-  }
-
-  const resolvedMappings: ResolvedMapping[] = []
-  for (const mapping of planMappings) {
-    const providerId = mapping.service_provider_id
-    const providerPlanId = mapping.provider_plan_id?.trim() || ''
-    if (!providerId || !providerPlanId) continue
-
-    const rawPlan = (await resolveRawPlanForMapping({
-      mappingId: mapping.id,
-      serviceProviderId: providerId,
-      providerPlanId,
-      providerPlanRawId: mapping.provider_plan_raw_id,
-      autoReconnect: true,
-    })) as RawPlanRow | null
-
-    resolvedMappings.push({
-      providerId,
-      providerPlanId,
-      rawPlan,
-      matchingScore: mapping.matching_score ?? null,
-      isVerified: mapping.is_verified === true,
-    })
-  }
-
-  const uniquePairs = new Map<string, ResolvedMapping>()
-  for (const row of resolvedMappings) {
-    uniquePairs.set(`${row.providerId}:${row.providerPlanId}`, row)
-  }
-
-  const providerIds = [...new Set([...uniquePairs.values()].map((p) => p.providerId))]
+  const providerIds = [...new Set(authoritative.providers.map((p) => p.providerId))]
   const providerMap = new Map<string, ProviderRow>()
   if (providerIds.length > 0) {
     const providersRes = await supabaseRest(
@@ -241,31 +210,34 @@ export async function loadSystemPlanProviderCostBreakdown(
     }
   }
 
-  const providers: ProviderCostBreakdownItem[] = [...uniquePairs.values()].map(
-    ({ providerId, providerPlanId, rawPlan, matchingScore, isVerified }) => {
+  const providers: ProviderCostBreakdownItem[] = await Promise.all(
+    authoritative.providers.map(async (auth) => {
+      const providerId = auth.providerId
+      const providerPlanId = auth.providerPlanId
       const provider = providerMap.get(providerId)
+
+      const rawPlan = (await resolveRawPlanForMapping({
+        mappingId: auth.planMappingId ?? '',
+        serviceProviderId: providerId,
+        providerPlanId,
+        providerPlanRawId: auth.providerPlanRawId,
+        autoReconnect: true,
+      })) as RawPlanRow | null
+
       const rawData = rawPlan?.raw_json ?? null
       const extractedPricing = extractPricingFromRaw(rawData)
 
       const wholesaleCost = resolveProviderWholesaleCost(rawPlan)
       const rechargeCostResolved = resolveRechargeCostDisplay(rawPlan)
-      const providerPrice = wholesaleCost.amount
-      const providerCostCurrency = wholesaleCost.currency
+      const providerPrice = auth.provider_wholesale_amount ?? wholesaleCost.amount
+      const providerCostCurrency = auth.provider_wholesale_currency ?? wholesaleCost.currency
 
-      const wholesale = resolveWholesalePricing({
-        rawJson: rawData,
-        amount: rawPlan?.amount ?? null,
-        currency: rawPlan?.currency ?? null,
-        destinationAmount: rawPlan?.destination_amount ?? null,
-        destinationCurrency: rawPlan?.destination_currency ?? null,
-      })
-
-      const rawAmount = providerPrice ?? wholesale.wholesaleAmount ?? rawPlan?.amount ?? null
-      const rawCurrency = providerCostCurrency ?? wholesale.wholesaleCurrency ?? rawPlan?.currency ?? null
+      const rawAmount = providerPrice ?? rawPlan?.amount ?? null
+      const rawCurrency = providerCostCurrency ?? rawPlan?.currency ?? null
       const rechargeCost = buildRechargeCost({ extractedPricing, rawAmount: rawAmount ?? null })
 
       const destinationCurrency =
-        wholesale.destinationCurrency ??
+        auth.destination_currency ??
         rawPlan?.destination_currency ??
         (extractedPricing.basePrice != null ? extractedPricing.currency : null) ??
         planMeta.systemPlanCurrency ??
@@ -275,16 +247,30 @@ export async function loadSystemPlanProviderCostBreakdown(
       const rechargeCostCurrency = destinationCurrency ?? providerCostCurrency
 
       const providerRechargeValue =
-        wholesale.destinationAmount ??
+        auth.destination_face_value ??
         rawPlan?.destination_amount ??
         extractedPricing.basePrice ??
         extractedPricing.finalPrice ??
         null
 
+      const pricingSource: ProviderPricingDebugMeta = {
+        providerName: auth.providerName,
+        providerPlanId: auth.providerPlanId,
+        providerPlanRawId: auth.providerPlanRawId,
+        provider_wholesale_amount: auth.provider_wholesale_amount,
+        provider_wholesale_currency: auth.provider_wholesale_currency,
+        destination_face_value: auth.destination_face_value,
+        destination_currency: auth.destination_currency,
+        sourceTable: auth.sourceTable,
+        sourceFile: auth.sourceFile,
+        sourceQuery: auth.sourceQuery,
+        existsInPlanMappings: true,
+      }
+
       return {
         providerId,
-        providerName: provider?.name || provider?.code || providerId,
-        providerCode: provider?.code ?? null,
+        providerName: provider?.name || auth.providerName,
+        providerCode: provider?.code ?? auth.providerCode,
         providerPlanId,
         providerPlanName: rawPlan?.provider_plan_name ?? null,
         providerRechargeValue,
@@ -300,8 +286,8 @@ export async function loadSystemPlanProviderCostBreakdown(
           providerPriority: provider?.priority ?? null,
           enabled: provider?.is_active !== false,
           sellingPrice: extractedPricing.finalPrice ?? providerPrice,
-          matchingScore,
-          isVerified,
+          matchingScore: auth.matchingScore,
+          isVerified: auth.isVerified,
         },
         rechargeCost,
         extractedPricing,
@@ -309,8 +295,9 @@ export async function loadSystemPlanProviderCostBreakdown(
         rawPlanCurrency: rawCurrency,
         rawPlanName: rawPlan?.provider_plan_name ?? null,
         rawData,
+        pricingSource,
       }
-    },
+    }),
   )
 
   providers.sort((a, b) => {

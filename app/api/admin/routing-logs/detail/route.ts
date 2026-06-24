@@ -6,8 +6,27 @@ import {
   enrichRoutingLogsWithPricing,
   listRoutingLogsForTransaction,
 } from '@/lib/routing/repository'
-import { mergeRoutingLogPricing } from '@/lib/routing/log-pricing'
+import { formatProviderCostDual, mergeRoutingLogPricing } from '@/lib/routing/log-pricing'
 import { resolvePlanMappingPricing } from '@/lib/routing/plan-mapping-pricing'
+import { enrichEvaluatedProvidersWithAuthoritativePricing } from '@/lib/routing/enrich-evaluated-providers-authoritative'
+import { buildSystemPlanPricingConsistencyReport } from '@/lib/catalog/system-plan-pricing-consistency'
+
+async function loadPlanMappingPricing(input: {
+  planId: string | null | undefined
+  providerId: string | null | undefined
+  providerPlanId: string | null | undefined
+}) {
+  if (!input.planId || !input.providerId) return null
+  try {
+    return await resolvePlanMappingPricing({
+      planId: input.planId,
+      providerId: input.providerId,
+      providerPlanId: input.providerPlanId,
+    })
+  } catch {
+    return null
+  }
+}
 
 export async function GET(request: Request) {
   if (!(await adminCanUseFeature(request, 'routing', { allowLegacyHeader: true }))) {
@@ -24,26 +43,27 @@ export async function GET(request: Request) {
   try {
     const attempt = await dbFindRechargeByDistributorRef(transactionId).catch(() => null)
     if (attempt) {
-      const mappedPricing =
-        attempt.selected_provider_id
-          ? await resolvePlanMappingPricing({
-              planId: attempt.internal_plan_id,
-              providerId: attempt.selected_provider_id,
-              providerPlanId: attempt.selected_provider_plan_id,
-            }).catch(() => null)
-          : null
+      const mappedPricing = await loadPlanMappingPricing({
+        planId: attempt.internal_plan_id,
+        providerId: attempt.selected_provider_id,
+        providerPlanId: attempt.selected_provider_plan_id,
+      })
+
+      const wholesaleAmount = mappedPricing?.wholesaleAmount ?? null
+      const wholesaleCurrency = mappedPricing?.wholesaleCurrency ?? null
+      const dual = formatProviderCostDual(wholesaleAmount, wholesaleCurrency)
 
       const pricing = mergeRoutingLogPricing(
         {
           providerId: attempt.selected_provider_id,
-          providerCost: mappedPricing?.wholesaleAmount ?? null,
+          providerCost: wholesaleAmount,
         },
         {
           userAmount: attempt.send_amount,
           userCurrency: attempt.currency,
           routingDecision: attempt.routing_decision,
-          providerCost: mappedPricing?.wholesaleAmount ?? null,
-          providerCurrency: mappedPricing?.wholesaleCurrency ?? null,
+          providerCost: wholesaleAmount,
+          providerCurrency: wholesaleCurrency,
         },
       )
 
@@ -91,7 +111,20 @@ export async function GET(request: Request) {
       const routingDecisionWithSkips = {
         ...routingDecision,
         evaluated_providers: evaluatedList,
+        mapping_count:
+          routingDecision.mapping_count ??
+          routingDecision.candidate_provider_count ??
+          evaluatedList.length,
       }
+
+      const enrichedEvaluated = await enrichEvaluatedProvidersWithAuthoritativePricing(
+        attempt.internal_plan_id,
+        evaluatedList as Array<Record<string, unknown>>,
+      )
+
+      const consistencyReport = mappedPricing?.systemPlanId
+        ? await buildSystemPlanPricingConsistencyReport(mappedPricing.systemPlanId)
+        : null
 
       return NextResponse.json({
         attempt: {
@@ -101,23 +134,46 @@ export async function GET(request: Request) {
           status: attempt.status === 'success' ? 'success' : 'failed',
           send_amount: pricing.userAmount,
           user_currency: pricing.userCurrency,
-          provider_cost: pricing.providerCost,
-          provider_currency: pricing.providerCurrency,
+          provider_cost: pricing.providerCost ?? wholesaleAmount,
+          provider_currency: pricing.providerCurrency ?? wholesaleCurrency,
+          provider_cost_eur: dual.providerCostEur,
+          provider_cost_inr: dual.providerCostInr,
+          provider_cost_display: dual.providerCostDisplay,
           provider_destination_amount: mappedPricing?.destinationAmount ?? null,
           provider_destination_currency: mappedPricing?.destinationCurrency ?? null,
-          routing_decision: routingDecisionWithSkips,
-          attempts: attempts.map((hop: any) => ({
-            providerName: hop.providerName || hop.providerId || '—',
-            cost: hop.cost ?? null,
-            currency: hop.currency ?? pricing.providerCurrency,
-            source: hop.source ?? 'LCR',
-            ok: Boolean(hop.ok),
-            skipped: Boolean(hop.skipped),
-            skipReason: hop.skipReason ?? hop.errorMessage,
-            error: hop.error,
-            errorCode: hop.errorCode,
-            errorMessage: hop.errorMessage,
-          })),
+          plan_mapping: mappedPricing
+            ? {
+                provider_plan_id: mappedPricing.providerPlanId,
+                provider_wholesale_amount: mappedPricing.wholesaleAmount,
+                provider_wholesale_currency: mappedPricing.wholesaleCurrency,
+                destination_face_value: mappedPricing.destinationAmount,
+                destination_currency: mappedPricing.destinationCurrency,
+                system_plan_id: mappedPricing.systemPlanId,
+              }
+            : null,
+          routing_decision: {
+            ...routingDecisionWithSkips,
+            evaluated_providers: enrichedEvaluated.evaluated,
+          },
+          pricing_debug: enrichedEvaluated.pricingDebug,
+          orphan_providers: enrichedEvaluated.orphanProviders,
+          consistency_report: consistencyReport,
+          attempts: attempts.map((hop: any) => {
+            const hopDual = formatProviderCostDual(hop.cost ?? null, hop.currency ?? wholesaleCurrency)
+            return {
+              providerName: hop.providerName || hop.providerId || '—',
+              cost: hop.cost ?? null,
+              currency: hop.currency ?? pricing.providerCurrency,
+              costDisplay: hopDual.providerCostDisplay,
+              source: hop.source ?? 'LCR',
+              ok: Boolean(hop.ok),
+              skipped: Boolean(hop.skipped),
+              skipReason: hop.skipReason ?? hop.errorMessage,
+              error: hop.error,
+              errorCode: hop.errorCode,
+              errorMessage: hop.errorMessage,
+            }
+          }),
         },
       })
     }
@@ -129,9 +185,42 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Routing details not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ attempt: audit })
+    const firstLog = enrichedLogs[0]
+    const mappedPricing = await loadPlanMappingPricing({
+      planId: audit.internal_plan_id ?? firstLog?.productId,
+      providerId: firstLog?.providerId,
+      providerPlanId: null,
+    })
+
+    const wholesaleAmount = audit.provider_cost ?? mappedPricing?.wholesaleAmount ?? null
+    const wholesaleCurrency = audit.provider_currency ?? mappedPricing?.wholesaleCurrency ?? null
+    const dual = formatProviderCostDual(wholesaleAmount, wholesaleCurrency)
+
+    return NextResponse.json({
+      attempt: {
+        ...audit,
+        provider_cost: wholesaleAmount,
+        provider_currency: wholesaleCurrency,
+        provider_cost_eur: dual.providerCostEur,
+        provider_cost_inr: dual.providerCostInr,
+        provider_cost_display: dual.providerCostDisplay,
+        provider_destination_amount: mappedPricing?.destinationAmount ?? null,
+        provider_destination_currency: mappedPricing?.destinationCurrency ?? null,
+        plan_mapping: mappedPricing
+          ? {
+              provider_plan_id: mappedPricing.providerPlanId,
+              provider_wholesale_amount: mappedPricing.wholesaleAmount,
+              provider_wholesale_currency: mappedPricing.wholesaleCurrency,
+              destination_face_value: mappedPricing.destinationAmount,
+              destination_currency: mappedPricing.destinationCurrency,
+              system_plan_id: mappedPricing.systemPlanId,
+            }
+          : null,
+      },
+    })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal Server Error'
+    console.error('[routing-logs/detail]', message, err)
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }
