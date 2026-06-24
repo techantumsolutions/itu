@@ -77,6 +77,16 @@ export async function enrichEvaluatedProvidersWithAuthoritativePricing(
 
     if (!authRow) {
       const runtimeEligible = entry.eligibility === true || entry.eligible === true
+      if (entry.skipped) {
+        const debug = pricingDebugFromAuthoritative(null, providerName, providerPlanId)
+        pricingDebug.push(debug)
+        return {
+          ...entry,
+          pricingSource: debug,
+          eligible: false,
+          eligibility: false,
+        }
+      }
       const runtimeCost =
         typeof entry.provider_wholesale_amount === 'number'
           ? entry.provider_wholesale_amount

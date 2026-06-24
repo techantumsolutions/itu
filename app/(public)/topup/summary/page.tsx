@@ -20,6 +20,12 @@ import {
 } from '@/lib/topup/currency-conversion'
 import { formatPlanRechargeValue } from '@/lib/catalog/plan-recharge-value'
 import { getDialCode } from '@/lib/lcr/countries'
+import {
+  computeRechargeProcessingFeeAmount,
+  DEFAULT_RECHARGE_PROCESSING_FEES,
+  parseRechargeProcessingFees,
+  type RechargeProcessingFees,
+} from '@/lib/settings/recharge-processing-fees'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Command,
@@ -491,6 +497,8 @@ export default function TopupSummaryPage() {
     phoneNumber,
     countryCode,
     operator,
+    operatorProviderId,
+    checkoutSessionId,
     selectedPlan,
     pricing,
     fees,
@@ -514,6 +522,9 @@ export default function TopupSummaryPage() {
   const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null)
   const [isLoadingBalance, setIsLoadingBalance] = useState<boolean>(false)
   const [selectedPayableCurrency, setSelectedPayableCurrency] = useState<string | null>(null)
+  const [processingFeePercents, setProcessingFeePercents] = useState<RechargeProcessingFees>(
+    DEFAULT_RECHARGE_PROCESSING_FEES,
+  )
 
   const rechargeCurrency = useMemo(() => {
     return normalizeCurrencyCode(
@@ -526,8 +537,28 @@ export default function TopupSummaryPage() {
   }, [rechargeCurrency])
 
   useEffect(() => {
-    if (!selectedPlan || !pricing) router.replace('/topup')
-  }, [selectedPlan, pricing, router])
+    const loadFees = async () => {
+      try {
+        const res = await fetch('/api/settings/recharge-processing-fees', { cache: 'no-store' })
+        if (!res.ok) return
+        const data = await res.json()
+        setProcessingFeePercents(parseRechargeProcessingFees(data))
+      } catch {
+        // keep default
+      }
+    }
+    void loadFees()
+  }, [])
+
+  useEffect(() => {
+    if (!selectedPlan || !pricing) {
+      router.replace('/topup')
+      return
+    }
+    if (!checkoutSessionId) {
+      router.replace('/topup')
+    }
+  }, [selectedPlan, pricing, checkoutSessionId, router])
 
   // Fetch wallet balance
   useEffect(() => {
@@ -620,8 +651,11 @@ export default function TopupSummaryPage() {
       Number(selectedPlan?.recharge_amount) > 0
         ? Number(selectedPlan!.recharge_amount)
         : (pricing?.localAmount ?? 0)
-    const fee = fees ?? 0
     const subtotal = planPrice
+    const feeParts = computeRechargeProcessingFeeAmount(subtotal, processingFeePercents)
+    const serviceFee = feeParts.platformFee + feeParts.paymentGatewayFee
+    const tax = feeParts.tax
+    const fee = fees ?? feeParts.total
     const totalInRecharge = subtotal + fee
 
     let totalPayable = totalInRecharge
@@ -677,6 +711,8 @@ export default function TopupSummaryPage() {
 
     return {
       subtotal,
+      serviceFee,
+      tax,
       fee,
       totalInRecharge,
       totalPayable,
@@ -692,6 +728,7 @@ export default function TopupSummaryPage() {
     selectedPlan,
     pricing,
     fees,
+    processingFeePercents,
     exchangeRates,
     isAuthenticated,
     walletBalance,
@@ -742,11 +779,12 @@ export default function TopupSummaryPage() {
             planId: selectedPlan.internalPlanId || selectedPlan.id,
             systemPlanId: selectedPlan.systemPlanId || selectedPlan.id,
             mobileNumber: `+${getDialCode(countryCode)}${phoneNumber}`,
-            operatorId: operator,
+            operatorId: operatorProviderId || operator,
             countryId: countryCode,
             amount: amounts.totalPayable,
             currency: amounts.payableCurrency,
             walletCurrency: activeWalletCurrency,
+            checkoutSessionId,
           }),
         })
         const data = await res.json()
@@ -781,10 +819,11 @@ export default function TopupSummaryPage() {
           amount: amounts.grand,
           currency: amounts.payableCurrency,
           mobileNumber: `+${getDialCode(countryCode)}${phoneNumber}`,
-          operatorId: operator,
+          operatorId: operatorProviderId || operator,
           countryId: countryCode,
           usedWalletBalance: amounts.usedWalletAmount,
           walletCurrency: activeWalletCurrency,
+          checkoutSessionId,
         }),
       })
       const createData = await createRes.json()
@@ -870,6 +909,8 @@ export default function TopupSummaryPage() {
     countryCode,
     phoneNumber,
     operator,
+    operatorProviderId,
+    checkoutSessionId,
     setTransactionResult,
     router,
     selectedWalletCurrency,
@@ -997,9 +1038,15 @@ export default function TopupSummaryPage() {
                     </span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-neutral-500">Processing Fee</span>
+                    <span className="text-neutral-500">Service Fee</span>
                     <span className="font-semibold text-neutral-900">
-                      {amounts.fee > 0 ? formatMoney(amounts.fee, lineCurrency) : 'Free'}
+                      {amounts.serviceFee > 0 ? formatMoney(amounts.serviceFee, lineCurrency) : 'Free'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-neutral-500">Tax</span>
+                    <span className="font-semibold text-neutral-900">
+                      {amounts.tax > 0 ? formatMoney(amounts.tax, lineCurrency) : 'Free'}
                     </span>
                   </div>
                   {payableCurrency !== lineCurrency && (

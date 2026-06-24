@@ -42,6 +42,11 @@ type TopupSessionState = {
   totalAmount: number
   /** Recharge currency of the selected plan (e.g. INR, USD, XCD). */
   currency: string
+  /** System operator UUID used for routing/LCR. */
+  operatorProviderId: string
+  checkoutSessionId: string
+  rechargeAttemptId: string
+  selectedProviderName: string
   orderId: string
   transactionId: string
   providerRef: string
@@ -56,6 +61,13 @@ type TopupSessionActions = {
   setOperator: (operator: string) => void
   selectPlan: (plan: TopupPlan) => void
   calculatePricing: (payload?: { fee?: number }) => void
+  setCheckoutSession: (payload: {
+    checkoutSessionId: string
+    transactionId?: string
+    rechargeAttemptId?: string
+    selectedProviderName?: string
+    operatorProviderId?: string
+  }) => void
   setOrderId: (orderId: string) => void
   setTransactionResult: (result: {
     transactionId?: string
@@ -77,6 +89,10 @@ const initialState: TopupSessionState = {
   fees: 0,
   totalAmount: 0,
   currency: 'INR',
+  operatorProviderId: '',
+  checkoutSessionId: '',
+  rechargeAttemptId: '',
+  selectedProviderName: '',
   orderId: '',
   transactionId: '',
   providerRef: '',
@@ -118,6 +134,15 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
         })
       },
       setOrderId: (orderId) => set({ orderId }),
+      setCheckoutSession: (payload) =>
+        set({
+          checkoutSessionId: payload.checkoutSessionId,
+          transactionId: payload.transactionId ?? payload.checkoutSessionId,
+          rechargeAttemptId: payload.rechargeAttemptId ?? get().rechargeAttemptId,
+          selectedProviderName: payload.selectedProviderName ?? get().selectedProviderName,
+          providerName: payload.selectedProviderName ?? get().providerName,
+          operatorProviderId: payload.operatorProviderId ?? get().operatorProviderId,
+        }),
       setTransactionResult: (result) =>
         set({
           transactionId: result.transactionId ?? get().transactionId,
@@ -131,16 +156,20 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
     }),
     {
       name: 'topup-session-v1',
-      version: 2,
+      version: 3,
       partialize: (s) => ({
         countryCode: s.countryCode,
         phoneNumber: s.phoneNumber,
         operator: s.operator,
+        operatorProviderId: s.operatorProviderId,
         selectedPlan: s.selectedPlan,
         pricing: s.pricing,
         fees: s.fees,
         totalAmount: s.totalAmount,
         currency: s.currency,
+        checkoutSessionId: s.checkoutSessionId,
+        rechargeAttemptId: s.rechargeAttemptId,
+        selectedProviderName: s.selectedProviderName,
         orderId: s.orderId,
         transactionId: s.transactionId,
         providerRef: s.providerRef,

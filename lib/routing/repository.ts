@@ -703,6 +703,104 @@ export type RoutingAuditDetail = {
   }>
 }
 
+export type RoutingAuditAttempt = RoutingAuditDetail['attempts'][number]
+
+export type EvaluatedProviderAuditRow = {
+  providerId?: string
+  providerName?: string
+  provider?: string
+  costPrice?: number | null
+  currency?: string | null
+  margin?: number | null
+  priority?: number | null
+  eligibility?: boolean
+  eligible?: boolean
+  skipped?: boolean
+  filterReason?: string | null
+  reason?: string | null
+  skipReason?: string | null
+}
+
+function normalizeAuditHop(hop: RoutingAuditAttempt): RoutingAuditAttempt {
+  return {
+    ...hop,
+    providerName: hop.providerName || '—',
+    skipped: Boolean(hop.skipped),
+    skipReason: hop.skipReason ?? hop.errorMessage ?? (hop.skipped ? hop.error : undefined),
+  }
+}
+
+/** Overlay skip / pre-validation failures onto evaluated provider snapshots. */
+export function mergeEvaluatedProvidersWithSkipEvents(
+  base: EvaluatedProviderAuditRow[],
+  skipSources: Array<{
+    providerId?: string | null
+    providerName?: string | null
+    skipReason?: string | null
+    filterReason?: string | null
+    skipped?: boolean
+  }>,
+): EvaluatedProviderAuditRow[] {
+  const result = base.map((ev) => ({ ...ev }))
+
+  const findIndex = (id?: string | null, name?: string | null) =>
+    result.findIndex(
+      (ev) =>
+        (id != null && id !== '' && ev.providerId === id) ||
+        (name != null &&
+          name !== '' &&
+          (ev.providerName === name || ev.provider === name || ev.providerId === name)),
+    )
+
+  for (const skip of skipSources) {
+    if (!skip.skipped && !skip.skipReason && !skip.filterReason) continue
+    const reason = skip.skipReason ?? skip.filterReason ?? 'Skipped'
+    const idx = findIndex(skip.providerId, skip.providerName)
+    if (idx >= 0) {
+      result[idx] = {
+        ...result[idx],
+        eligibility: false,
+        eligible: false,
+        skipped: true,
+        filterReason: reason,
+        reason,
+        skipReason: reason,
+      }
+    } else if (skip.providerId || skip.providerName) {
+      result.push({
+        providerId: skip.providerId ?? undefined,
+        providerName: skip.providerName ?? skip.providerId ?? '—',
+        eligibility: false,
+        eligible: false,
+        skipped: true,
+        filterReason: reason,
+        reason,
+        skipReason: reason,
+      })
+    }
+  }
+
+  return result
+}
+
+/** Combine recharge-attempt hops with routing_log skip events (deduped). */
+export function mergeRoutingAttempts(
+  fromAttempt: RoutingAuditAttempt[],
+  fromLogs: RoutingAuditAttempt[],
+): RoutingAuditAttempt[] {
+  const merged = fromAttempt.map(normalizeAuditHop)
+  for (const hop of fromLogs.map(normalizeAuditHop)) {
+    const exists = merged.some(
+      (h) =>
+        h.providerName === hop.providerName &&
+        Boolean(h.skipped) === Boolean(hop.skipped) &&
+        (h.skipReason ?? h.error ?? '') === (hop.skipReason ?? hop.error ?? ''),
+    )
+    if (!exists) merged.push(hop)
+  }
+  return merged
+}
+
 export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingAuditDetail | null {
   if (!logs.length) return null
 
@@ -732,7 +830,9 @@ export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingA
       margin: number | null
       priority: number | null
       eligibility: boolean
+      skipped?: boolean
       filterReason: string | null
+      skipReason?: string | null
     }
   >()
 
@@ -777,10 +877,24 @@ export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingA
       event === 'HIGHEST_MARGIN_SELECTED' ||
       event === 'LEAST_COST_SELECTED' ||
       event === 'PRIORITY_SELECTED' ||
-      event === 'RULE_MATCHED'
+      event === 'RULE_MATCHED' ||
+      event === 'NO_VIABLE_ROUTING_RULE'
     ) {
+      if (event === 'RULE_MATCHED') {
+        routingRuleMatched = true
+        if (typeof meta.routingRuleProvider === 'string' && meta.routingRuleProvider) {
+          routingRuleProvider = meta.routingRuleProvider
+        }
+      }
       routingDecisionReason = event
       selectedProvider = log.providerName || log.providerCode || log.providerId || selectedProvider
+    }
+
+    if (meta.routingRuleMatched === 'Yes') {
+      routingRuleMatched = true
+      if (typeof meta.routingRuleProvider === 'string' && meta.routingRuleProvider) {
+        routingRuleProvider = meta.routingRuleProvider
+      }
     }
 
     if (
@@ -831,13 +945,31 @@ export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingA
             ? meta.responseMessage
             : 'Pre-validation skipped'
       const providerKey = log.providerId ?? log.providerName ?? log.providerCode ?? ''
-      if (providerKey && evaluatedMap.has(providerKey)) {
-        const existing = evaluatedMap.get(providerKey)!
-        evaluatedMap.set(providerKey, {
-          ...existing,
-          eligibility: false,
-          filterReason: skipReason,
-        })
+      if (providerKey) {
+        if (evaluatedMap.has(providerKey)) {
+          const existing = evaluatedMap.get(providerKey)!
+          evaluatedMap.set(providerKey, {
+            ...existing,
+            eligibility: false,
+            skipped: true,
+            filterReason: skipReason,
+            skipReason,
+          })
+        } else {
+          evaluatedMap.set(providerKey, {
+            providerId: log.providerId ?? providerKey,
+            providerName: log.providerName || log.providerCode || providerKey,
+            costPrice: log.providerCost,
+            currency:
+              log.providerCurrency ?? (typeof meta.providerCurrency === 'string' ? meta.providerCurrency : null),
+            margin: null,
+            priority: typeof meta.providerPriority === 'number' ? meta.providerPriority : null,
+            eligibility: false,
+            skipped: true,
+            filterReason: skipReason,
+            skipReason,
+          })
+        }
       }
       attempts.push({
         providerName: log.providerName || log.providerCode || '—',
@@ -859,6 +991,33 @@ export function buildRoutingAuditDetailFromLogs(logs: RoutingLogRow[]): RoutingA
           : typeof meta.responseMessage === 'string'
             ? meta.responseMessage
             : 'Orphan runtime provider detected'
+      const providerKey = log.providerId ?? log.providerName ?? log.providerCode ?? ''
+      if (providerKey) {
+        if (evaluatedMap.has(providerKey)) {
+          const existing = evaluatedMap.get(providerKey)!
+          evaluatedMap.set(providerKey, {
+            ...existing,
+            eligibility: false,
+            skipped: true,
+            filterReason: skipReason,
+            skipReason,
+          })
+        } else {
+          evaluatedMap.set(providerKey, {
+            providerId: log.providerId ?? providerKey,
+            providerName: log.providerName || log.providerCode || providerKey,
+            costPrice: log.providerCost,
+            currency:
+              log.providerCurrency ?? (typeof meta.providerCurrency === 'string' ? meta.providerCurrency : null),
+            margin: null,
+            priority: typeof meta.providerPriority === 'number' ? meta.providerPriority : null,
+            eligibility: false,
+            skipped: true,
+            filterReason: skipReason,
+            skipReason,
+          })
+        }
+      }
       attempts.push({
         providerName: log.providerName || log.providerCode || '—',
         cost: log.providerCost,

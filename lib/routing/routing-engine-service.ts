@@ -122,20 +122,57 @@ function routingSortPrice(candidate: RoutingProviderCandidate): number {
   return Infinity
 }
 
-function ruleMatches(rule: RoutingRuleRow, ctx: RoutingResolveInput): boolean {
+function stripSystemOperatorRef(operatorId: string): string {
+  const t = operatorId.trim().toLowerCase()
+  return t.startsWith('system:') ? t.slice(7) : t
+}
+
+/** Country on rule may be a single ISO3 or comma-separated list (admin multi-select). */
+export function ruleCountryMatches(ruleCountry: string | null | undefined, ctxCountry: string): boolean {
+  if (!ruleCountry?.trim() || ruleCountry.trim() === '*') return true
+  const country = ctxCountry.trim().toUpperCase()
+  const parts = ruleCountry
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean)
+  if (parts.length === 0) return true
+  return parts.includes(country)
+}
+
+/** Rules store system_operators.id; routing context uses `system:{uuid}` after normalization. */
+export function ruleOperatorMatches(ruleOperator: string | null | undefined, ctxOperator: string): boolean {
+  if (!ruleOperator?.trim()) return true
+  const ruleOp = stripSystemOperatorRef(ruleOperator)
+  const ctxOp = stripSystemOperatorRef(ctxOperator)
+  if (ruleOp === ctxOp) return true
+  return ruleOperator.trim().toLowerCase() === ctxOperator.trim().toLowerCase()
+}
+
+export function ruleMatches(rule: RoutingRuleRow, ctx: RoutingResolveInput): boolean {
   const country = (ctx.countryId ?? '').toUpperCase()
-  const operator = (ctx.operatorId ?? '').toLowerCase()
   const productType = (ctx.productType ?? ctx.service ?? '').toLowerCase()
 
-  if (rule.countryId && rule.countryId !== '*' && rule.countryId.toUpperCase() !== country) return false
-  if (rule.operatorId && rule.operatorId.toLowerCase() !== operator) return false
+  if (!ruleCountryMatches(rule.countryId, country)) return false
+  if (!ruleOperatorMatches(rule.operatorId, ctx.operatorId ?? '')) return false
   if (rule.productType && rule.productType.toLowerCase() !== productType) return false
   return true
 }
 
-function pickRoutingRule(rules: RoutingRuleRow[], ctx: RoutingResolveInput): RoutingRuleRow | null {
-  const matched = rules.filter((r) => ruleMatches(r, ctx)).sort((a, b) => a.priority - b.priority)
-  return matched[0] ?? null
+function listMatchingRoutingRules(rules: RoutingRuleRow[], ctx: RoutingResolveInput): RoutingRuleRow[] {
+  return rules.filter((r) => ruleMatches(r, ctx)).sort((a, b) => a.priority - b.priority)
+}
+
+/** Walk matching rules by priority; return the first whose provider is mapped and eligible. */
+export function resolveViableRoutingRule(
+  rules: RoutingRuleRow[],
+  ctx: RoutingResolveInput,
+  eligible: RoutingProviderCandidate[],
+): { rule: RoutingRuleRow; candidate: RoutingProviderCandidate } | null {
+  for (const rule of listMatchingRoutingRules(rules, ctx)) {
+    const candidate = eligible.find((e) => e.providerId === rule.providerId)
+    if (candidate) return { rule, candidate }
+  }
+  return null
 }
 
 type MappingRow = CandidateMappingRow
@@ -684,49 +721,79 @@ export class RoutingEngineService {
       }
     }
 
+    let applicableRulesWithoutViableProvider = 0
+
     if (schemaReady && effectiveSettings.enabled) {
       const rules = await listActiveRoutingRules()
-      const rule = pickRoutingRule(rules, normalizedInput)
-      if (rule) {
+      const matchingRules = listMatchingRoutingRules(rules, normalizedInput)
+      applicableRulesWithoutViableProvider = matchingRules.length
+
+      for (const rule of matchingRules) {
         const forced = eligible.find((e) => e.providerId === rule.providerId)
-        if (forced) {
-          const fallbacks = effectiveSettings.autoFailover
-            ? buildFallbackChain(eligible, forced, effectiveSettings)
-            : []
-          const logId = await insertDetailedRoutingLog({
+        if (!forced) {
+          console.warn(
+            `[ROUTING] Rule "${rule.ruleName}" (priority ${rule.priority}) matched but provider ${rule.providerId} is not mapped/eligible — trying next rule`,
+          )
+          await insertDetailedRoutingLog({
             transactionId: normalizedInput.transactionId ?? '',
             countryCode: normalizedInput.countryId ?? '',
             operatorCode: normalizedInput.operatorId ?? '',
             planId: normalizedInput.productId,
             routingStrategy: effectiveSettings.routingStrategy,
-            routingRuleMatched: 'Yes',
+            routingRuleMatched: 'No',
             routingRuleId: rule.id,
-            routingRuleProvider: forced.providerName || forced.providerId,
-            selectedProvider: forced.providerId,
-            providerPriority: forced.providerPriority,
-            executionResult: 'RULE_MATCHED',
+            routingRuleProvider: rule.providerName || rule.providerCode || rule.providerId,
+            selectedProvider: rule.providerId,
+            executionResult: 'RULE_PROVIDER_INELIGIBLE',
+            failureReason:
+              'Rule provider is not mapped or eligible for this plan — skipped to try next rule or LCR',
             verificationMappingCount: mapping_count,
-            ...detailedRoutingLogPricingInput(pricingFieldsFromCandidate(forced), {
-              providerPlanId: forced.providerPlanId,
-            }),
-          })
-          return {
-            routingType: 'RULE',
-            ruleId: rule.id,
-            ruleName: rule.ruleName,
-            selected: forced,
-            fallbacks,
-            evaluated,
-            ruleApplied: 'RULE',
-            settings: effectiveSettings,
-            logId: logId ?? undefined,
-            routing_decision_reason: 'RULE_MATCHED',
-            internal_plan_id: normalizedInput.productId,
-            mapping_count,
-            candidate_provider_count,
-            eligible_provider_count,
-          }
+          }).catch(() => {})
+          continue
         }
+
+        const fallbacks = effectiveSettings.autoFailover
+          ? buildFallbackChain(eligible, forced, effectiveSettings)
+          : []
+        const logId = await insertDetailedRoutingLog({
+          transactionId: normalizedInput.transactionId ?? '',
+          countryCode: normalizedInput.countryId ?? '',
+          operatorCode: normalizedInput.operatorId ?? '',
+          planId: normalizedInput.productId,
+          routingStrategy: effectiveSettings.routingStrategy,
+          routingRuleMatched: 'Yes',
+          routingRuleId: rule.id,
+          routingRuleProvider: forced.providerName || forced.providerId,
+          selectedProvider: forced.providerId,
+          providerPriority: forced.providerPriority,
+          executionResult: 'RULE_MATCHED',
+          verificationMappingCount: mapping_count,
+          ...detailedRoutingLogPricingInput(pricingFieldsFromCandidate(forced), {
+            providerPlanId: forced.providerPlanId,
+          }),
+        })
+        return {
+          routingType: 'RULE',
+          ruleId: rule.id,
+          ruleName: rule.ruleName,
+          selected: forced,
+          fallbacks,
+          evaluated,
+          ruleApplied: 'RULE',
+          settings: effectiveSettings,
+          logId: logId ?? undefined,
+          routing_decision_reason: 'RULE_MATCHED',
+          internal_plan_id: normalizedInput.productId,
+          mapping_count,
+          candidate_provider_count,
+          eligible_provider_count,
+        }
+      }
+
+      if (matchingRules.length > 0) {
+        console.log(
+          `[ROUTING] ${matchingRules.length} routing rule(s) matched context but none had a viable provider — using LCR`,
+        )
       }
     }
 
@@ -740,7 +807,9 @@ export class RoutingEngineService {
       : sorted.slice(1)
 
     let decisionReason = 'LEAST_COST_SELECTED'
-    if (effectiveSettings.routingStrategy === 'HIGHEST_MARGIN') {
+    if (applicableRulesWithoutViableProvider > 0) {
+      decisionReason = 'NO_VIABLE_ROUTING_RULE'
+    } else if (effectiveSettings.routingStrategy === 'HIGHEST_MARGIN') {
       decisionReason = 'HIGHEST_MARGIN_SELECTED'
     } else if (effectiveSettings.routingStrategy === 'PRIORITY') {
       decisionReason = 'PRIORITY_SELECTED'

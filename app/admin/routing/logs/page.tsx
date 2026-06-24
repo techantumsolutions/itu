@@ -446,14 +446,20 @@ export default function RoutingLogsPage() {
                                         return Array.isArray(evaluatedList) && evaluatedList.length > 0 ? (
                                           evaluatedList.map((ev: any, idx: number) => {
                                             const providerName = ev.providerName || ev.providerId || ev.provider || '—'
-                                            const isEligible = ev.eligibility ?? ev.eligible ?? false
+                                            const isSkipped = ev.skipped === true
+                                            const isEligible = !isSkipped && (ev.eligibility ?? ev.eligible ?? false)
                                             const cost = ev.provider_wholesale_amount ?? ev.costPrice ?? ev.cost
                                             const currency = ev.provider_wholesale_currency ?? ev.currency
                                             const costDisplay = formatProviderCostDual(cost, currency).providerCostDisplay
                                             const margin = ev.margin
                                             const priority = ev.priority
-                                            const reason = ev.filterReason ?? ev.reason
-                                            const isSelected = ev.providerId === detail.routing_decision?.selected_provider || ev.provider === detail.routing_decision?.selected_provider || providerName === detail.routing_decision?.selected_provider
+                                            const reason =
+                                              ev.skipReason ?? ev.filterReason ?? ev.reason
+                                            const isSelected =
+                                              ev.providerId === detail.routing_decision?.selected_provider_id ||
+                                              ev.providerId === detail.routing_decision?.selected_provider ||
+                                              ev.provider === detail.routing_decision?.selected_provider ||
+                                              providerName === detail.routing_decision?.selected_provider
 
                                             return (
                                               <div 
@@ -461,26 +467,39 @@ export default function RoutingLogsPage() {
                                                 className={`flex flex-col p-3 rounded border text-xs gap-1 ${
                                                   isSelected 
                                                     ? 'border-primary bg-primary/5 shadow-sm' 
-                                                    : isEligible 
-                                                      ? 'bg-muted/20' 
-                                                      : 'bg-muted/10 opacity-60'
+                                                    : isSkipped
+                                                      ? 'border-amber-300 bg-amber-50/40'
+                                                      : isEligible 
+                                                        ? 'bg-muted/20' 
+                                                        : 'bg-muted/10 opacity-60'
                                                 }`}
                                               >
                                                 <div className="flex justify-between items-center">
                                                   <span className="font-semibold text-sm">{providerName}</span>
                                                   <div className="flex gap-2">
                                                     {priority != null && <Badge variant="outline" className="text-[10px]">Priority {priority}</Badge>}
-                                                    <Badge variant={isEligible ? 'success' : 'destructive'} className="text-[10px]">
-                                                      {isEligible ? 'Eligible' : 'Filtered'}
-                                                    </Badge>
+                                                    {isSkipped ? (
+                                                      <Badge variant="outline" className="text-[10px] border-amber-500 text-amber-800 bg-amber-50">
+                                                        Skipped
+                                                      </Badge>
+                                                    ) : (
+                                                      <Badge variant={isEligible ? 'success' : 'destructive'} className="text-[10px]">
+                                                        {isEligible ? 'Eligible' : 'Filtered'}
+                                                      </Badge>
+                                                    )}
                                                   </div>
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-2 mt-1 text-muted-foreground">
                                                   <div>Cost: <span className="font-medium text-foreground">{costDisplay}</span></div>
-                                                  <div>Margin: <span className="font-medium text-foreground">{margin != null ? `${margin}%` : 'N/A'}</span></div>
+                                                  {/* <div>Margin: <span className="font-medium text-foreground">{margin != null ? `${margin}%` : 'N/A'}</span></div> */}
                                                 </div>
-                                                {!isEligible && reason && (
-                                                  <div className="text-destructive mt-1 font-medium bg-destructive/5 px-1.5 py-0.5 rounded border border-destructive/10">Reason: {reason}</div>
+                                                {isSkipped && reason && (
+                                                  <div className="text-amber-900 mt-1 font-medium bg-amber-100/60 px-1.5 py-0.5 rounded border border-amber-200">
+                                                    Skipped: {reason}
+                                                  </div>
+                                                )}
+                                                {!isSkipped && !isEligible && reason && (
+                                                  <div className="text-destructive mt-1 font-medium bg-destructive/5 px-1.5 py-0.5 rounded border border-destructive/10">Filtered: {reason}</div>
                                                 )}
                                               </div>
                                             )

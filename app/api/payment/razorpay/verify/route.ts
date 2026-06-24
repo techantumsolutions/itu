@@ -48,7 +48,51 @@ export async function POST(request: Request) {
 
     // --- New checkout flow (paymentOrderId present) ---
     if (paymentOrderId) {
-      // Mark payment_orders as paid
+      // Mark payment_orders as paid (idempotent)
+      const poResBefore = await supabaseRest(
+        `payment_orders?id=eq.${enc(paymentOrderId)}&select=id,status,plan_id,mobile_number,operator_id,country_id,amount,currency,user_id,metadata,checkout_session_id,pending_transaction_id,lcr_attempt_id&limit=1`,
+        { cache: 'no-store' },
+      )
+      const poRowsBefore = poResBefore.ok ? ((await poResBefore.json()) as Array<Record<string, unknown>>) : []
+      const poBefore = poRowsBefore[0]
+
+      if (poBefore?.status === 'paid') {
+        const metadata = (poBefore.metadata && typeof poBefore.metadata === 'object' ? poBefore.metadata : {}) as Record<string, any>
+        const checkoutSessionId =
+          (typeof poBefore.checkout_session_id === 'string' && poBefore.checkout_session_id) ||
+          (typeof poBefore.pending_transaction_id === 'string' && poBefore.pending_transaction_id) ||
+          ''
+
+        if (checkoutSessionId) {
+          const systemPlanId =
+            typeof metadata.system_plan_id === 'string' ? metadata.system_plan_id.trim() : ''
+          const result = await executeCheckout({
+            paymentOrderId,
+            planId: String(poBefore.plan_id ?? ''),
+            systemPlanId: systemPlanId || undefined,
+            mobileNumber: String(poBefore.mobile_number ?? ''),
+            operatorId: String(poBefore.operator_id ?? ''),
+            countryId: String(poBefore.country_id ?? ''),
+            amount: Number(poBefore.amount ?? 0),
+            currency: String(poBefore.currency ?? 'INR'),
+            razorpayPaymentId: razorpay_payment_id,
+            userId: poBefore.user_id ? String(poBefore.user_id) : undefined,
+            checkoutSessionId,
+            pendingTransactionId: checkoutSessionId,
+          })
+          return NextResponse.json({
+            ok: result.ok,
+            transactionId: result.transactionId,
+            providerRef: result.providerRef,
+            providerName: result.providerName,
+            status: result.status,
+            error: result.error,
+            hints: result.hints,
+            rewardPointsEarned: result.rewardPointsEarned ?? 0,
+          })
+        }
+      }
+
       await supabaseRest(`payment_orders?id=eq.${enc(paymentOrderId)}`, {
         method: 'PATCH',
         headers: { Prefer: 'return=minimal' },
@@ -57,7 +101,7 @@ export async function POST(request: Request) {
 
       // Load payment order details for checkout execution
       const poRes = await supabaseRest(
-        `payment_orders?id=eq.${enc(paymentOrderId)}&select=id,plan_id,mobile_number,operator_id,country_id,amount,currency,user_id,metadata&limit=1`,
+        `payment_orders?id=eq.${enc(paymentOrderId)}&select=id,plan_id,mobile_number,operator_id,country_id,amount,currency,user_id,metadata,checkout_session_id,pending_transaction_id&limit=1`,
         { cache: 'no-store' },
       )
       const poRows = poRes.ok ? ((await poRes.json()) as Array<Record<string, unknown>>) : []
@@ -157,6 +201,17 @@ export async function POST(request: Request) {
       const systemPlanId =
         typeof metadata.system_plan_id === 'string' ? metadata.system_plan_id.trim() : ''
 
+      const checkoutSessionId =
+        (typeof po.checkout_session_id === 'string' && po.checkout_session_id) ||
+        (typeof po.pending_transaction_id === 'string' && po.pending_transaction_id) ||
+        ''
+
+      console.log('[PAYMENT LOG] payment successful', {
+        paymentOrderId,
+        checkoutSessionId,
+        razorpayPaymentId: razorpay_payment_id,
+      })
+
       const result = await executeCheckout({
         paymentOrderId,
         planId: String(po.plan_id ?? ''),
@@ -170,6 +225,8 @@ export async function POST(request: Request) {
         userId: po.user_id ? String(po.user_id) : undefined,
         usedWalletBalance,
         walletCurrency,
+        checkoutSessionId: checkoutSessionId || undefined,
+        pendingTransactionId: checkoutSessionId || undefined,
       })
 
       return NextResponse.json({

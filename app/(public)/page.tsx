@@ -482,19 +482,24 @@ export default function HomePage() {
   const heroLine2 = welcomeHero ? '' : (titleParts[1] ?? 'anytime anywhere')
 
   const goRechargeWithCountry = (code: string) => {
-    const c = catalogCountries.find((x) => x.code === code)
-    if (!c) {
-      router.push('/recharge')
+    const normalized = code.trim().toUpperCase()
+    if (!/^[A-Z]{2}$/.test(normalized)) {
+      router.push('/topup')
       return
     }
-    setCountry({
-      code: c.code,
-      name: c.name,
-      flag: c.flag,
-      dialCode: c.dialCode,
-      dialingInfo: [{ prefix: c.dialCode, minLength: 10, maxLength: 15 }],
-    })
-    router.push('/recharge')
+    const c = catalogCountries.find((x) => x.code.toUpperCase() === normalized)
+    setTopupPhone({ countryCode: normalized, phoneNumber: '' })
+    setPhoneNumber('')
+    if (c) {
+      setCountry({
+        code: c.code,
+        name: c.name,
+        flag: c.flag,
+        dialCode: c.dialCode,
+        dialingInfo: [{ prefix: c.dialCode, minLength: 10, maxLength: 15 }],
+      })
+    }
+    router.push(`/topup?country=${encodeURIComponent(normalized)}`)
   }
 
   return (

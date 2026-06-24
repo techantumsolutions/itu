@@ -12,9 +12,12 @@ import {
   validateProviderExecutionContext,
 } from '@/lib/lcr-v2/provider-execution-context'
 import type { ProviderPayloadStrategy } from '@/lib/routing/provider-payload-strategy'
+import { checkProviderWalletBalance, DING_INSUFFICIENT_BALANCE_LOG } from '@/lib/lcr-v2/provider-balance-check'
 
 export type ProviderPreValidationInput = {
   executionContext: ProviderExecutionContext
+  /** Optional `lcr_providers` row for per-provider wallet balance checks. */
+  providerRow?: Record<string, unknown> | null
 }
 
 export type ProviderValidationDebug = {
@@ -119,13 +122,13 @@ async function validateWholesaleStrategy(ctx: ProviderExecutionContext): Promise
       logValidation(debug)
       return {
         eligible: false,
-        logMessage: '[LCR] Provider skipped: insufficient provider balance',
+        logMessage: DING_INSUFFICIENT_BALANCE_LOG,
         reason: 'insufficient_balance',
         debug,
       }
     }
   } catch {
-    // proceed
+    // proceed — detailed check in checkProviderWalletBalance
   }
 
   logValidation(debug)
@@ -272,6 +275,22 @@ export async function providerPreValidation(
     }
   }
 
+  const balanceCheck = await checkProviderWalletBalance({
+    ctx,
+    providerRow: input.providerRow,
+  })
+  if (balanceCheck.checked && !balanceCheck.sufficient) {
+    const logMessage =
+      balanceCheck.logMessage ??
+      `[LCR] Provider skipped: insufficient provider balance (need ${balanceCheck.requiredAmount}, have ${balanceCheck.availableBalance})`
+    console.log(logMessage)
+    return {
+      eligible: false,
+      logMessage,
+      reason: balanceCheck.reason ?? 'insufficient_balance',
+    }
+  }
+
   let result: ProviderPreValidationResult
   switch (ctx.providerPayloadStrategy) {
     case 'WHOLESALE_AMOUNT':
@@ -301,4 +320,4 @@ export function isDingInsufficientBalance(errorCode?: string, errorMessage?: str
   return code === 'InsufficientBalance' || msg.includes('insufficientbalance')
 }
 
-export const DING_INSUFFICIENT_BALANCE_LOG = '[LCR] Provider skipped: insufficient provider balance'
+export { DING_INSUFFICIENT_BALANCE_LOG } from '@/lib/lcr-v2/provider-balance-check'

@@ -171,6 +171,99 @@ describe('RoutingEngineService', () => {
     expect(result.selected?.providerId).toBe('p-dtone')
   })
 
+  it('tries next rule by priority when first rule provider is not mapped', async () => {
+    mockMappings([
+      { provider_id: 'p-ding', provider_plan_id: 'plan-g', provider_price: 8, provider_currency: 'EUR' },
+      { provider_id: 'p-vt', provider_plan_id: 'plan-v', provider_price: 12, provider_currency: 'EUR' },
+    ])
+    mockedRules.mockResolvedValue([
+      {
+        id: 'rule-1',
+        ruleName: 'Force DT One',
+        countryId: 'IND',
+        operatorId: 'airtel',
+        productType: null,
+        providerId: 'p-dtone',
+        priority: 1,
+        status: 'ACTIVE',
+        effectiveFrom: null,
+        effectiveTo: null,
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 'rule-2',
+        ruleName: 'Force Value Topup',
+        countryId: 'IND',
+        operatorId: 'airtel',
+        productType: null,
+        providerId: 'p-vt',
+        priority: 2,
+        status: 'ACTIVE',
+        effectiveFrom: null,
+        effectiveTo: null,
+        createdAt: '',
+        updatedAt: '',
+      },
+    ])
+
+    const result = await service.resolveProvider({
+      countryId: 'IND',
+      operatorId: 'airtel',
+      productId: 'plan-priority',
+    })
+
+    expect(result.routingType).toBe('RULE')
+    expect(result.ruleId).toBe('rule-2')
+    expect(result.selected?.providerId).toBe('p-vt')
+  })
+
+  it('uses LCR when all matching rules have unmapped providers', async () => {
+    mockMappings([
+      { provider_id: 'p-ding', provider_plan_id: 'plan-g', provider_price: 8, provider_currency: 'EUR' },
+    ])
+    mockedRules.mockResolvedValue([
+      {
+        id: 'rule-1',
+        ruleName: 'Force DT One',
+        countryId: 'IND',
+        operatorId: 'airtel',
+        productType: null,
+        providerId: 'p-dtone',
+        priority: 1,
+        status: 'ACTIVE',
+        effectiveFrom: null,
+        effectiveTo: null,
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 'rule-2',
+        ruleName: 'Force Value Topup',
+        countryId: 'IND',
+        operatorId: 'airtel',
+        productType: null,
+        providerId: 'p-vt',
+        priority: 2,
+        status: 'ACTIVE',
+        effectiveFrom: null,
+        effectiveTo: null,
+        createdAt: '',
+        updatedAt: '',
+      },
+    ])
+
+    const result = await service.resolveProvider({
+      countryId: 'IND',
+      operatorId: 'airtel',
+      productId: 'plan-lcr-fallback',
+    })
+
+    expect(result.routingType).toBe('LCR')
+    expect(result.selected?.providerId).toBe('p-ding')
+    expect(result.routing_decision_reason).toBe('NO_VIABLE_ROUTING_RULE')
+  })
+
   it('selects lowest normalized cost when no rule exists (Ding = 8 EUR)', async () => {
     mockMappings([
       { provider_id: 'p-dtone', provider_plan_id: 'plan-d', provider_price: 10, provider_currency: 'EUR' },

@@ -5,6 +5,10 @@ import {
   buildRoutingAuditDetailFromLogs,
   enrichRoutingLogsWithPricing,
   listRoutingLogsForTransaction,
+  mergeEvaluatedProvidersWithSkipEvents,
+  mergeRoutingAttempts,
+  type EvaluatedProviderAuditRow,
+  type RoutingAuditAttempt,
 } from '@/lib/routing/repository'
 import { formatProviderCostDual, mergeRoutingLogPricing } from '@/lib/routing/log-pricing'
 import { resolvePlanMappingPricing } from '@/lib/routing/plan-mapping-pricing'
@@ -66,6 +70,9 @@ export async function GET(request: Request) {
   }
 
   try {
+    const routingLogs = await listRoutingLogsForTransaction(transactionId)
+    const logsAudit = routingLogs.length ? buildRoutingAuditDetailFromLogs(routingLogs) : null
+
     const attempt = await dbFindRechargeByDistributorRef(transactionId).catch(() => null)
     if (attempt) {
       const routingDecision =
@@ -103,41 +110,88 @@ export async function GET(request: Request) {
         },
       )
 
-      const attempts = Array.isArray(attempt.attempts) ? attempt.attempts : []
+      const attemptsRaw = Array.isArray(attempt.attempts) ? attempt.attempts : []
       const evaluatedRaw = routingDecision.evaluated_providers ?? routingDecision.evaluatedProviders
-      const evaluatedList = Array.isArray(evaluatedRaw) ? [...evaluatedRaw] : []
-      for (const hop of attempts) {
+      let evaluatedList: EvaluatedProviderAuditRow[] = Array.isArray(evaluatedRaw)
+        ? (evaluatedRaw as EvaluatedProviderAuditRow[]).map((ev) => ({ ...ev }))
+        : []
+
+      const skipSources: Array<{
+        providerId?: string | null
+        providerName?: string | null
+        skipReason?: string | null
+        filterReason?: string | null
+        skipped?: boolean
+      }> = []
+
+      for (const hop of attemptsRaw) {
         if (!hop?.skipped) continue
-        const hopId = hop.providerId ?? hop.providerName
-        if (!hopId) continue
-        const idx = evaluatedList.findIndex(
-          (ev: any) =>
-            ev?.providerId === hop.providerId ||
-            ev?.providerName === hop.providerName ||
-            ev?.provider === hop.providerName,
-        )
-        const skipReason = hop.skipReason ?? hop.errorMessage ?? hop.error ?? 'Pre-validation skipped'
-        if (idx >= 0) {
-          evaluatedList[idx] = {
-            ...evaluatedList[idx],
-            eligibility: false,
-            eligible: false,
-            filterReason: skipReason,
-            reason: skipReason,
+        skipSources.push({
+          providerId: hop.providerId ?? null,
+          providerName: hop.providerName ?? hop.providerId ?? null,
+          skipReason: hop.skipReason ?? hop.errorMessage ?? hop.error ?? null,
+          skipped: true,
+        })
+      }
+
+      if (logsAudit) {
+        const logEvaluated = logsAudit.routing_decision.evaluated_providers
+        if (Array.isArray(logEvaluated)) {
+          for (const ev of logEvaluated as EvaluatedProviderAuditRow[]) {
+            if (ev.skipped || ev.skipReason) {
+              skipSources.push({
+                providerId: ev.providerId ?? null,
+                providerName: ev.providerName ?? ev.provider ?? null,
+                skipReason: ev.skipReason ?? ev.filterReason ?? ev.reason ?? null,
+                filterReason: ev.filterReason ?? null,
+                skipped: Boolean(ev.skipped),
+              })
+            }
           }
-        } else {
-          evaluatedList.push({
-            providerId: hop.providerId,
-            providerName: hop.providerName ?? hop.providerId,
-            costPrice: hop.cost ?? null,
-            currency: hop.currency ?? null,
-            eligibility: false,
-            eligible: false,
-            filterReason: skipReason,
-            reason: skipReason,
+        }
+        for (const hop of logsAudit.attempts) {
+          if (!hop.skipped) continue
+          skipSources.push({
+            providerName: hop.providerName,
+            skipReason: hop.skipReason ?? hop.errorMessage ?? hop.error ?? null,
+            skipped: true,
           })
         }
       }
+
+      evaluatedList = mergeEvaluatedProvidersWithSkipEvents(evaluatedList, skipSources)
+
+      const attemptsFromDb: RoutingAuditAttempt[] = attemptsRaw.map((hop: Record<string, unknown>) => {
+        const hopDual = formatProviderCostDual(
+          hop.cost != null ? Number(hop.cost) : null,
+          (hop.currency as string | null) ?? wholesaleCurrency,
+        )
+        return {
+          providerName: String(hop.providerName || hop.providerId || '—'),
+          cost: hop.cost != null ? Number(hop.cost) : null,
+          currency: (hop.currency as string | null) ?? pricing.providerCurrency,
+          costDisplay: hopDual.providerCostDisplay,
+          source: (hop.source as 'RULE' | 'LCR') ?? 'LCR',
+          ok: Boolean(hop.ok),
+          skipped: Boolean(hop.skipped),
+          skipReason: (hop.skipReason as string | undefined) ?? (hop.errorMessage as string | undefined),
+          error: hop.error as string | undefined,
+          errorCode: hop.errorCode as string | undefined,
+          errorMessage: hop.errorMessage as string | undefined,
+          requestMethod: hop.requestMethod as string | null | undefined,
+          requestUrl: hop.requestUrl as string | null | undefined,
+          requestPath: (hop.requestPath as string | null | undefined) ?? (hop.requestUrl as string | null | undefined),
+          requestBody: hop.requestBody as Record<string, unknown> | null | undefined,
+        }
+      })
+
+      const mergedAttempts = mergeRoutingAttempts(attemptsFromDb, logsAudit?.attempts ?? []).map((hop) => {
+        const hopDual = formatProviderCostDual(hop.cost ?? null, hop.currency ?? wholesaleCurrency)
+        return {
+          ...hop,
+          costDisplay: hopDual.providerCostDisplay,
+        }
+      })
 
       const routingDecisionWithSkips = {
         ...routingDecision,
@@ -191,31 +245,12 @@ export async function GET(request: Request) {
           pricing_debug: enrichedEvaluated.pricingDebug,
           orphan_providers: enrichedEvaluated.orphanProviders,
           consistency_report: consistencyReport,
-          attempts: attempts.map((hop: any) => {
-            const hopDual = formatProviderCostDual(hop.cost ?? null, hop.currency ?? wholesaleCurrency)
-            return {
-              providerName: hop.providerName || hop.providerId || '—',
-              cost: hop.cost ?? null,
-              currency: hop.currency ?? pricing.providerCurrency,
-              costDisplay: hopDual.providerCostDisplay,
-              source: hop.source ?? 'LCR',
-              ok: Boolean(hop.ok),
-              skipped: Boolean(hop.skipped),
-              skipReason: hop.skipReason ?? hop.errorMessage,
-              error: hop.error,
-              errorCode: hop.errorCode,
-              errorMessage: hop.errorMessage,
-              requestMethod: hop.requestMethod ?? null,
-              requestUrl: hop.requestUrl ?? null,
-              requestPath: hop.requestPath ?? hop.requestUrl ?? null,
-              requestBody: hop.requestBody ?? null,
-            }
-          }),
+          attempts: mergedAttempts,
         },
       })
     }
 
-    const logs = await listRoutingLogsForTransaction(transactionId)
+    const logs = routingLogs.length ? routingLogs : await listRoutingLogsForTransaction(transactionId)
     const enrichedLogs = await enrichRoutingLogsWithPricing(logs)
     const audit = buildRoutingAuditDetailFromLogs(enrichedLogs)
     if (!audit) {

@@ -1,13 +1,9 @@
 /**
- * Post-payment checkout service.
+ * Checkout service.
  *
- * After Razorpay payment is verified, this service:
- *   1. Creates a PENDING recharge transaction
- *   2. Executes the routing engine to select a provider
- *   3. Sends the recharge through the selected provider
- *   4. Updates all records with the result
- *
- * Does NOT modify the routing engine, LCR engine, or provider connectors.
+ * Pre-payment (Buy Now): `prepareCheckout` runs routing + LCR and locks one provider.
+ * Post-payment: `executeCheckout` with `checkoutSessionId` executes the stored provider only (no re-LCR).
+ * Legacy path: `executeCheckout` without `checkoutSessionId` still runs the full post-payment routing flow.
  */
 
 import { supabaseRest } from '@/lib/db/supabase-rest'
@@ -36,6 +32,8 @@ import {
   detailedRoutingLogPricingInput,
 } from '@/lib/routing/provider-pricing-log-fields'
 import type { RoutingProviderCandidate } from '@/lib/routing/types'
+import type { CheckoutInput, CheckoutResult } from '@/lib/topup/checkout-types'
+import { executePostPaymentRecharge } from '@/lib/topup/post-payment-recharge'
 
 function routingSourceForHop(
   hopIndex: number,
@@ -53,35 +51,6 @@ function candidatePricingLog(candidate: RoutingProviderCandidate | null | undefi
 
 function enc(v: string): string {
   return encodeURIComponent(v)
-}
-
-export type CheckoutInput = {
-  paymentOrderId: string
-  planId: string
-  systemPlanId?: string
-  mobileNumber: string
-  operatorId: string
-  countryId: string
-  amount: number
-  currency: string
-  razorpayPaymentId: string
-  userId?: string
-  hideTransactionFromUser?: boolean
-  usedWalletBalance?: number
-  walletCurrency?: string
-}
-
-export type CheckoutResult = {
-  ok: boolean
-  transactionId?: string
-  rechargeOrderId?: string
-  providerRef?: string
-  providerName?: string
-  providerCode?: string
-  status: 'success' | 'failed'
-  error?: string
-  hints?: string[]
-  rewardPointsEarned?: number
 }
 
 /** Sum the reward points earned for a specific transaction from reward_ledger. */
@@ -207,6 +176,10 @@ async function updateRechargeOrder(id: string, patch: Record<string, unknown>) {
  * Payment verified → Create transaction → Route → Execute provider → Update status
  */
 export async function executeCheckout(input: CheckoutInput): Promise<CheckoutResult> {
+  if (input.checkoutSessionId || input.pendingTransactionId) {
+    return executePostPaymentRecharge(input)
+  }
+
   const hints: string[] = []
   const logHint = (msg: string) => {
     const formatted = `[RECHARGE HINT] ${msg}`
@@ -849,3 +822,5 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
   const rewardPointsEarned = await getEarnedPoints(transactionId).catch(() => 0)
   return { ok: false, transactionId, rechargeOrderId: rechargeOrderId ?? undefined, status: 'failed', error: errMsg, hints, rewardPointsEarned }
 }
+
+export type { CheckoutInput, CheckoutResult } from '@/lib/topup/checkout-types'
