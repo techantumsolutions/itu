@@ -1,6 +1,24 @@
 import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { listRoutingLogs, enrichRoutingLogsWithPricing } from '@/lib/routing/repository'
+import { parseRoutingLogStatus } from '@/lib/routing/log-pricing'
+
+function wholesaleFromGroupedLog(log: {
+  providerCost: number | null
+  providerCurrency?: string | null
+  status: string
+}) {
+  const meta = parseRoutingLogStatus(log.status)
+  const amount =
+    typeof meta.provider_wholesale_amount === 'number' && Number.isFinite(meta.provider_wholesale_amount)
+      ? meta.provider_wholesale_amount
+      : log.providerCost
+  const currency =
+    typeof meta.provider_wholesale_currency === 'string' && meta.provider_wholesale_currency
+      ? String(meta.provider_wholesale_currency).toUpperCase()
+      : log.providerCurrency ?? null
+  return { amount: amount ?? null, currency }
+}
 
 export async function GET(request: Request) {
   if (!(await adminCanUseFeature(request, 'routing', { allowLegacyHeader: true }))) {
@@ -99,33 +117,40 @@ export async function GET(request: Request) {
         if (parsed.attemptNumber && parsed.attemptNumber > maxAttempt) {
           maxAttempt = parsed.attemptNumber
         }
-        if (typeof parsed.provider_wholesale_currency === 'string' && parsed.provider_wholesale_currency) {
-          resolvedProviderCurrency = String(parsed.provider_wholesale_currency).toUpperCase()
-        } else if (typeof parsed.providerCurrency === 'string' && parsed.providerCurrency) {
-          resolvedProviderCurrency = String(parsed.providerCurrency).toUpperCase()
-        }
-        if (typeof parsed.provider_wholesale_amount === 'number' && Number.isFinite(parsed.provider_wholesale_amount)) {
-          resolvedCost = parsed.provider_wholesale_amount
-        } else if (typeof parsed.providerCost === 'number' && Number.isFinite(parsed.providerCost)) {
-          resolvedCost = parsed.providerCost
+
+        const isFinalProviderCostEvent =
+          event === 'RECHARGE_SUCCESS' ||
+          event === 'RULE_MATCHED' ||
+          event === 'RULE_PROVIDER_SELECTED' ||
+          event === 'LCR_PROVIDER_SELECTED' ||
+          event === 'LEAST_COST_SELECTED' ||
+          event === 'PRIORITY_SELECTED' ||
+          event === 'HIGHEST_MARGIN_SELECTED' ||
+          event === 'RETRY_PROVIDER_SELECTED'
+
+        if (isFinalProviderCostEvent) {
+          const wholesale = wholesaleFromGroupedLog({
+            providerCost: log.providerCost,
+            providerCurrency: log.providerCurrency,
+            status: log.status,
+          })
+          if (wholesale.amount != null) {
+            resolvedCost = wholesale.amount
+            if (wholesale.currency) resolvedProviderCurrency = wholesale.currency
+          }
         }
 
-        // Keep the latest non-null provider cost and identity from the same routing/attempt event.
-        if (log.providerCost != null) {
-          resolvedCost = log.providerCost
-          resolvedProviderCurrency = log.providerCurrency ?? resolvedProviderCurrency
-          resolvedUserAmount = log.userAmount ?? resolvedUserAmount
-          resolvedUserCurrency = log.userCurrency ?? resolvedUserCurrency
-          if (log.providerId) resolvedProviderId = log.providerId
-          if (log.providerName || log.providerCode) {
-            resolvedProviderName = log.providerName ?? resolvedProviderName
-            resolvedProviderCode = log.providerCode ?? resolvedProviderCode
-          }
-        } else if ((log.providerName || log.providerCode) && !resolvedProviderName && !resolvedProviderCode) {
+        if ((log.providerName || log.providerCode) && !resolvedProviderName && !resolvedProviderCode) {
           resolvedProviderName = log.providerName ?? resolvedProviderName
           resolvedProviderCode = log.providerCode ?? resolvedProviderCode
         }
-        if (log.providerId && !resolvedProviderId) resolvedProviderId = log.providerId
+        if (log.providerId) resolvedProviderId = log.providerId
+        if (log.providerName || log.providerCode) {
+          resolvedProviderName = log.providerName ?? resolvedProviderName
+          resolvedProviderCode = log.providerCode ?? resolvedProviderCode
+        }
+        resolvedUserAmount = log.userAmount ?? resolvedUserAmount
+        resolvedUserCurrency = log.userCurrency ?? resolvedUserCurrency
         
         if (event === 'RECHARGE_SUCCESS') {
           outcomeStatus = 'success'
@@ -134,8 +159,6 @@ export async function GET(request: Request) {
           resolvedProviderName = log.providerName ?? resolvedProviderName
           resolvedProviderCode = log.providerCode ?? resolvedProviderCode
           resolvedProviderId = log.providerId ?? resolvedProviderId
-          resolvedCost = log.providerCost ?? resolvedCost
-          resolvedProviderCurrency = log.providerCurrency ?? resolvedProviderCurrency
           resolvedUserAmount = log.userAmount ?? resolvedUserAmount
           resolvedUserCurrency = log.userCurrency ?? resolvedUserCurrency
         } else if (

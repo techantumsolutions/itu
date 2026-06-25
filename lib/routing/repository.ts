@@ -6,6 +6,7 @@ import { batchResolvePlanMappingPricing } from '@/lib/routing/plan-mapping-prici
 import {
   authoritativePricingKey,
   resolveProviderPricingForInternalPlan,
+  resolveProviderPricingForSystemPlan,
 } from '@/lib/catalog/resolve-provider-pricing-for-system-plan'
 import { logAuthoritativeMappingMissing } from '@/lib/catalog/system-plan-pricing-consistency'
 import type { ProviderPricingDebugMeta } from '@/lib/catalog/provider-pricing-debug'
@@ -20,6 +21,22 @@ import type {
 
 function enc(v: string): string {
   return encodeURIComponent(v)
+}
+
+/** system_plan_id from recharge attempt routing_decision or routing log status JSON. */
+export function routingLogSystemPlanId(
+  attempt?: { routing_decision?: unknown } | null,
+  status?: string | null,
+): string | null {
+  const rd = attempt?.routing_decision
+  if (rd && typeof rd === 'object' && !Array.isArray(rd)) {
+    const id = (rd as Record<string, unknown>).system_plan_id
+    if (typeof id === 'string' && id.trim()) return id.trim()
+  }
+  if (!status) return null
+  const meta = parseRoutingLogStatus(status)
+  const id = meta.system_plan_id
+  return typeof id === 'string' && id.trim() ? id.trim() : null
 }
 
 let schemaReadyCache: boolean | null = null
@@ -372,6 +389,7 @@ export async function enrichRoutingLogsWithPricing<T extends RoutingLogRow>(logs
       routing_decision: unknown
       selected_provider_id: string | null
       selected_provider_plan_id: string | null
+      internal_plan_id: string | null
     }
   >()
   const transactionById = new Map<string, { amount: number | null; currency: string | null }>()
@@ -381,7 +399,7 @@ export async function enrichRoutingLogsWithPricing<T extends RoutingLogRow>(logs
       const chunk = transactionIds.slice(i, i + 50)
       const [attemptRes, txRes] = await Promise.all([
         supabaseRest(
-          `lcr_v2_recharge_attempts?distributor_ref=in.(${chunk.map(enc).join(',')})&select=distributor_ref,send_amount,currency,routing_decision,selected_provider_id,selected_provider_plan_id`,
+          `lcr_v2_recharge_attempts?distributor_ref=in.(${chunk.map(enc).join(',')})&select=distributor_ref,send_amount,currency,routing_decision,selected_provider_id,selected_provider_plan_id,internal_plan_id`,
           { cache: 'no-store' },
         ),
         supabaseRest(
@@ -398,6 +416,7 @@ export async function enrichRoutingLogsWithPricing<T extends RoutingLogRow>(logs
           routing_decision: unknown
           selected_provider_id: string | null
           selected_provider_plan_id: string | null
+          internal_plan_id: string | null
         }>
         for (const row of rows) {
           attemptByRef.set(row.distributor_ref, row)
@@ -418,23 +437,38 @@ export async function enrichRoutingLogsWithPricing<T extends RoutingLogRow>(logs
       const attempt = log.transactionId ? attemptByRef.get(log.transactionId) : undefined
       const providerId = log.providerId ?? attempt?.selected_provider_id ?? null
       const providerPlanId = attempt?.selected_provider_plan_id ?? null
-      if (!log.productId || !providerId) return null
-      return { planId: log.productId, providerId, providerPlanId }
+      const routingLogStatus = (log as RoutingLogRow & { routingLogStatus?: string }).routingLogStatus
+      const planId =
+        routingLogSystemPlanId(attempt, routingLogStatus ?? log.status) ??
+        log.productId ??
+        attempt?.internal_plan_id ??
+        null
+      if (!planId || !providerId) return null
+      return { planId, providerId, providerPlanId }
     })
     .filter((row): row is { planId: string; providerId: string; providerPlanId: string | null } => Boolean(row))
 
   const wholesaleByKey = await batchResolvePlanMappingPricing(planMappingLookups)
 
-  const internalPlanIds = [
-    ...new Set(logs.map((log) => log.productId).filter((id): id is string => Boolean(id))),
-  ]
-  const authoritativeByInternalPlan = new Map<
+  const authoritativeByPlanId = new Map<
     string,
     Awaited<ReturnType<typeof resolveProviderPricingForInternalPlan>>
   >()
-  for (const internalPlanId of internalPlanIds) {
-    const resolution = await resolveProviderPricingForInternalPlan(internalPlanId)
-    if (resolution) authoritativeByInternalPlan.set(internalPlanId, resolution)
+  const planIdsToLoad = new Set<string>()
+  for (const log of logs) {
+    const attempt = log.transactionId ? attemptByRef.get(log.transactionId) : undefined
+    const routingLogStatus = (log as RoutingLogRow & { routingLogStatus?: string }).routingLogStatus
+    const planId =
+      routingLogSystemPlanId(attempt, routingLogStatus ?? log.status) ??
+      log.productId ??
+      attempt?.internal_plan_id ??
+      null
+    if (planId) planIdsToLoad.add(planId)
+  }
+  for (const planId of planIdsToLoad) {
+    const asSystem = await resolveProviderPricingForSystemPlan(planId).catch(() => null)
+    const resolution = asSystem ?? (await resolveProviderPricingForInternalPlan(planId))
+    if (resolution) authoritativeByPlanId.set(planId, resolution)
   }
 
   return logs.map((log) => {
@@ -442,20 +476,25 @@ export async function enrichRoutingLogsWithPricing<T extends RoutingLogRow>(logs
     const tx = log.transactionId ? transactionById.get(log.transactionId) : undefined
     const providerId = log.providerId ?? attempt?.selected_provider_id ?? null
     const providerPlanId = attempt?.selected_provider_plan_id ?? null
+    const routingLogStatus = (log as RoutingLogRow & { routingLogStatus?: string }).routingLogStatus
+    const planIdForPricing =
+      routingLogSystemPlanId(attempt, routingLogStatus ?? log.status) ??
+      log.productId ??
+      attempt?.internal_plan_id ??
+      null
 
-    const authoritative =
-      log.productId != null ? authoritativeByInternalPlan.get(log.productId) : undefined
+    const authoritative = planIdForPricing ? authoritativeByPlanId.get(planIdForPricing) : undefined
     const authRow =
-      log.productId && providerId
+      planIdForPricing && providerId
         ? (providerPlanId
             ? authoritative?.byKey.get(authoritativePricingKey(providerId, providerPlanId))
             : null) ?? authoritative?.byProviderId.get(providerId)
         : undefined
 
-    if (log.productId && providerId && !authRow) {
+    if (planIdForPricing && providerId && !authRow) {
       logAuthoritativeMappingMissing({
         context: 'enrichRoutingLogsWithPricing',
-        internalPlanId: log.productId,
+        internalPlanId: planIdForPricing,
         providerId,
         providerName: log.providerName,
         providerPlanId,
@@ -470,9 +509,9 @@ export async function enrichRoutingLogsWithPricing<T extends RoutingLogRow>(logs
             destinationAmount: authRow.destination_face_value,
             destinationCurrency: authRow.destination_currency,
           }
-        : log.productId && providerId
-          ? wholesaleByKey.get(planMappingPricingKey(log.productId, providerId, providerPlanId)) ??
-            wholesaleByKey.get(planMappingPricingKey(log.productId, providerId, null))
+        : planIdForPricing && providerId
+          ? wholesaleByKey.get(planMappingPricingKey(planIdForPricing, providerId, providerPlanId)) ??
+            wholesaleByKey.get(planMappingPricingKey(planIdForPricing, providerId, null))
           : undefined
 
     const pricingSource: ProviderPricingDebugMeta | undefined = authRow
