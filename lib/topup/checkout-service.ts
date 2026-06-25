@@ -34,6 +34,7 @@ import {
 import type { RoutingProviderCandidate } from '@/lib/routing/types'
 import type { CheckoutInput, CheckoutResult } from '@/lib/topup/checkout-types'
 import { executePostPaymentRecharge } from '@/lib/topup/post-payment-recharge'
+import { toInternationalSubscriberDigits } from '@/lib/lcr/countries'
 
 function routingSourceForHop(
   hopIndex: number,
@@ -373,7 +374,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     idempotencyKey: input.razorpayPaymentId || null,
     distributorRef: transactionId,
     internalPlanId: canonicalInternalPlanId,
-    phoneNumber: normalizedInput.mobileNumber.replace(/\D/g, ''),
+    phoneNumber: toInternationalSubscriberDigits(normalizedInput.countryId, normalizedInput.mobileNumber),
     sendAmount: input.amount,
     currency: input.currency || 'INR',
     routingDecision: snapshot,
@@ -481,7 +482,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     }
 
     const adapterKey = String(provider.adapter_key || '').toLowerCase()
-    const phoneDigits = input.mobileNumber.replace(/\D/g, '')
+    const phoneDigits = toInternationalSubscriberDigits(input.countryId, input.mobileNumber)
     const externalId = `TXN-${transactionId.slice(0, 8).toUpperCase()}-${Date.now()}`
 
     const routingSource = routingSourceForHop(i, routingResult.routingType)

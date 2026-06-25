@@ -17,6 +17,7 @@ import {
   detailedRoutingLogPricingInput,
 } from '@/lib/routing/provider-pricing-log-fields'
 import type { RoutingProviderCandidate } from '@/lib/routing/types'
+import { toInternationalSubscriberDigits } from '@/lib/lcr/countries'
 import {
   providerPreValidation,
 } from '@/lib/lcr-v2/provider-pre-validation'
@@ -364,7 +365,10 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
     return { ok: false, transactionId, checkoutSessionId, error: errMsg }
   }
 
-  const phoneDigits = normalizedInput.mobileNumber.replace(/\D/g, '')
+  const phoneDigits = toInternationalSubscriberDigits(
+    normalizedInput.countryId,
+    normalizedInput.mobileNumber,
+  )
   const selection = await selectValidatedProviderFromChain({
     routingResult,
     transactionId,

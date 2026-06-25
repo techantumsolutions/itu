@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { CalendarDays, Check, ChevronDown, MessageSquareText, PhoneCall, Sparkles, Wifi } from 'lucide-react'
 import { useTopupStore, type TopupPlan } from '@/store/topupStore'
 import { getDialCode } from '@/lib/lcr/countries'
+import { buildInternationalMobile } from '@/lib/lcr/countries'
 import { flagEmojiFromIso } from '@/lib/lcr/countries'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
@@ -527,7 +528,7 @@ function TopupPlanSelectionContent() {
         body: JSON.stringify({
           planId: plan.internalPlanId || plan.id,
           systemPlanId: plan.systemPlanId || plan.id,
-          mobileNumber: `+${dialPrefix}${localPhone}`,
+          mobileNumber: buildInternationalMobile(countryCode, localPhone),
           operatorId: effectiveOperatorId,
           countryId: countryCode,
           amount: payableAmount,

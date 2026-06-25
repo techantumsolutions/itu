@@ -25,6 +25,7 @@ import {
 import type { RoutingDecisionSnapshot } from '@/lib/topup/routing-snapshot'
 import type { RoutingProviderCandidate } from '@/lib/routing/types'
 import type { CheckoutInput, CheckoutResult } from '@/lib/topup/checkout-types'
+import { toInternationalSubscriberDigits } from '@/lib/lcr/countries'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -257,7 +258,7 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
   const countryCode = plan?.country_iso3 ?? input.countryId ?? ''
   const operatorCode = plan?.operator_ref ?? input.operatorId ?? ''
   const adapterKey = String(provider.adapter_key || '').toLowerCase()
-  const phoneDigits = input.mobileNumber.replace(/\D/g, '')
+  const phoneDigits = toInternationalSubscriberDigits(input.countryId, input.mobileNumber)
   const externalId = `TXN-${transactionId.slice(0, 8).toUpperCase()}-${Date.now()}`
 
   const orphanCheck = await assertAuthoritativeProviderForRecharge({

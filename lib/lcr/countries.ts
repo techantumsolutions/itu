@@ -1,4 +1,6 @@
 /** ISO 3166-1 alpha-2 ↔ alpha-3 for public catalog APIs. */
+import { getCountryCallingCode, isSupportedCountry, type CountryCode } from 'libphonenumber-js'
+
 export const ISO2_TO_ISO3: Record<string, string> = {
   IN: 'IND',
   US: 'USA',
@@ -32,6 +34,7 @@ export const ISO2_TO_ISO3: Record<string, string> = {
   SG: 'SGP',
   TH: 'THA',
   VN: 'VNM',
+  KW: 'KWT',
 }
 
 export const ISO3_TO_ISO2: Record<string, string> = Object.fromEntries(
@@ -71,6 +74,7 @@ export const COUNTRY_NAMES: Record<string, string> = {
   SGP: 'Singapore',
   THA: 'Thailand',
   VNM: 'Vietnam',
+  KWT: 'Kuwait',
 }
 
 export const DIAL_CODES: Record<string, string> = {
@@ -106,21 +110,49 @@ export const DIAL_CODES: Record<string, string> = {
   SGP: '+65',
   THA: '+66',
   VNM: '+84',
+  KWT: '+965',
 }
 
 /** Resolve dial code from ISO2 (IN) or ISO3 (IND). Returns e.g. '91' (without +). */
 export function getDialCode(countryIso: string): string {
   const u = countryIso.trim().toUpperCase()
-  // Try ISO3 first
   const fromIso3 = DIAL_CODES[u]
   if (fromIso3) return fromIso3.replace('+', '')
-  // Try ISO2 → ISO3
-  const iso3 = ISO2_TO_ISO3[u]
+
+  const iso3 = u.length === 2 ? ISO2_TO_ISO3[u] : u.length === 3 ? u : undefined
   if (iso3) {
     const code = DIAL_CODES[iso3]
     if (code) return code.replace('+', '')
   }
-  return u // fallback to the input itself
+
+  const iso2 = u.length === 2 ? u : iso3 ? ISO3_TO_ISO2[iso3] : undefined
+  if (iso2 && isSupportedCountry(iso2)) {
+    try {
+      return getCountryCallingCode(iso2 as CountryCode)
+    } catch {
+      // fall through
+    }
+  }
+
+  return /^\d+$/.test(u) ? u : ''
+}
+
+/**
+ * E.164 mobile (+countryCode+national) from ISO country + local/national digits.
+ * Ensures country calling code is present for provider recharge APIs.
+ */
+export function buildInternationalMobile(countryIso: string, nationalOrFullNumber: string): string {
+  const digits = nationalOrFullNumber.replace(/\D/g, '')
+  if (!digits) return ''
+  const dial = getDialCode(countryIso)
+  if (!dial) return `+${digits}`
+  if (digits.startsWith(dial)) return `+${digits}`
+  return `+${dial}${digits}`
+}
+
+/** International subscriber digits without "+" for provider payloads. */
+export function toInternationalSubscriberDigits(countryIso: string, phoneInput: string): string {
+  return buildInternationalMobile(countryIso, phoneInput).replace(/^\+/, '')
 }
 
 /** Normalize user input to ISO 3166-1 alpha-3 (uppercase). Accepts alpha-2 or alpha-3. */

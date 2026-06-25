@@ -3,6 +3,7 @@ import { linkPaymentOrderToCheckoutSession } from '@/lib/topup/prepare-checkout-
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { supabaseGetUser } from '@/lib/supabase/auth-rest'
 import { runtimeEnv } from '@/lib/env/runtime'
+import { toRazorpayMinorUnits } from '@/lib/payments/razorpay-amount'
 
 async function getUserIdFromRequest(request: Request): Promise<string | null> {
   const cookie = request.headers.get('cookie') ?? ''
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
     }
 
     const orderPayload = {
-      amount: Math.round(amount * 100), // convert to paise
+      amount: toRazorpayMinorUnits(amount, currency),
       currency,
       notes: {
         plan_id: planId,

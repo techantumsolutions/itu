@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createOrderDb, getOrderDb, updateOrderDb } from '@/lib/topup/orders-db'
 import Razorpay from 'razorpay'
+import { toRazorpayMinorUnits } from '@/lib/payments/razorpay-amount'
 
 export async function POST(request: Request) {
   try {
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
       const currency = typeof body.currency === 'string' ? body.currency : 'INR'
       const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret })
       const razorpayOrder = await razorpay.orders.create({
-        amount: Math.round(amount * 100), // to paise
+        amount: toRazorpayMinorUnits(amount, currency),
         currency,
         receipt: existingOrderId,
         notes: { topup_order_id: existingOrderId },

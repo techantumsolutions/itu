@@ -19,7 +19,7 @@ import {
   normalizeCurrencyCode,
 } from '@/lib/topup/currency-conversion'
 import { formatPlanRechargeValue } from '@/lib/catalog/plan-recharge-value'
-import { getDialCode } from '@/lib/lcr/countries'
+import { buildInternationalMobile, getDialCode } from '@/lib/lcr/countries'
 import {
   computeRechargeProcessingFeeAmount,
   DEFAULT_RECHARGE_PROCESSING_FEES,
@@ -778,7 +778,7 @@ export default function TopupSummaryPage() {
           body: JSON.stringify({
             planId: selectedPlan.internalPlanId || selectedPlan.id,
             systemPlanId: selectedPlan.systemPlanId || selectedPlan.id,
-            mobileNumber: `+${getDialCode(countryCode)}${phoneNumber}`,
+            mobileNumber: buildInternationalMobile(countryCode, phoneNumber),
             operatorId: operatorProviderId || operator,
             countryId: countryCode,
             amount: amounts.totalPayable,
@@ -843,7 +843,7 @@ export default function TopupSummaryPage() {
         description: `Recharge ${selectedPlan.planName || selectedPlan.id}`,
         order_id: razorpay_order_id,
         prefill: {
-          contact: `+${getDialCode(countryCode)}${phoneNumber}`,
+          contact: buildInternationalMobile(countryCode, phoneNumber),
         },
         handler: async (response: any) => {
           try {
@@ -977,7 +977,7 @@ export default function TopupSummaryPage() {
               <div className="rounded-xl border border-neutral-200/80 bg-white p-5">
                 <p className="text-sm font-semibold text-neutral-900">Recharge Details</p>
                 <div className="mt-3 space-y-2 text-sm">
-                  <DetailRow label="Mobile Number" value={`+${getDialCode(countryCode)} ${phoneNumber}`} />
+                  <DetailRow label="Mobile Number" value={buildInternationalMobile(countryCode, phoneNumber).replace(/^(\+\d+)/, '$1 ')} />
                   <DetailRow label="Country" value={countryCode} />
                   <DetailRow label="Operator" value={operator} />
                   <DetailRow
@@ -1020,7 +1020,7 @@ export default function TopupSummaryPage() {
               <div className="rounded-xl border border-neutral-200/80 bg-white p-5">
                 <p className="text-sm font-semibold text-neutral-900">Customer Information</p>
                 <div className="mt-3 space-y-2 text-sm">
-                  <DetailRow label="Phone" value={`+${getDialCode(countryCode)} ${phoneNumber}`} />
+                  <DetailRow label="Phone" value={buildInternationalMobile(countryCode, phoneNumber).replace(/^(\+\d+)/, '$1 ')} />
                 </div>
               </div>
             </div>
