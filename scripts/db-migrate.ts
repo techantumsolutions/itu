@@ -23,10 +23,16 @@ function loadDotEnv() {
 async function main() {
   loadDotEnv()
 
-  const dbUrl = process.env.DATABASE_URL
+  let dbUrl = process.env.DATABASE_URL
   if (!dbUrl) {
     console.error('Error: DATABASE_URL is not defined in .env file.')
     process.exit(1)
+  }
+
+  // Fix common production typo: postgresql://user:pass@http://host:port/db
+  if (dbUrl.includes('@http://') || dbUrl.includes('@https://')) {
+    console.warn('Warning: DATABASE_URL contains @http:// — auto-correcting host.')
+    dbUrl = dbUrl.replace(/@(https?:\/\/)/, '@')
   }
 
   // Adjust for local database TLS requirement of supabase CLI

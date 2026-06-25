@@ -13,6 +13,7 @@
     "system-plans:merge-duplicates": "tsx --tsconfig tsconfig.json scripts/system-plans-duplicate-merge-worker.ts",
     "bootstrap:admin": "tsx --tsconfig tsconfig.json scripts/bootstrap-super-admin.ts",
     "db:migrate": "tsx --tsconfig tsconfig.json scripts/db-migrate.ts",
+    "db:migrate:production": "bash scripts/db-migrate-production.sh",
     "db:bootstrap": "tsx --tsconfig tsconfig.json scripts/db-bootstrap-legacy.ts",
     "db:import-dump": "tsx --tsconfig tsconfig.json scripts/import-international-dump.ts",
     "db:deploy": "tsx --tsconfig tsconfig.json scripts/db-deploy.ts",
