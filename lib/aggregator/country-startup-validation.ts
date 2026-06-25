@@ -52,6 +52,13 @@ export async function validateCountriesTable(): Promise<void> {
       .slice(0, 5)
       .map((record) => `${record.iso3}/${record.iso2}`)
       .join(', ')
+    if (process.env.NODE_ENV === 'development') {
+      console.warn(
+        `[countries] ${missing.length} canonical countries missing (e.g. ${preview}). ` +
+          'Dev server will continue — run `npm run db:seed-countries` before provider sync.',
+      )
+      return
+    }
     throw new Error(
       `${COUNTRIES_INCOMPLETE_ERROR}\n\nMissing ${missing.length} canonical countries (e.g. ${preview}).`,
     )
