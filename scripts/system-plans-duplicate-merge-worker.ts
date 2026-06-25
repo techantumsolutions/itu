@@ -4,11 +4,11 @@
  * Run once:
  *   pnpm system-plans:merge-duplicates
  *
- * Run continuously (default every 30 min):
- *   SYSTEM_PLAN_DUPLICATE_MERGE_INTERVAL_MS=1800000 pnpm system-plans:merge-duplicates
+ * Run continuously (default every 5 min):
+ *   pnpm system-plans:merge-duplicates
  *
  * Env:
- *   SYSTEM_PLAN_DUPLICATE_MERGE_INTERVAL_MS — interval (default 1800000 = 30 min)
+ *   SYSTEM_PLAN_DUPLICATE_MERGE_INTERVAL_MS — interval (default 300000 = 5 min)
  *   SYSTEM_PLAN_DUPLICATE_MERGE_RUN_ONCE=1   — run one sweep and exit
  */
 import { readFileSync, existsSync } from 'fs'
@@ -36,10 +36,10 @@ function loadDotEnv() {
 loadDotEnv()
 
 const intervalMs = Math.max(
-  Number(process.env.SYSTEM_PLAN_DUPLICATE_MERGE_INTERVAL_MS ?? '1800000') || 1_800_000,
+  Number(process.env.SYSTEM_PLAN_DUPLICATE_MERGE_INTERVAL_MS ?? '300000') || 300_000,
   60_000,
 )
-const runOnce = process.env.SYSTEM_PLAN_DUPLICATE_MERGE_RUN_ONCE !== '0'
+const runOnce = process.env.SYSTEM_PLAN_DUPLICATE_MERGE_RUN_ONCE === '1'
 
 let running = false
 

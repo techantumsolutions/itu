@@ -6,7 +6,7 @@ import {
   pickCanonicalMergeTargetPlan,
   type SystemPlanMergeRow,
 } from '@/lib/aggregator/plan-display-merge'
-import { groupPlansByCountryOperatorRecharge } from '@/lib/aggregator/system-plan-recharge-identity'
+import { groupPlansByCountryOperatorRecharge, groupPlansByCountryOperatorSystemPrice } from '@/lib/aggregator/system-plan-recharge-identity'
 import { batchLoadSystemPlanRechargeValues } from '@/lib/catalog/plan-recharge-value'
 
 const ACTOR = 'system-plans-duplicate-worker'
@@ -191,14 +191,23 @@ async function mergeOperatorDuplicates(operatorId: string): Promise<{
       'display-price',
     )
     const signature = await mergeSystemPlanGroups(groupPlansBySignature(plans), 'signature')
+    const systemPrice = await mergeSystemPlanGroups(
+      groupPlansByCountryOperatorSystemPrice(plans),
+      'system-price',
+    )
     const rechargeValue = await mergeCountryOperatorRechargeGroups(plans, operatorId)
 
     const roundMerged =
-      displayName.merged + displayPrice.merged + signature.merged + rechargeValue.merged
+      displayName.merged +
+      displayPrice.merged +
+      signature.merged +
+      systemPrice.merged +
+      rechargeValue.merged
     duplicateGroupsFound +=
       displayName.groupsFound +
       displayPrice.groupsFound +
       signature.groupsFound +
+      systemPrice.groupsFound +
       rechargeValue.groupsFound
 
     if (roundMerged === 0) break

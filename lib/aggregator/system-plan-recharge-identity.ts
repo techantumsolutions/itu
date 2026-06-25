@@ -59,6 +59,28 @@ export function resolveSystemPlanRechargeIdentity(input: {
   return null
 }
 
+/** Group by system_plans.country_code + operator + amount + currency (ignores plan name). */
+export function groupPlansByCountryOperatorSystemPrice(
+  plans: SystemPlanMergeRow[],
+): Map<string, SystemPlanMergeRow[]> {
+  const groups = new Map<string, SystemPlanMergeRow[]>()
+
+  for (const plan of plans) {
+    const operatorId = String(plan.system_operator_id ?? '').trim()
+    const countryCode = (String(plan.country_code ?? 'UNK').trim().toUpperCase()) || 'UNK'
+    const amount = normalizeDisplayAmount(plan.amount)
+    const currency = String(plan.currency ?? '').trim().toUpperCase()
+    if (!operatorId || amount == null || !currency) continue
+
+    const key = `${countryCode}:${operatorId}:${currency}:${amount}`
+    if (!groups.has(key)) groups.set(key, [])
+    const bucket = groups.get(key)!
+    if (!bucket.some((row) => row.id === plan.id)) bucket.push(plan)
+  }
+
+  return groups
+}
+
 export function buildCountryOperatorRechargeMergeKey(input: {
   countryCode: string
   systemOperatorId: string
