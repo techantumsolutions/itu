@@ -24,6 +24,8 @@ import {
   type RechargeProcessingFees,
 } from '@/lib/settings/recharge-processing-fees'
 import { englishPlanDisplayFields } from '@/lib/catalog/plan-text-english'
+import { useAuthStore } from '@/lib/stores'
+import { buildUserAuthHeaders } from '@/lib/auth/get-user-id-from-request'
 
 function cleanOperatorName(name: string): string {
   let val = (name ?? '').trim()
@@ -254,6 +256,7 @@ const tabs = [
 function TopupPlanSelectionContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const user = useAuthStore((s) => s.user)
   const { countryCode, phoneNumber, operator, setPhoneDetails, setOperator, selectPlan, calculatePricing, setCheckoutSession } =
     useTopupStore()
   const selectedCountry = useMemo(() => {
@@ -530,7 +533,10 @@ function TopupPlanSelectionContent() {
       const res = await fetch('/api/topup/prepare-checkout', {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...buildUserAuthHeaders(user),
+        },
         body: JSON.stringify({
           planId: plan.internalPlanId || plan.id,
           systemPlanId: plan.systemPlanId || plan.id,

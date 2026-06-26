@@ -1,30 +1,10 @@
 import { NextResponse } from 'next/server'
 import { linkPaymentOrderToCheckoutSession } from '@/lib/topup/prepare-checkout-service'
 import { supabaseRest } from '@/lib/db/supabase-rest'
-import { supabaseGetUser } from '@/lib/supabase/auth-rest'
 import { runtimeEnv } from '@/lib/env/runtime'
 import { toRazorpayMinorUnits, validateRazorpayPaymentAmount } from '@/lib/payments/razorpay-amount'
-
-async function getUserIdFromRequest(request: Request): Promise<string | null> {
-  const cookie = request.headers.get('cookie') ?? ''
-
-  // 1. Try GoTrue token
-  const m = cookie.match(/(?:^|;\s*)sb-access-token=([^;]+)/)
-  const token = m?.[1] ? decodeURIComponent(m[1]) : ''
-  if (token) {
-    try {
-      const user = await supabaseGetUser(token)
-      if (user?.id) return user.id
-    } catch {
-      // ignore
-    }
-  }
-
-  // 2. Try OTP/guest login user ID
-  const om = cookie.match(/(?:^|;\s*)itu-user-id=([^;]+)/)
-  const otpUserId = om?.[1] ? decodeURIComponent(om[1]) : ''
-  return otpUserId || null
-}
+import { getUserIdFromRequest } from '@/lib/auth/get-user-id-from-request'
+import { attachUserIdToCheckoutRecords } from '@/lib/topup/attach-checkout-user'
 
 export async function POST(request: Request) {
   try {
@@ -118,6 +98,14 @@ export async function POST(request: Request) {
     const paymentOrderId = dbRows[0]?.id ?? ''
 
     if (paymentOrderId && checkoutSessionId) {
+      if (userId) {
+        await attachUserIdToCheckoutRecords({
+          userId,
+          transactionId: checkoutSessionId,
+          paymentOrderId,
+        })
+      }
+
       const txnRes = await supabaseRest(
         `transactions?id=eq.${encodeURIComponent(checkoutSessionId)}&select=metadata&limit=1`,
         { cache: 'no-store' },

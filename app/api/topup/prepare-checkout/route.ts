@@ -1,23 +1,8 @@
 import { NextResponse } from 'next/server'
 import { guardCatalog } from '@/lib/db/require-catalog'
 import { prepareCheckout } from '@/lib/topup/prepare-checkout-service'
-import { supabaseGetUser } from '@/lib/supabase/auth-rest'
-
-async function getUserIdFromRequest(request: Request): Promise<string | null> {
-  const cookie = request.headers.get('cookie') ?? ''
-  const m = cookie.match(/(?:^|;\s*)sb-access-token=([^;]+)/)
-  const token = m?.[1] ? decodeURIComponent(m[1]) : ''
-  if (token) {
-    try {
-      const user = await supabaseGetUser(token)
-      if (user?.id) return user.id
-    } catch {
-      // ignore
-    }
-  }
-  const om = cookie.match(/(?:^|;\s*)itu-user-id=([^;]+)/)
-  return om?.[1] ? decodeURIComponent(om[1]) : null
-}
+import { getUserIdFromRequest } from '@/lib/auth/get-user-id-from-request'
+import { attachUserIdToCheckoutRecords } from '@/lib/topup/attach-checkout-user'
 
 /** Pre-payment: routing rules + LCR, persist provider selection, create PENDING_PAYMENT transaction. */
 export async function POST(request: Request) {
@@ -62,6 +47,13 @@ export async function POST(request: Request) {
         },
         { status: 422 },
       )
+    }
+
+    if (userId && result.transactionId) {
+      await attachUserIdToCheckoutRecords({
+        userId,
+        transactionId: result.transactionId,
+      })
     }
 
     return NextResponse.json({

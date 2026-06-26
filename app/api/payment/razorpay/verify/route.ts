@@ -3,6 +3,8 @@ import crypto from 'crypto'
 import { getOrderDb, updateOrderDb } from '@/lib/topup/orders-db'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { executeCheckout } from '@/lib/topup/checkout-service'
+import { getUserIdFromRequest } from '@/lib/auth/get-user-id-from-request'
+import { attachUserIdToCheckoutRecords } from '@/lib/topup/attach-checkout-user'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -48,6 +50,8 @@ export async function POST(request: Request) {
 
     // --- New checkout flow (paymentOrderId present) ---
     if (paymentOrderId) {
+      const requestUserId = await getUserIdFromRequest(request)
+
       // Mark payment_orders as paid (idempotent)
       const poResBefore = await supabaseRest(
         `payment_orders?id=eq.${enc(paymentOrderId)}&select=id,status,plan_id,mobile_number,operator_id,country_id,amount,currency,user_id,metadata,checkout_session_id,pending_transaction_id,lcr_attempt_id&limit=1`,
@@ -64,6 +68,16 @@ export async function POST(request: Request) {
           ''
 
         if (checkoutSessionId) {
+          const effectiveUserId = poBefore.user_id
+            ? String(poBefore.user_id)
+            : requestUserId || undefined
+          if (effectiveUserId) {
+            await attachUserIdToCheckoutRecords({
+              userId: effectiveUserId,
+              transactionId: checkoutSessionId,
+              paymentOrderId,
+            })
+          }
           const systemPlanId =
             typeof metadata.system_plan_id === 'string' ? metadata.system_plan_id.trim() : ''
           const result = await executeCheckout({
@@ -76,7 +90,7 @@ export async function POST(request: Request) {
             amount: Number(poBefore.amount ?? 0),
             currency: String(poBefore.currency ?? 'INR'),
             razorpayPaymentId: razorpay_payment_id,
-            userId: poBefore.user_id ? String(poBefore.user_id) : undefined,
+            userId: effectiveUserId,
             checkoutSessionId,
             pendingTransactionId: checkoutSessionId,
           })
@@ -119,7 +133,7 @@ export async function POST(request: Request) {
       const walletCurrency = metadata.wallet_currency ? String(metadata.wallet_currency).toUpperCase() : String(po.currency ?? 'INR')
 
       // If logged in, credit the Razorpay amount to the user's wallet as a topup
-      if (po.user_id) {
+      if (effectiveUserId) {
         if (usedWalletBalance > 0) {
           if (walletCurrency !== String(po.currency ?? 'INR')) {
             let walletDeductionAmt = usedWalletBalance
@@ -139,7 +153,7 @@ export async function POST(request: Request) {
             await supabaseRest('transactions', {
               method: 'POST',
               body: JSON.stringify([{
-                user_id: po.user_id,
+                user_id: effectiveUserId,
                 type: 'payment',
                 amount: walletDeductionAmt,
                 currency: walletCurrency,
@@ -160,7 +174,7 @@ export async function POST(request: Request) {
             await supabaseRest('transactions', {
               method: 'POST',
               body: JSON.stringify([{
-                user_id: po.user_id,
+                user_id: effectiveUserId,
                 type: 'topup',
                 amount: usedWalletBalance,
                 currency: String(po.currency ?? 'INR'),
@@ -176,7 +190,7 @@ export async function POST(request: Request) {
             await supabaseRest('transactions', {
               method: 'POST',
               body: JSON.stringify([{
-                user_id: po.user_id,
+                user_id: effectiveUserId,
                 type: 'payment',
                 amount: usedWalletBalance,
                 currency: walletCurrency,
@@ -206,6 +220,15 @@ export async function POST(request: Request) {
         (typeof po.pending_transaction_id === 'string' && po.pending_transaction_id) ||
         ''
 
+      const effectiveUserId = po.user_id ? String(po.user_id) : requestUserId || undefined
+      if (effectiveUserId && checkoutSessionId) {
+        await attachUserIdToCheckoutRecords({
+          userId: effectiveUserId,
+          transactionId: checkoutSessionId,
+          paymentOrderId,
+        })
+      }
+
       console.log('[PAYMENT LOG] payment successful', {
         paymentOrderId,
         checkoutSessionId,
@@ -222,7 +245,7 @@ export async function POST(request: Request) {
         amount: fullAmount,
         currency: String(po.currency ?? 'INR'),
         razorpayPaymentId: razorpay_payment_id,
-        userId: po.user_id ? String(po.user_id) : undefined,
+        userId: effectiveUserId,
         usedWalletBalance,
         walletCurrency,
         checkoutSessionId: checkoutSessionId || undefined,

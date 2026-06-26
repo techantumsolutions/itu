@@ -39,6 +39,7 @@ import {
 import { countriesList, getFlagEmoji, isValidPhoneNumber } from '@/lib/country-codes'
 import { getCountryCallingCode } from 'libphonenumber-js'
 import { useFingerprint } from '@/hooks/use-fingerprint'
+import { buildUserAuthHeaders } from '@/lib/auth/get-user-id-from-request'
 
 declare global {
   interface Window {
@@ -770,12 +771,9 @@ export default function TopupSummaryPage() {
     try {
       // Wallet-only payment
       if (amounts.grand === 0) {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-        if (user?.id) {
-          headers['x-user-id'] = user.id
-          if (user.email) headers['x-user-email'] = user.email
-          if (user.name) headers['x-user-name'] = user.name
-          if (user.role) headers['x-user-role'] = user.role
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          ...buildUserAuthHeaders(user),
         }
         const res = await fetch('/api/payment/wallet/checkout', {
           method: 'POST',
@@ -823,7 +821,10 @@ export default function TopupSummaryPage() {
       const createRes = await fetch('/api/payment/razorpay/create-order', {
         method: 'POST',
         credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...buildUserAuthHeaders(user),
+        },
         body: JSON.stringify({
           planId: selectedPlan.internalPlanId || selectedPlan.id,
           systemPlanId: selectedPlan.systemPlanId || selectedPlan.id,
@@ -861,7 +862,10 @@ export default function TopupSummaryPage() {
             const verifyRes = await fetch('/api/payment/razorpay/verify', {
               method: 'POST',
               credentials: 'include',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                ...buildUserAuthHeaders(user),
+              },
               body: JSON.stringify({
                 paymentOrderId,
                 razorpay_order_id: response?.razorpay_order_id,

@@ -6,15 +6,10 @@ import { buildUserFromProfile } from '@/lib/auth/build-auth-user'
 import { cacheGetJson, cacheSetJson, cacheDel } from '@/lib/cache/redis'
 import { logLoginAudit, sendLoginOtp, sendSuperAdminLockoutAlert } from '@/lib/auth/audit'
 import { generateOtp } from '@/lib/security/otp'
+import { authCookieOptions } from '@/lib/auth/cookie-options'
 
 function cookieOptions() {
-  const isProd = process.env.NODE_ENV === 'production'
-  return {
-    httpOnly: true,
-    secure: isProd,
-    sameSite: 'lax' as const,
-    path: '/',
-  }
+  return authCookieOptions()
 }
 
 type LoginProfileRow = {
