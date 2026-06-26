@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -251,7 +251,7 @@ const tabs = [
   { id: 'data', label: 'Data Pack' },
 ] as const
 
-export default function TopupPlanSelectionPage() {
+function TopupPlanSelectionContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { countryCode, phoneNumber, operator, setPhoneDetails, setOperator, selectPlan, calculatePricing, setCheckoutSession } =
@@ -901,4 +901,17 @@ export default function TopupPlanSelectionPage() {
   )
 }
 
+export default function TopupPlanSelectionPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-[calc(100vh-6rem)] bg-[#f3f9ff] flex items-center justify-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--hero-cta-orange)]" />
+        </div>
+      }
+    >
+      <TopupPlanSelectionContent />
+    </Suspense>
+  )
+}
 

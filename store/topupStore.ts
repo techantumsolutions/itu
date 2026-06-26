@@ -102,6 +102,58 @@ const initialState: TopupSessionState = {
   rewardPointsEarned: 0,
 }
 
+type PersistedTopupSession = Pick<
+  TopupSessionState,
+  | 'countryCode'
+  | 'phoneNumber'
+  | 'operator'
+  | 'operatorProviderId'
+  | 'selectedPlan'
+  | 'pricing'
+  | 'fees'
+  | 'totalAmount'
+  | 'currency'
+  | 'checkoutSessionId'
+  | 'rechargeAttemptId'
+  | 'selectedProviderName'
+  | 'orderId'
+  | 'transactionId'
+  | 'providerRef'
+  | 'providerName'
+  | 'rechargeStatus'
+  | 'errorMessage'
+  | 'rewardPointsEarned'
+>
+
+function migratePersistedTopupSession(persistedState: unknown): PersistedTopupSession {
+  const state =
+    persistedState && typeof persistedState === 'object'
+      ? (persistedState as Partial<PersistedTopupSession>)
+      : {}
+
+  return {
+    countryCode: state.countryCode ?? initialState.countryCode,
+    phoneNumber: state.phoneNumber ?? initialState.phoneNumber,
+    operator: state.operator ?? initialState.operator,
+    operatorProviderId: state.operatorProviderId ?? initialState.operatorProviderId,
+    selectedPlan: state.selectedPlan ?? initialState.selectedPlan,
+    pricing: state.pricing ?? initialState.pricing,
+    fees: state.fees ?? initialState.fees,
+    totalAmount: state.totalAmount ?? initialState.totalAmount,
+    currency: state.currency ?? initialState.currency,
+    checkoutSessionId: state.checkoutSessionId ?? initialState.checkoutSessionId,
+    rechargeAttemptId: state.rechargeAttemptId ?? initialState.rechargeAttemptId,
+    selectedProviderName: state.selectedProviderName ?? initialState.selectedProviderName,
+    orderId: state.orderId ?? initialState.orderId,
+    transactionId: state.transactionId ?? initialState.transactionId,
+    providerRef: state.providerRef ?? initialState.providerRef,
+    providerName: state.providerName ?? initialState.providerName,
+    rechargeStatus: state.rechargeStatus ?? initialState.rechargeStatus,
+    errorMessage: state.errorMessage ?? initialState.errorMessage,
+    rewardPointsEarned: state.rewardPointsEarned ?? initialState.rewardPointsEarned,
+  }
+}
+
 export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
   persist(
     (set, get) => ({
@@ -157,6 +209,7 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
     {
       name: 'topup-session-v1',
       version: 3,
+      migrate: (persistedState) => migratePersistedTopupSession(persistedState),
       partialize: (s) => ({
         countryCode: s.countryCode,
         phoneNumber: s.phoneNumber,
