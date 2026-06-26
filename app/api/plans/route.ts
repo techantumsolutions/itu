@@ -31,7 +31,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'operatorId or operatorName is required' }, { status: 400 })
     }
 
-    const cacheKey = `catalog:public:plans:${normalizeCountryIso3(countryId)}:${operatorId}:${operatorName}:${search}:${category}:${limit}`
+    const cacheKey = `catalog:public:plans:en1:${normalizeCountryIso3(countryId)}:${operatorId}:${operatorName}:${search}:${category}:${limit}`
     const cached = await cacheGetJson<{ plans: unknown[]; source: string }>(cacheKey)
     if (cached) return NextResponse.json(cached)
 

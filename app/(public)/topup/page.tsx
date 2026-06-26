@@ -23,6 +23,7 @@ import {
   parseRechargeProcessingFees,
   type RechargeProcessingFees,
 } from '@/lib/settings/recharge-processing-fees'
+import { englishPlanDisplayFields } from '@/lib/catalog/plan-text-english'
 
 function cleanOperatorName(name: string): string {
   let val = (name ?? '').trim()
@@ -446,15 +447,20 @@ export default function TopupPlanSelectionPage() {
         })
         // Normalize -1 validity to a human-readable label
         const normalized = valid.map((p) => {
-          const resolvedType = classifyPlanType(p.planName ?? '', p.benefits ?? '', p.type)
-          const cleanName = removeOperatorName(p.planName ?? '', operator)
-          const cleanBenefits = removeOperatorName(p.benefits ?? '', operator)
-          const specs = parsePlanSpecs(p.planName ?? '', p.benefits ?? '')
+          const english = englishPlanDisplayFields({
+            planName: p.planName,
+            benefits: p.benefits,
+            validity: p.validity,
+          })
+          const resolvedType = classifyPlanType(english.planName, english.benefits, p.type)
+          const cleanName = removeOperatorName(english.planName, operator)
+          const cleanBenefits = removeOperatorName(english.benefits, operator)
+          const specs = parsePlanSpecs(english.planName, english.benefits)
 
-          const vNum = parseInt(p.validity, 10)
+          const vNum = parseInt(english.validity, 10)
           const validityVal = resolvedType === 'topup'
             ? 'Life Time'
-            : (Number.isFinite(vNum) && vNum <= 0) ? 'No Expiry' : p.validity
+            : (Number.isFinite(vNum) && vNum <= 0) ? 'No Expiry' : (english.validity || p.validity)
 
           const elaboratedBenefits = elaboratePlanDescription(
             { ...p, planName: cleanName, benefits: cleanBenefits, type: resolvedType, validity: validityVal },

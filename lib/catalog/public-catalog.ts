@@ -31,6 +31,7 @@ import {
   batchLoadSystemPlanMappedDetails,
   type SystemPlanMappedDetails,
 } from '@/lib/catalog/system-plan-mapped-details'
+import { englishPlanDisplayFields } from '@/lib/catalog/plan-text-english'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -772,15 +773,20 @@ export async function fetchPublicPlans(input: {
     const activeOperatorName = operatorName || ''
     const countryIso2 = countryIso3 ? await resolveIso2FromDb(countryIso3) : (input.countryCode || 'IN')
     plans = await Promise.all(plans.map(async (p) => {
-      const resolvedType = p.type || mapPlanType(p.type, p.planName, p.benefits)
-      const cleanName = removeOperatorName(p.planName ?? '', activeOperatorName)
-      const cleanBenefits = removeOperatorName(p.benefits ?? '', activeOperatorName)
+      const english = englishPlanDisplayFields({
+        planName: p.planName,
+        benefits: p.benefits,
+        validity: p.validity,
+      })
+      const resolvedType = p.type || mapPlanType(p.type, english.planName, english.benefits)
+      const cleanName = removeOperatorName(english.planName, activeOperatorName)
+      const cleanBenefits = removeOperatorName(english.benefits, activeOperatorName)
       const specs = parsePlanSpecs(cleanName, cleanBenefits)
 
-      const vNum = parseInt(p.validity, 10)
+      const vNum = parseInt(english.validity, 10)
       const validityVal = resolvedType === 'topup'
         ? 'Life Time'
-        : (Number.isFinite(vNum) && vNum <= 0) ? 'No Expiry' : p.validity
+        : (Number.isFinite(vNum) && vNum <= 0) ? 'No Expiry' : (english.validity || p.validity)
 
       const elaboratedBenefits = elaboratePlanDescription(
         { ...p, planName: cleanName, benefits: cleanBenefits, type: resolvedType, validity: validityVal },
