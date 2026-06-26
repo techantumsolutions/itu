@@ -75,7 +75,9 @@ io.on('connection', (socket) => {
   })
 })
 
-const PORT = process.env.SOCKET_PORT || 3001
-server.listen(PORT, () => {
-  console.log(`[SocketServer] Standalone Socket.io server running on port ${PORT}`)
+const PORT = Number(process.env.SOCKET_PORT || 3001)
+const HOST = process.env.SOCKET_BIND_HOST || '0.0.0.0'
+
+server.listen(PORT, HOST, () => {
+  console.log(`[SocketServer] Standalone Socket.io server running on http://${HOST}:${PORT}`)
 })
