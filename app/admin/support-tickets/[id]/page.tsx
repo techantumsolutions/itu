@@ -28,6 +28,7 @@ import type { TicketAdminDetail, TicketStatus, TicketMessage } from '@/lib/ticke
 import { isClientAdminUser } from '@/lib/tickets/auth-headers'
 import { toast } from 'sonner'
 import { io } from 'socket.io-client'
+import { getPublicSocketServerUrl } from '@/lib/tickets/socket-config'
 
 export default function AdminSupportTicketDetailPage() {
   const router = useRouter()
@@ -95,7 +96,7 @@ export default function AdminSupportTicketDetailPage() {
 
   useEffect(() => {
     if (!id) return
-    const socket = io('http://localhost:3001')
+    const socket = io(getPublicSocketServerUrl(), { autoConnect: true })
 
     socket.emit('join', id)
 

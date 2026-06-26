@@ -15,6 +15,7 @@ import { apiGetTicket, apiPostTicketMessage } from '@/lib/tickets/client-api'
 import type { TicketStatus, TicketWithThread, TicketMessage } from '@/lib/tickets/types'
 import { toast } from 'sonner'
 import { io } from 'socket.io-client'
+import { getPublicSocketServerUrl } from '@/lib/tickets/socket-config'
 
 export default function AccountTicketDetailPage() {
   const params = useParams()
@@ -68,7 +69,7 @@ export default function AccountTicketDetailPage() {
 
   useEffect(() => {
     if (!id) return
-    const socket = io('http://localhost:3001')
+    const socket = io(getPublicSocketServerUrl(), { autoConnect: true })
 
     socket.emit('join', id)
 
