@@ -19,6 +19,8 @@ export default function TopupSuccessPage() {
     selectedPlan,
     pricing,
     totalAmount,
+    serviceFee,
+    tax,
     resetSession,
     transactionId,
     providerRef,
@@ -81,10 +83,12 @@ export default function TopupSuccessPage() {
                 label="Plan Name"
                 value={selectedPlan.planName || `${planValueLabel} • ${selectedPlan.validity}`}
               />
-              <Row label="Amount Paid" value={`${totalAmount.toFixed(2)} ${paidCurrency}`} />
-              <Row label="Recharge Value" value={planValueLabel} />
-              {providerRef ? <Row label="Provider Reference" value={providerRef} mono /> : null}
-              {providerName ? <Row label="Provider" value={providerName} /> : null}
+              <Row label="Original Plan Price" value={planValueLabel} />
+              <Row label="Service Fee" value={`${serviceFee.toFixed(2)} ${paidCurrency}`} />
+              <Row label="Tax" value={`${tax.toFixed(2)} ${paidCurrency}`} />
+              <Row label="Total Cost" value={`${totalAmount.toFixed(2)} ${paidCurrency}`} />
+              {/* {providerRef ? <Row label="Provider Reference" value={providerRef} mono /> : null}
+              {providerName ? <Row label="Provider" value={providerName} /> : null} */}
               <Row label="Date & Time" value={dt} />
             </div>
 

@@ -795,6 +795,7 @@ export default function TopupSummaryPage() {
         if (res.ok && data?.ok) {
           setTransactionResult({
             transactionId: data.transactionId || '',
+            rechargeOrderId: data.rechargeOrderId || '',
             providerRef: data.providerRef || '',
             providerName: data.providerName || '',
             rechargeStatus: 'success',
@@ -878,6 +879,7 @@ export default function TopupSummaryPage() {
             if (verifyRes.ok && verifyData?.ok) {
               setTransactionResult({
                 transactionId: verifyData.transactionId || '',
+                rechargeOrderId: verifyData.rechargeOrderId || '',
                 providerRef: verifyData.providerRef || '',
                 providerName: verifyData.providerName || '',
                 rechargeStatus: 'success',

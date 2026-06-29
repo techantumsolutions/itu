@@ -8,6 +8,15 @@ export interface Ticket {
   userEmail: string
   userName: string
   transactionId?: string
+  transactionDetails?: {
+    amount: number
+    currency: string
+    status: string
+    createdAt: string
+    description?: string
+    operatorName?: string
+    userName?: string
+  }
   subject: string
   description: string
   status: TicketStatus

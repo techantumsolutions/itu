@@ -252,8 +252,45 @@ export async function getTicketAdmin(ticketId: string): Promise<TicketAdminDetai
   try {
     const row = await selectTicketById(ticketId)
     if (!row) return null
+
+    let transactionDetails = undefined
+    if (row.transaction_id) {
+      const txRes = await supabaseRest(
+        `transactions?id=eq.${encode(row.transaction_id)}&select=amount,currency,status,description,created_at,metadata,recharge_orders(operator_name),profiles(name)&limit=1`,
+        { cache: 'no-store' }
+      )
+      if (txRes.ok) {
+        const txRows = await txRes.json()
+        const tx = txRows[0]
+        if (tx) {
+          const rechargeOrder = tx.recharge_orders?.[0]
+          let operatorName = rechargeOrder?.operator_name || tx.metadata?.carrierName || tx.metadata?.operator_name
+          if (!operatorName && tx.metadata?.operator_id) {
+            const sysOpRes = await supabaseRest(
+              `system_operators?id=eq.${encode(tx.metadata.operator_id)}&select=system_operator_name&limit=1`,
+              { cache: 'no-store' }
+            )
+            if (sysOpRes.ok) {
+              const sysOpRows = await sysOpRes.json()
+              operatorName = sysOpRows[0]?.system_operator_name
+            }
+          }
+          transactionDetails = {
+            amount: Number(tx.amount) || 0,
+            currency: String(tx.currency || ''),
+            status: String(tx.status || ''),
+            createdAt: String(tx.created_at || ''),
+            description: String(tx.description || ''),
+            operatorName: operatorName ? String(operatorName) : undefined,
+            userName: tx.profiles?.name ? String(tx.profiles.name) : undefined,
+          }
+        }
+      }
+    }
+
     return {
       ...toTicket(row),
+      transactionDetails,
       messages: await selectMessages(ticketId),
       notes: await selectNotes(ticketId),
     }

@@ -29,7 +29,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}))
-    const { name, trigger, points, scope, is_active } = body
+    const { name, trigger, points, scope, is_active, currency } = body
 
     if (!name?.trim() || !trigger || typeof points !== 'number') {
       return NextResponse.json({ error: 'name, trigger, and points are required' }, { status: 400 })
@@ -45,6 +45,7 @@ export async function POST(request: Request) {
           points,
           scope: scope || {},
           is_active: is_active ?? true,
+          currency: typeof currency === 'string' && currency.trim() ? currency.trim().toUpperCase() : 'USD',
         },
       ]),
     })

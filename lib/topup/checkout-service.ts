@@ -134,6 +134,8 @@ async function createRechargeOrder(input: CheckoutInput & { transactionId: strin
         send_amount: input.amount,
         send_currency: input.currency,
         status: 'pending',
+        service_fee: input.serviceFee ?? 0,
+        tax: input.tax ?? 0,
         metadata: {
           payment_order_id: input.paymentOrderId,
           razorpay_payment_id: input.razorpayPaymentId,

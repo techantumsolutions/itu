@@ -524,7 +524,10 @@ function TopupPlanSelectionContent() {
         : Number(plan.price_inr) > 0
           ? Number(plan.price_inr)
           : 0
-    const { total: processingFee } = computeRechargeProcessingFeeAmount(subtotal, processingFeePercents)
+    const feeParts = computeRechargeProcessingFeeAmount(subtotal, processingFeePercents)
+    const processingFee = feeParts.total
+    const serviceFee = feeParts.platformFee + feeParts.paymentGatewayFee
+    const tax = feeParts.tax
     const payableAmount = subtotal + processingFee
     const rechargeCurrency = (plan.recharge_currency || 'INR').trim().toUpperCase()
 
@@ -545,6 +548,8 @@ function TopupPlanSelectionContent() {
           countryId: countryCode,
           amount: payableAmount,
           currency: rechargeCurrency,
+          serviceFee,
+          tax,
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -555,10 +560,14 @@ function TopupPlanSelectionContent() {
       }
 
       selectPlan(plan)
-      calculatePricing({ fee: processingFee })
+      calculatePricing({ fee: processingFee, serviceFee, tax })
+      if (data.operatorName) {
+        setOperator(data.operatorName)
+      }
       setCheckoutSession({
         checkoutSessionId: data.checkoutSessionId,
         transactionId: data.transactionId,
+        rechargeOrderId: data.rechargeOrderId,
         rechargeAttemptId: data.rechargeAttemptId,
         selectedProviderName: data.selectedProviderName,
         operatorProviderId: effectiveOperatorId,

@@ -41,6 +41,7 @@ export interface Transaction {
   description: string
   createdAt: string
   rewardPoints?: number
+  rechargeOrderId?: string | null
   metadata?: {
     phoneNumber?: string
     carrier?: string

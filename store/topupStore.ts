@@ -39,6 +39,8 @@ type TopupSessionState = {
   selectedPlan: TopupPlan | null
   pricing: TopupPricing | null
   fees: number
+  serviceFee: number
+  tax: number
   totalAmount: number
   /** Recharge currency of the selected plan (e.g. INR, USD, XCD). */
   currency: string
@@ -60,10 +62,11 @@ type TopupSessionActions = {
   setPhoneDetails: (payload: { countryCode: string; phoneNumber: string }) => void
   setOperator: (operator: string) => void
   selectPlan: (plan: TopupPlan) => void
-  calculatePricing: (payload?: { fee?: number }) => void
+  calculatePricing: (payload?: { fee?: number; serviceFee?: number; tax?: number }) => void
   setCheckoutSession: (payload: {
     checkoutSessionId: string
     transactionId?: string
+    rechargeOrderId?: string
     rechargeAttemptId?: string
     selectedProviderName?: string
     operatorProviderId?: string
@@ -71,6 +74,7 @@ type TopupSessionActions = {
   setOrderId: (orderId: string) => void
   setTransactionResult: (result: {
     transactionId?: string
+    rechargeOrderId?: string
     providerRef?: string
     providerName?: string
     rechargeStatus?: 'idle' | 'pending' | 'success' | 'failed'
@@ -87,6 +91,8 @@ const initialState: TopupSessionState = {
   selectedPlan: null,
   pricing: null,
   fees: 0,
+  serviceFee: 0,
+  tax: 0,
   totalAmount: 0,
   currency: 'INR',
   operatorProviderId: '',
@@ -111,6 +117,8 @@ type PersistedTopupSession = Pick<
   | 'selectedPlan'
   | 'pricing'
   | 'fees'
+  | 'serviceFee'
+  | 'tax'
   | 'totalAmount'
   | 'currency'
   | 'checkoutSessionId'
@@ -139,6 +147,8 @@ function migratePersistedTopupSession(persistedState: unknown): PersistedTopupSe
     selectedPlan: state.selectedPlan ?? initialState.selectedPlan,
     pricing: state.pricing ?? initialState.pricing,
     fees: state.fees ?? initialState.fees,
+    serviceFee: state.serviceFee ?? initialState.serviceFee,
+    tax: state.tax ?? initialState.tax,
     totalAmount: state.totalAmount ?? initialState.totalAmount,
     currency: state.currency ?? initialState.currency,
     checkoutSessionId: state.checkoutSessionId ?? initialState.checkoutSessionId,
@@ -165,12 +175,14 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
         }),
       setOperator: (operator) => set({ operator }),
       selectPlan: (plan) => set({ selectedPlan: plan }),
-      calculatePricing: ({ fee } = {}) => {
+      calculatePricing: (payload = {}) => {
         const state = get()
-        const f = typeof fee === 'number' ? fee : state.fees
+        const f = typeof payload.fee === 'number' ? payload.fee : state.fees
+        const sf = typeof payload.serviceFee === 'number' ? payload.serviceFee : state.serviceFee
+        const tx = typeof payload.tax === 'number' ? payload.tax : state.tax
         const plan = state.selectedPlan
         if (!plan) {
-          set({ pricing: null, totalAmount: 0, fees: f })
+          set({ pricing: null, totalAmount: 0, fees: f, serviceFee: sf, tax: tx })
           return
         }
         const localCurrency = (plan.recharge_currency || 'INR').trim().toUpperCase()
@@ -181,6 +193,8 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
         set({
           currency: localCurrency,
           fees: f,
+          serviceFee: sf,
+          tax: tx,
           pricing: { localAmount, localCurrency, convertedAmount, convertedCurrency },
           totalAmount,
         })
@@ -194,10 +208,12 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
           selectedProviderName: payload.selectedProviderName ?? get().selectedProviderName,
           providerName: payload.selectedProviderName ?? get().providerName,
           operatorProviderId: payload.operatorProviderId ?? get().operatorProviderId,
+          orderId: payload.rechargeOrderId ?? get().orderId,
         }),
       setTransactionResult: (result) =>
         set({
           transactionId: result.transactionId ?? get().transactionId,
+          orderId: result.rechargeOrderId ?? get().orderId,
           providerRef: result.providerRef ?? get().providerRef,
           providerName: result.providerName ?? get().providerName,
           rechargeStatus: result.rechargeStatus ?? get().rechargeStatus,
@@ -208,7 +224,7 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
     }),
     {
       name: 'topup-session-v1',
-      version: 3,
+      version: 4,
       migrate: (persistedState) => migratePersistedTopupSession(persistedState),
       partialize: (s) => ({
         countryCode: s.countryCode,
@@ -218,6 +234,8 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
         selectedPlan: s.selectedPlan,
         pricing: s.pricing,
         fees: s.fees,
+        serviceFee: s.serviceFee,
+        tax: s.tax,
         totalAmount: s.totalAmount,
         currency: s.currency,
         checkoutSessionId: s.checkoutSessionId,

@@ -248,10 +248,37 @@ export default function AdminSupportTicketDetailPage() {
             {!data.transactionId ? (
               <p className="text-sm text-muted-foreground">No transaction linked to this ticket.</p>
             ) : (
-              <div className="space-y-2 text-sm">
-                <p className="text-muted-foreground">Linked transaction ID</p>
-                <p className="font-mono">{data.transactionId}</p>
-                <p className="text-muted-foreground">Transaction details are loaded from the transaction APIs.</p>
+              <div className="space-y-3 text-sm">
+                <div>
+                  <p className="text-xs text-muted-foreground font-semibold">Transaction ID</p>
+                  <p className="font-mono text-xs">{data.transactionId}</p>
+                </div>
+                {data.transactionDetails ? (
+                  <dl className="grid gap-2 border-t border-border/40 pt-2 text-xs">
+                    <div>
+                      <dt className="text-muted-foreground">Operator Name</dt>
+                      <dd className="font-medium">{data.transactionDetails.operatorName || data.transactionDetails.userName || '—'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Amount</dt>
+                      <dd className="font-medium">{data.transactionDetails.amount.toFixed(2)} {data.transactionDetails.currency}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Status</dt>
+                      <dd className="font-medium capitalize">{data.transactionDetails.status}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Description</dt>
+                      <dd className="font-medium">{data.transactionDetails.description || '—'}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Date</dt>
+                      <dd className="font-medium">{format(new Date(data.transactionDetails.createdAt), 'MMM d, yyyy HH:mm')}</dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Loading transaction details...</p>
+                )}
               </div>
             )}
           </section>

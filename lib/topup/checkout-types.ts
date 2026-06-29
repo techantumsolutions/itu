@@ -15,6 +15,8 @@ export type CheckoutInput = {
   /** Pre-payment checkout session (= pending transaction id). */
   checkoutSessionId?: string
   pendingTransactionId?: string
+  serviceFee?: number
+  tax?: number
 }
 
 export type CheckoutResult = {

@@ -10,6 +10,8 @@ export type TopupOrderRecord = {
   plan_id: string
   amount: number
   fee: number
+  service_fee?: number
+  tax?: number
   total: number
   currency: string
   status: TopupOrderStatus
@@ -47,6 +49,8 @@ type OrderRow = {
   status: string
   metadata: Record<string, unknown> | null
   created_at: string
+  service_fee?: number | null
+  tax?: number | null
 }
 
 function numberFrom(value: unknown): number {
@@ -56,14 +60,19 @@ function numberFrom(value: unknown): number {
 
 function toOrder(row: OrderRow): TopupOrderRecord {
   const metadata = row.metadata ?? {}
+  const serviceFee = row.service_fee != null ? numberFrom(row.service_fee) : numberFrom(metadata.fee)
+  const tax = row.tax != null ? numberFrom(row.tax) : 0
+  const amount = numberFrom(metadata.amount ?? (Number(row.send_amount) - serviceFee - tax))
   return {
     id: row.id,
     phone_number: row.phone_number,
     operator: String(row.operator_name || row.operator_code || ''),
     country: String(row.country_iso || ''),
     plan_id: String(row.sku_code || ''),
-    amount: numberFrom(metadata.amount ?? row.send_amount),
-    fee: numberFrom(metadata.fee),
+    amount: amount,
+    fee: serviceFee + tax,
+    service_fee: serviceFee,
+    tax: tax,
     total: numberFrom(metadata.total ?? row.send_amount),
     currency: String(row.send_currency || metadata.currency || 'EUR'),
     status: apiStatus(row.status, metadata),
@@ -122,6 +131,8 @@ export async function createOrderDb(input: Omit<TopupOrderRecord, 'id' | 'create
           send_amount: input.total,
           send_currency: input.currency,
           status: dbStatus(input.status),
+          service_fee: input.fee,
+          tax: 0,
           metadata: {
             amount: input.amount,
             fee: input.fee,
@@ -141,7 +152,7 @@ export async function createOrderDb(input: Omit<TopupOrderRecord, 'id' | 'create
 
 export async function getOrderDb(id: string): Promise<TopupOrderRecord | null> {
   const res = await supabaseRest(
-    `recharge_orders?id=eq.${encode(id)}&select=id,phone_number,operator_code,operator_name,country_iso,sku_code,send_amount,send_currency,status,metadata,created_at&limit=1`,
+    `recharge_orders?id=eq.${encode(id)}&select=id,phone_number,operator_code,operator_name,country_iso,sku_code,send_amount,send_currency,status,metadata,created_at,service_fee,tax&limit=1`,
     { cache: 'no-store' },
   )
   if (!res.ok) throw new Error('Failed to load order')

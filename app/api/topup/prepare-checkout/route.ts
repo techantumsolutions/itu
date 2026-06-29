@@ -26,6 +26,9 @@ export async function POST(request: Request) {
       )
     }
 
+    const serviceFee = typeof body.serviceFee === 'number' ? body.serviceFee : undefined
+    const tax = typeof body.tax === 'number' ? body.tax : undefined
+
     const userId = await getUserIdFromRequest(request)
     const result = await prepareCheckout({
       planId,
@@ -36,6 +39,8 @@ export async function POST(request: Request) {
       amount,
       currency,
       userId: userId || undefined,
+      serviceFee,
+      tax,
     })
 
     if (!result.ok) {
@@ -67,6 +72,7 @@ export async function POST(request: Request) {
       selectedProviderPlanId: result.selectedProviderPlanId,
       selectedProviderCost: result.selectedProviderCost,
       selectedProviderCurrency: result.selectedProviderCurrency,
+      operatorName: result.operatorName,
     })
   } catch (e) {
     console.error('topup/prepare-checkout:', e)

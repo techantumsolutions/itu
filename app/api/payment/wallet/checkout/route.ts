@@ -248,6 +248,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       ok: result.ok,
       transactionId: result.transactionId,
+      rechargeOrderId: result.rechargeOrderId,
       providerRef: result.providerRef,
       providerName: result.providerName,
       status: result.status,

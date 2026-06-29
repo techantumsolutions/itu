@@ -26,6 +26,13 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { TicketStatusBadge } from '@/components/ticket-status-badge'
 import { apiCreateTicket, apiListTickets } from '@/lib/tickets/client-api'
 import type { Ticket } from '@/lib/tickets/types'
@@ -51,6 +58,10 @@ export default function AccountTicketsPage() {
   const [attachmentName, setAttachmentName] = useState('')
   const [uploading, setUploading] = useState(false)
 
+  const [transactions, setTransactions] = useState<any[]>([])
+  const [loadingTransactions, setLoadingTransactions] = useState(false)
+  const [selectedTxId, setSelectedTxId] = useState('')
+
   const load = useCallback(async () => {
     if (!headers) return
     setLoading(true)
@@ -74,6 +85,32 @@ export default function AccountTicketsPage() {
       setDescription('')
       setAttachmentUrl('')
       setAttachmentName('')
+      setSelectedTxId('')
+      setTransactions([])
+
+      const loadTransactions = async () => {
+        setLoadingTransactions(true)
+        try {
+          const res = await fetch('/api/profile/transactions', { cache: 'no-store' })
+          if (res.ok) {
+            const data = await res.json()
+            if (data && Array.isArray(data.transactions)) {
+              const sevenDaysAgo = new Date()
+              sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+              const recent = data.transactions.filter((tx: any) => {
+                const txDate = new Date(tx.createdAt)
+                return txDate >= sevenDaysAgo
+              })
+              setTransactions(recent)
+            }
+          }
+        } catch (err) {
+          console.error('Failed to load transactions for ticket:', err)
+        } finally {
+          setLoadingTransactions(false)
+        }
+      }
+      void loadTransactions()
     }
   }, [open])
 
@@ -113,13 +150,21 @@ export default function AccountTicketsPage() {
     if (!headers) return
     setSubmitting(true)
     try {
-      await apiCreateTicket(headers, { subject, description, attachmentUrl })
+      const tx = selectedTxId && selectedTxId !== 'none' ? transactions.find((t) => t.id === selectedTxId) : null
+      await apiCreateTicket(headers, {
+        subject,
+        description,
+        attachmentUrl,
+        transactionId: tx?.id || undefined,
+        transactionCreatedAt: tx?.createdAt || undefined,
+      })
       toast.success('Ticket created')
       setOpen(false)
       setSubject('')
       setDescription('')
       setAttachmentUrl('')
       setAttachmentName('')
+      setSelectedTxId('')
       await load()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to create ticket')
@@ -176,7 +221,7 @@ export default function AccountTicketsPage() {
                     className="resize-y min-h-[120px]"
                   />
                 </div>
-                <div className="grid gap-2">
+                 <div className="grid gap-2">
                   <Label htmlFor="ticket-file">Attachment (Optional)</Label>
                   <Input
                     id="ticket-file"
@@ -197,6 +242,31 @@ export default function AccountTicketsPage() {
                     </p>
                   )}
                   <p className="text-[11px] text-muted-foreground">Images (PNG, JPG, GIF, WEBP) and PDFs are supported.</p>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="ticket-tx">Attach Recent Transaction (Optional)</Label>
+                  {loadingTransactions ? (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 animate-pulse">
+                      <Loader2 className="size-3 animate-spin" /> Loading transactions...
+                    </p>
+                  ) : transactions.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">No transactions found in the last 7 days.</p>
+                  ) : (
+                    <Select value={selectedTxId} onValueChange={setSelectedTxId}>
+                      <SelectTrigger id="ticket-tx">
+                        <SelectValue placeholder="Select a transaction" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">None</SelectItem>
+                        {transactions.map((tx) => (
+                          <SelectItem key={tx.id} value={tx.id}>
+                            {tx.metadata?.carrierName || tx.description || tx.type} • {tx.amount.toFixed(2)} {tx.currency} ({format(new Date(tx.createdAt), 'MMM d')})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                  <p className="text-[11px] text-muted-foreground">Only transactions made within the last 7 days can be attached.</p>
                 </div>
               </div>
               <DialogFooter>

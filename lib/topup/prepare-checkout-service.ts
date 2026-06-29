@@ -48,6 +48,8 @@ export type PrepareCheckoutInput = {
   amount: number
   currency: string
   userId?: string
+  serviceFee?: number
+  tax?: number
 }
 
 export type PrepareCheckoutResult = {
@@ -64,6 +66,7 @@ export type PrepareCheckoutResult = {
   routingResult?: RoutingDecisionSnapshot
   lcrResult?: LcrSelectionResult
   error?: string
+  operatorName?: string
 }
 
 async function createPendingTransaction(input: PrepareCheckoutInput & { operatorName: string }): Promise<string | null> {
@@ -105,6 +108,8 @@ async function createPendingRechargeOrder(input: {
   currency: string
   userId?: string
   rechargeAttemptId?: string
+  serviceFee?: number
+  tax?: number
 }): Promise<string | null> {
   const res = await supabaseRest('recharge_orders?select=id', {
     method: 'POST',
@@ -122,6 +127,8 @@ async function createPendingRechargeOrder(input: {
         send_amount: input.amount,
         send_currency: input.currency,
         status: 'pending_payment',
+        service_fee: input.serviceFee ?? 0,
+        tax: input.tax ?? 0,
         metadata: {
           checkout_phase: 'provider_selected_awaiting_payment',
         },
@@ -467,6 +474,8 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
     currency: input.currency,
     userId: input.userId,
     rechargeAttemptId: attempt.id,
+    serviceFee: input.serviceFee,
+    tax: input.tax,
   })
 
   const txnMetaRes = await supabaseRest(`transactions?id=eq.${enc(transactionId)}&select=metadata&limit=1`, {
@@ -524,6 +533,7 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
     selectedProviderCurrency: lcrResult.selectedProviderCurrency,
     routingResult: snapshot,
     lcrResult,
+    operatorName: operatorInfo.name,
   }
 }
 

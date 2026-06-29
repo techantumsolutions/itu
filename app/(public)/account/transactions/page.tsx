@@ -238,12 +238,12 @@ export default function TransactionsPage() {
 
   const openTransactionDetail = (txn: (typeof transactions)[number]) => {
     const routingType = txn.metadata?.carrier ? 'Cheapest' : '—'
-    
+
     let destinationCountry = txn.metadata?.countryName || txn.metadata?.country || txn.metadata?.country_id || '—'
     if (typeof destinationCountry === 'string' && destinationCountry.length === 2) {
       destinationCountry = `${getFlagEmoji(destinationCountry)} ${getCountryName(destinationCountry)}`
     }
-    
+
     const networkOperator = txn.metadata?.carrierName || txn.metadata?.carrier || txn.metadata?.operator_id || '—'
     const normalizedStatus = txn.status === 'completed' ? 'success' : txn.status === 'failed' ? 'failed' : 'pending'
     setDetailModel({
@@ -483,12 +483,13 @@ export default function TransactionsPage() {
             <Table className="min-w-[900px]">
               <TableHeader>
                 <TableRow>
+                  <TableHead>Date & Time</TableHead>
                   <TableHead>Mobile Number</TableHead>
                   <TableHead>Country</TableHead>
                   <TableHead>Operator</TableHead>
                   <TableHead>Recharge Amount</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Date & Time</TableHead>
+
                   <TableHead>Reward Points</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
@@ -504,13 +505,17 @@ export default function TransactionsPage() {
                   paginatedTransactions.map((txn) => (
                     <TableRow key={txn.id}>
                       <TableCell>
+                        <p className="text-sm">{formatDate(txn.createdAt)}</p>
+                        <p className="text-xs text-muted-foreground">{formatTime(txn.createdAt)}</p>
+                      </TableCell>
+                      <TableCell>
                         <div className="flex items-start gap-2">
                           <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted">
                             {getTypeIcon(txn.type)}
                           </div>
                           <div>
                             <p className="font-medium">{txn.metadata?.mobile_number || txn.metadata?.phoneNumber || '—'}</p>
-                            <p className="text-xs text-muted-foreground font-mono">{txn.id}</p>
+                            {/* <p className="text-xs text-muted-foreground font-mono">{txn.id}</p> */}
                           </div>
                         </div>
                       </TableCell>
@@ -528,13 +533,10 @@ export default function TransactionsPage() {
                       </TableCell>
                       <TableCell>{txn.metadata?.carrierName || txn.metadata?.carrier || txn.metadata?.operator_id || '—'}</TableCell>
                       <TableCell className="font-semibold">
-                        {txn.currency === 'PTS' ? `${txn.amount} pts` : `$${txn.amount.toFixed(2)}`}
+                        {txn.currency === 'PTS' ? `${txn.amount} pts` : `${txn.amount.toFixed(2)}`}
                       </TableCell>
                       <TableCell>{getStatusBadge(txn.status)}</TableCell>
-                      <TableCell>
-                        <p className="text-sm">{formatDate(txn.createdAt)}</p>
-                        <p className="text-xs text-muted-foreground">{formatTime(txn.createdAt)}</p>
-                      </TableCell>
+
                       <TableCell>
                         {user ? (
                           <span className={cn('text-sm font-medium', txn.rewardPoints ? 'text-primary' : 'text-muted-foreground')}>
@@ -582,10 +584,23 @@ export default function TransactionsPage() {
                                 Raise Complaint
                               </DropdownMenuItem>
                             )}
-                            <DropdownMenuItem>
-                              <Download className="mr-2 h-4 w-4" />
-                              Download Receipt
-                            </DropdownMenuItem>
+                            {txn.rechargeOrderId ? (
+                              <DropdownMenuItem asChild>
+                                <a
+                                  href={`/api/receipt/${txn.rechargeOrderId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                >
+                                  <Download className="mr-2 h-4 w-4" />
+                                  Download Receipt
+                                </a>
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem disabled>
+                                <Download className="mr-2 h-4 w-4" />
+                                Download Receipt
+                              </DropdownMenuItem>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>
