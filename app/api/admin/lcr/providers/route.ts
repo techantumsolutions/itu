@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-rest'
 import { getDtoneCredentialsFromEnv } from '@/lib/dtone'
-import { adminCanUseAnyFeature, adminCanManageProviders } from '@/lib/auth/require-admin-feature'
+import { requireAdminPermission, adminHasAnyPermission } from '@/lib/auth/require-admin-feature'
 import { logAdminActivity } from '@/lib/auth/audit'
 
 function dingEnvReady(): boolean {
@@ -23,7 +23,7 @@ type RawFetchRow = { provider_id: string; fetched_at: string }
 
 export async function GET(request: Request) {
   if (
-    !(await adminCanUseAnyFeature(request, ['providers', 'routing', 'products'], { allowLegacyHeader: true }))
+    !(await adminHasAnyPermission(request, ['providers.view', 'lcr.view', 'plans.view']))
   ) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
@@ -147,9 +147,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!(await adminCanManageProviders(request))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const denied = await requireAdminPermission(request, 'providers.create')
+  if (denied) return denied
   if (!isSupabaseCatalogConfigured()) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 })
   }

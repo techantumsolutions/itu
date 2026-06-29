@@ -1,12 +1,11 @@
 import { NextResponse } from 'next/server'
-import { isAdminRequest } from '@/lib/tickets/auth-headers'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import { listTicketsAdmin } from '@/lib/tickets/db-persistence'
 import type { TicketStatus } from '@/lib/tickets/types'
 
 export async function GET(request: Request) {
-  if (!isAdminRequest(request)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const denied = await requireAdminPermission(request, 'tickets.view')
+  if (denied) return denied
 
   const { searchParams } = new URL(request.url)
   const status = (searchParams.get('status') ?? 'all') as TicketStatus | 'all'

@@ -6,7 +6,7 @@ import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function POST(request: Request, ctx: { params: Promise<{ id: string }> }) {
-  if (!(await adminCanUseFeature(request, 'integrations', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'integrations'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

@@ -3,11 +3,14 @@ import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { aggAudit } from '@/lib/aggregator/repository'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
-import { slugify } from '@/lib/aggregator/signature'
 import { logAdminActivity } from '@/lib/auth/audit'
+import {
+  recordAdminOperatorRename,
+  stableOperatorSlugForRename,
+} from '@/lib/aggregator/admin-operator-rename'
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
-  if (!(await adminCanUseFeature(request, 'integrations', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'integrations'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -19,16 +22,26 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
   }
 
-  // Get current state for audit log
   const beforeRes = await supabaseRest(`system_operators?id=eq.${encodeURIComponent(id)}&select=*&limit=1`, { cache: 'no-store' })
   const beforeRows = beforeRes.ok ? await beforeRes.json() : []
   const before = beforeRows[0] ?? null
 
-  const patchData: Record<string, any> = {}
+  const patchData: Record<string, unknown> = {}
   if (status) patchData.status = status
-  if (system_operator_name) {
-    patchData.system_operator_name = system_operator_name
-    patchData.slug = slugify(system_operator_name)
+
+  const oldName = String(before?.system_operator_name ?? '').trim()
+  const newName = typeof system_operator_name === 'string' ? system_operator_name.trim() : ''
+
+  if (system_operator_name !== undefined && !newName) {
+    return NextResponse.json({ error: 'Name cannot be empty' }, { status: 400 })
+  }
+
+  if (newName) {
+    patchData.system_operator_name = newName
+    if (oldName && oldName !== newName) {
+      patchData.name_manually_edited = true
+      patchData.slug = stableOperatorSlugForRename(oldName, before?.slug)
+    }
   }
 
   if (Object.keys(patchData).length === 0) {
@@ -47,6 +60,19 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
 
   const rows = await res.json()
   const after = rows[0] ?? null
+
+  if (newName && oldName && oldName !== newName && before?.country_id) {
+    const actor = getRequestUser(request)
+    await recordAdminOperatorRename({
+      systemOperatorId: id,
+      oldName,
+      newName,
+      countryId: String(before.country_id),
+      actorEmail: actor?.email ?? 'admin',
+    }).catch((err) => {
+      console.error('[operators/patch] Failed to record admin rename metadata:', err)
+    })
+  }
 
   const actor = getRequestUser(request)
   await aggAudit({

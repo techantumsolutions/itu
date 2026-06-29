@@ -6,7 +6,7 @@ import { buildSystemPlanPricingConsistencyReport } from '@/lib/catalog/system-pl
 type RouteContext = { params: Promise<{ id: string }> }
 
 export async function GET(request: Request, context: RouteContext) {
-  if (!(await adminCanUseFeature(request, 'products', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'products'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

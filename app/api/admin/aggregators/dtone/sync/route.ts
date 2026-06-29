@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server'
-import { isAdminRequest } from '@/lib/tickets/auth-headers'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import { syncDtoneCatalog } from '@/lib/aggregators/dtone-sync'
 
 export async function POST(request: Request) {
-  if (!isAdminRequest(request)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const denied = await requireAdminPermission(request, 'providers.sync')
+  if (denied) return denied
 
   try {
     const result = await syncDtoneCatalog()
@@ -17,4 +16,3 @@ export async function POST(request: Request) {
     )
   }
 }
-

@@ -27,6 +27,7 @@ import {
 import type { TicketAdminDetail, TicketStatus, TicketMessage } from '@/lib/tickets/types'
 import { isClientAdminUser } from '@/lib/tickets/auth-headers'
 import { toast } from 'sonner'
+import { clientHasAdminPermission } from '@/lib/auth/client-features'
 import { io } from 'socket.io-client'
 import { getPublicSocketServerUrl } from '@/lib/tickets/socket-config'
 
@@ -172,6 +173,8 @@ export default function AdminSupportTicketDetailPage() {
     }
   }
 
+  const canEditTickets = !!(user && clientHasAdminPermission(user, 'tickets.edit'))
+
   if (!headers) return null
 
   if (loading) {
@@ -310,6 +313,7 @@ export default function AdminSupportTicketDetailPage() {
           </section>
 
           {/* 4. Reply to customer */}
+          {canEditTickets ? (
           <section className="rounded-2xl border border-border/70 bg-card/80 p-4 shadow-elevated-sm">
             <h2 className="mb-3 text-sm font-semibold">Reply to customer</h2>
             {canPublicReply ? (
@@ -333,9 +337,12 @@ export default function AdminSupportTicketDetailPage() {
               </p>
             )}
           </section>
+          ) : null}
         </div>
 
         <aside className="space-y-4">
+          {canEditTickets ? (
+          <>
           {/* Status Change Card */}
           <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/80 p-4 shadow-elevated-sm">
             <div className="flex items-center justify-between gap-2">
@@ -391,6 +398,8 @@ export default function AdminSupportTicketDetailPage() {
               </Button>
             </form>
           </div>
+          </>
+          ) : null}
         </aside>
       </div>
     </div>

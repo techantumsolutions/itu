@@ -171,23 +171,41 @@ export async function aggUpsertRawPlan(input: RawPlanInput) {
 }
 
 export async function aggUpsertSystemOperator(input: SystemOperatorInput) {
+  const existingRes = await supabaseRest(
+    `system_operators?slug=eq.${enc(input.slug)}&country_id=eq.${enc(input.countryId)}&select=id,name_manually_edited&limit=1`,
+    { cache: 'no-store' },
+  ).catch(() => null)
+
+  let preserveName = false
+  if (existingRes?.ok) {
+    const rows = (await existingRes.json().catch(() => [])) as Array<{
+      name_manually_edited?: boolean | null
+    }>
+    preserveName = rows[0]?.name_manually_edited === true
+  }
+
+  const body: Record<string, unknown> = {
+    slug: input.slug,
+    country_id: input.countryId,
+    logo: input.logo ?? null,
+    operator_type: input.operatorType ?? null,
+    status: input.status ?? 'ACTIVE',
+    operator_domain: input.operatorDomain ?? null,
+    operator_domain_confidence: input.operatorDomainConfidence ?? null,
+    domain_classification_source: input.domainClassificationSource ?? null,
+    service_domain: input.serviceDomain ?? input.operatorDomain ?? null,
+    service_domain_confidence: input.serviceDomainConfidence ?? input.operatorDomainConfidence ?? null,
+    service_domain_source: input.serviceDomainSource ?? input.domainClassificationSource ?? null,
+  }
+
+  if (!preserveName) {
+    body.system_operator_name = input.systemOperatorName
+  }
+
   const res = await supabaseRest('system_operators?on_conflict=slug,country_id', {
     method: 'POST',
     headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
-    body: JSON.stringify({
-      system_operator_name: input.systemOperatorName,
-      slug: input.slug,
-      country_id: input.countryId,
-      logo: input.logo ?? null,
-      operator_type: input.operatorType ?? null,
-      status: input.status ?? 'ACTIVE',
-      operator_domain: input.operatorDomain ?? null,
-      operator_domain_confidence: input.operatorDomainConfidence ?? null,
-      domain_classification_source: input.domainClassificationSource ?? null,
-      service_domain: input.serviceDomain ?? input.operatorDomain ?? null,
-      service_domain_confidence: input.serviceDomainConfidence ?? input.operatorDomainConfidence ?? null,
-      service_domain_source: input.serviceDomainSource ?? input.domainClassificationSource ?? null,
-    }),
+    body: JSON.stringify(body),
   })
   const rows = await jsonRows(res)
   return rows[0] ?? null
@@ -494,6 +512,54 @@ export async function aggCountProvidersBySystemPlanIds(
     counts.set(planId, providers.size)
   }
   return counts
+}
+
+export async function aggProviderNamesBySystemPlanIds(
+  systemPlanIds: string[],
+): Promise<Map<string, string[]>> {
+  const namesByPlan = new Map<string, string[]>()
+  if (!systemPlanIds.length) return namesByPlan
+
+  const uniqueIds = [...new Set(systemPlanIds)]
+  const providerSets = new Map<string, Set<string>>()
+
+  for (let i = 0; i < uniqueIds.length; i += 100) {
+    const chunk = uniqueIds.slice(i, i + 100)
+    const res = await supabaseRest(
+      `plan_mappings?system_plan_id=in.(${chunk.map((id) => encodeURIComponent(id)).join(',')})&select=system_plan_id,service_provider_id&limit=10000`,
+      { cache: 'no-store' },
+    ).catch(() => null)
+    if (!res?.ok) continue
+
+    const rows = (await res.json()) as Array<{
+      system_plan_id?: string
+      service_provider_id?: string
+    }>
+    for (const row of rows) {
+      const planId = row.system_plan_id
+      const providerId = row.service_provider_id
+      if (!planId || !providerId) continue
+      if (!providerSets.has(planId)) providerSets.set(planId, new Set())
+      providerSets.get(planId)!.add(providerId)
+    }
+  }
+
+  if (!providerSets.size) return namesByPlan
+
+  const providers = await aggListProviders().catch(() => [])
+  const providerNameById = new Map(
+    providers.map((p) => [p.id, (p.name || p.code || 'Unknown Provider').trim()]),
+  )
+
+  for (const [planId, providerIds] of providerSets.entries()) {
+    const names = [...providerIds]
+      .map((id) => providerNameById.get(id))
+      .filter((name): name is string => Boolean(name))
+      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    namesByPlan.set(planId, names)
+  }
+
+  return namesByPlan
 }
 
 export async function aggUpsertDuplicateSuggestion(input: {

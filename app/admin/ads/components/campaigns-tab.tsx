@@ -14,6 +14,7 @@ import { Trash, Plus, Pencil, Check, ChevronsUpDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
+import { useAdminModulePermissions } from '@/lib/hooks/use-admin-module-permissions'
 
 const AVAILABLE_PAGES = [
   { value: '/', label: 'Home Page (/)' },
@@ -26,6 +27,9 @@ const AVAILABLE_PAGES = [
 ]
 
 export function CampaignsTab() {
+  const { canCreate, canEdit, canDelete } = useAdminModulePermissions('ads')
+  const showActionsCol = canEdit || canDelete
+  const tableColSpan = showActionsCol ? 5 : 4
   const [campaigns, setCampaigns] = useState<any[]>([])
   const [countries, setCountries] = useState<{ value: string, label: string }[]>([])
   const [loading, setLoading] = useState(true)
@@ -186,9 +190,10 @@ export function CampaignsTab() {
           <CardDescription>Manage your ad campaigns and their targeting rules.</CardDescription>
         </div>
         
+        {canCreate ? (
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={openNew}><Plus className="w-4 h-4 mr-2" /> New Campaign</Button>
+            <Button onClick={openNew} data-perm="create"><Plus className="w-4 h-4 mr-2" /> New Campaign</Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
@@ -254,6 +259,7 @@ export function CampaignsTab() {
             </form>
           </DialogContent>
         </Dialog>
+        ) : null}
       </CardHeader>
       
       <CardContent>
@@ -264,14 +270,16 @@ export function CampaignsTab() {
               <TableHead>Status</TableHead>
               <TableHead>Targeting</TableHead>
               <TableHead>Dates</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              {showActionsCol ? (
+              <TableHead className="text-right" data-perm-col="edit">Actions</TableHead>
+              ) : null}
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-4 text-muted-foreground">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={tableColSpan} className="text-center py-4 text-muted-foreground">Loading...</TableCell></TableRow>
             ) : campaigns.length === 0 ? (
-              <TableRow><TableCell colSpan={5} className="text-center py-4 text-muted-foreground">No campaigns found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={tableColSpan} className="text-center py-4 text-muted-foreground">No campaigns found.</TableCell></TableRow>
             ) : (
               campaigns.map(c => (
                 <TableRow key={c.id}>
@@ -288,10 +296,16 @@ export function CampaignsTab() {
                       End: {new Date(c.end_date).toLocaleDateString()}
                     </div>
                   </TableCell>
-                  <TableCell className="text-right space-x-2">
-                    <Button variant="ghost" size="icon" onClick={() => openEdit(c)}><Pencil className="w-4 h-4" /></Button>
-                    <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-600" onClick={() => handleDelete(c.id)}><Trash className="w-4 h-4" /></Button>
+                  {showActionsCol ? (
+                  <TableCell className="text-right space-x-2" data-perm-col="edit">
+                    {canEdit ? (
+                    <Button variant="ghost" size="icon" data-perm="edit" onClick={() => openEdit(c)}><Pencil className="w-4 h-4" /></Button>
+                    ) : null}
+                    {canDelete ? (
+                    <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-600" data-perm="delete" onClick={() => handleDelete(c.id)}><Trash className="w-4 h-4" /></Button>
+                    ) : null}
                   </TableCell>
+                  ) : null}
                 </TableRow>
               ))
             )}

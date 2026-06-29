@@ -37,8 +37,9 @@ import { CompactDateTime } from '@/app/admin/integrations/_components/integratio
 import { useAuthStore } from '@/lib/stores'
 import { toast } from 'sonner'
 import type { User } from '@/lib/types'
-import { isClientAdminUser, isClientSuperAdmin } from '@/lib/tickets/auth-headers'
-import { clientHasAdminFeature } from '@/lib/auth/client-features'
+import { isClientAdminUser } from '@/lib/tickets/auth-headers'
+import { clientHasAdminPermission } from '@/lib/auth/client-features'
+import { useProviderDisplay } from '@/components/admin/provider-display-context'
 
 type LcrProviderRow = {
   id: string
@@ -103,6 +104,7 @@ function statusBadge(status: string) {
 export default function AdminProvidersPage() {
   const router = useRouter()
   const user = useAuthStore((s) => s.user)
+  const { displayProvider, showNames } = useProviderDisplay()
   const [providers, setProviders] = useState<LcrProviderRow[]>([])
   const [coverageRows, setCoverageRows] = useState<CoverageRow[]>([])
   const [configured, setConfigured] = useState(true)
@@ -110,6 +112,11 @@ export default function AdminProvidersPage() {
   const [editingProvider, setEditingProvider] = useState<LcrProviderRow | null>(null)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [syncingId, setSyncingId] = useState<string | null>(null)
+
+  const canCreate = user && clientHasAdminPermission(user, 'providers.create')
+  const canEdit = user && clientHasAdminPermission(user, 'providers.edit')
+  const canSync = user && clientHasAdminPermission(user, 'providers.sync')
+  const providerTableColSpan = canEdit ? 5 : 4
 
   const sortedProviders = useMemo(() => {
     return [...providers].sort((a, b) => {
@@ -359,20 +366,20 @@ export default function AdminProvidersPage() {
             <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
             Reload
           </Button>
+          {canSync ? (
           <Button variant="outline" onClick={handleSyncAll} disabled={isRefreshing || !configured} className="gap-2">
             <RefreshCcw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
             Sync catalog
           </Button>
-          {user &&
-            isClientAdminUser(user) &&
-            (isClientSuperAdmin(user) || clientHasAdminFeature(user, 'providers_manage')) && (
+          ) : null}
+          {canCreate ? (
               <Button className="gap-2" asChild>
                 <Link href="/admin/providers/new">
                   <Plus className="h-4 w-4" />
                   Add provider
                 </Link>
               </Button>
-            )}
+          ) : null}
         </div>
       </div>
 
@@ -436,19 +443,21 @@ export default function AdminProvidersPage() {
                   <TableHead>Config</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Last sync</TableHead>
+                  {canEdit ? (
                   <TableHead className={ACTIONS_HEAD}>Actions</TableHead>
+                  ) : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={providerTableColSpan} className="py-8 text-center text-muted-foreground">
                       Loading…
                     </TableCell>
                   </TableRow>
                 ) : sortedProviders.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={providerTableColSpan} className="py-8 text-center text-muted-foreground">
                       No providers yet. Use Add provider, or set DTONE_API_KEY + DTONE_API_SECRET in env (bootstrap runs on load). Ensure Supabase is configured.
                     </TableCell>
                   </TableRow>
@@ -457,8 +466,16 @@ export default function AdminProvidersPage() {
                     <TableRow key={provider.id} className="group">
                       <TableCell>
                         <div className="min-w-0 leading-tight">
-                          <p className="truncate font-medium">{provider.name}</p>
-                          <p className="truncate text-[11px] text-muted-foreground font-mono">{provider.code}</p>
+                          <p className="truncate font-medium">
+                            {displayProvider({
+                              id: provider.id,
+                              code: provider.code,
+                              name: provider.name,
+                            })}
+                          </p>
+                          {showNames ? (
+                            <p className="truncate text-[11px] text-muted-foreground font-mono">{provider.code}</p>
+                          ) : null}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -472,6 +489,7 @@ export default function AdminProvidersPage() {
                       <TableCell>
                         <div className="space-y-1.5">
                           {statusBadge(provider.status)}
+                          {canEdit ? (
                           <div className="flex items-center gap-2">
                             <Switch
                               checked={provider.is_active}
@@ -482,6 +500,11 @@ export default function AdminProvidersPage() {
                               {provider.is_active ? 'Active' : 'Inactive'}
                             </span>
                           </div>
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">
+                              {provider.is_active ? 'Active' : 'Inactive'}
+                            </span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -491,17 +514,9 @@ export default function AdminProvidersPage() {
                           <span className="text-xs text-muted-foreground">Never</span>
                         )}
                       </TableCell>
+                      {canEdit ? (
                       <TableCell className={ACTIONS_CELL}>
                         <div className="flex flex-col gap-1">
-                       {/*  <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-8 w-full"
-                            disabled={!provider.is_active || syncingId === provider.id || isRefreshing}
-                            onClick={() => void handleSyncProvider(provider.id)}
-                          >
-                            {syncingId === provider.id ? 'Syncing…' : 'Sync'}
-                          </Button>*/}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -513,6 +528,7 @@ export default function AdminProvidersPage() {
                           </Button>
                         </div>
                       </TableCell>
+                      ) : null}
                     </TableRow>
                   ))
                 )}
@@ -559,7 +575,7 @@ export default function AdminProvidersPage() {
                         ) : (
                           row.providerCodes.map((code) => (
                             <Badge key={code} variant="outline" className="mr-1 mb-1">
-                              {code}
+                              {displayProvider({ code })}
                             </Badge>
                           ))
                         )}
@@ -582,7 +598,7 @@ export default function AdminProvidersPage() {
             <DialogTitle>Configure {editingProvider?.name}</DialogTitle>
             <DialogDescription>Updates the provider registry (credentials are not shown; re-enter to replace).</DialogDescription>
           </DialogHeader>
-          {editingProvider && (
+          {editingProvider && canEdit ? (
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
@@ -643,7 +659,7 @@ export default function AdminProvidersPage() {
                   />
                 </div>
               </div>
-              <div className="grid gap-2">
+              {/* <div className="grid gap-2">
                 <Label>Supported countries</Label>
                 <Input
                   value={(editingProvider.supported_countries ?? []).join(', ')}
@@ -658,14 +674,22 @@ export default function AdminProvidersPage() {
                     })
                   }
                 />
-              </div>
+              </div> */}
             </div>
-          )}
+          ) : null}
           <DialogFooter>
+            {canEdit ? (
+            <>
             <Button variant="outline" onClick={() => setEditingProvider(null)}>
               Cancel
             </Button>
             <Button onClick={() => void saveEdit()}>Save changes</Button>
+            </>
+            ) : (
+            <Button variant="outline" onClick={() => setEditingProvider(null)}>
+              Close
+            </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

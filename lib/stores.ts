@@ -3,6 +3,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { User, Transaction, Country, Carrier, Product, RechargeOrder } from './types'
+import { clearPagePasswordUnlocks } from '@/lib/auth/page-password-storage'
 
 // Auth Store
 interface AuthState {
@@ -72,6 +73,7 @@ export const useAuthStore = create<AuthState>()(
       },
       logout: () => {
         void fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {})
+        clearPagePasswordUnlocks()
         set({ user: null, isAuthenticated: false })
         try {
           useAuthStore.persist.clearStorage()

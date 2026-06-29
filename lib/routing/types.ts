@@ -42,7 +42,11 @@ export type RoutingLogRow = {
   transactionId: string | null
   countryId: string | null
   operatorId: string | null
+  operatorName?: string | null
   productId: string | null
+  planName?: string | null
+  planRechargeAmount?: number | null
+  planRechargeCurrency?: string | null
   providerId: string | null
   providerCode?: string
   providerName?: string
@@ -53,6 +57,8 @@ export type RoutingLogRow = {
   providerWholesaleCurrency?: string | null
   destinationFaceValue?: number | null
   destinationCurrency?: string | null
+  providerDestinationAmount?: number | null
+  providerDestinationCurrency?: string | null
   normalizedProviderPrice?: number | null
   userAmount?: number | null
   userCurrency?: string | null

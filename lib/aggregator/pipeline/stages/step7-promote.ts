@@ -16,6 +16,7 @@ import {
 } from '@/lib/aggregator/plan-mapping-reconciliation'
 import { CatalogIntelligenceEngine } from '@/lib/aggregator/catalog-intelligence'
 import { buildSystemOperatorInput } from '@/lib/aggregator/operator-normalizer'
+import { resolveSystemOperatorIdForSync } from '@/lib/aggregator/resolve-system-operator-id'
 import {
   extractRawPlanFields,
   shouldBlockOperatorAsNonMobile,
@@ -395,24 +396,41 @@ export async function runStep7Promote(
     systemOperatorInput.serviceDomainSource = domainSource
     systemOperatorInput.status = 'ACTIVE'
 
-    const systemOperator = await aggUpsertSystemOperator(systemOperatorInput)
-    if (!systemOperator?.id) continue
-
-    promotedOps++
-    if (registryVerified) registryPromotedOps++
-
     const rawOpRes = await supabaseRest(
       `provider_operator_raw?service_provider_id=eq.${providerId}&provider_operator_name=eq.${encodeURIComponent(operatorName)}&limit=1`,
       { cache: 'no-store' },
     )
     const rawOpRows = await rawOpRes.json().catch(() => []) as any[]
     const rawOpId = rawOpRows[0]?.id
+    const providerOperatorId = rawOpRows[0]?.provider_operator_id
+
+    let systemOperatorId: string | null = await resolveSystemOperatorIdForSync({
+      serviceProviderId: providerId,
+      providerOperatorId: providerOperatorId ? String(providerOperatorId) : String(op.aggregator_operator_id ?? ''),
+      providerOperatorRawId: rawOpId,
+      providerOperatorName: operatorName,
+      countryIso3,
+      telecomOperatorName: displayOperatorName,
+    })
+
+    let systemOperator: { id?: string } | null = null
+    if (!systemOperatorId) {
+      systemOperator = await aggUpsertSystemOperator(systemOperatorInput)
+      systemOperatorId = systemOperator?.id ?? null
+    } else {
+      systemOperator = { id: systemOperatorId }
+      await aggUpsertSystemOperator(systemOperatorInput)
+    }
+    if (!systemOperatorId) continue
+
+    promotedOps++
+    if (registryVerified) registryPromotedOps++
 
     if (rawOpId) {
       await aggUpsertOperatorMapping({
         serviceProviderId: providerId,
         providerOperatorRawId: rawOpId,
-        systemOperatorId: systemOperator.id,
+        systemOperatorId: systemOperatorId,
         mappingConfidence: registryVerified ? 100 : 100,
         mappingType: registryVerified ? 'REGISTRY' : 'AUTO',
         isVerified: registryVerified,
@@ -423,7 +441,7 @@ export async function runStep7Promote(
       providerId,
       config,
       op,
-      systemOperatorId: systemOperator.id,
+      systemOperatorId: systemOperatorId,
       telecomPlans,
       displayOperatorName,
       rawPlanByAggId,

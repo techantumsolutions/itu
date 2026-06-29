@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
 import { supabaseSignInWithPassword, supabaseAdminUpdateUser } from '@/lib/supabase/auth-rest'
+import { assertStrongPassword } from '@/lib/validators/password-api'
 
 function cookieOptions() {
   const isProd = process.env.NODE_ENV === 'production'
@@ -48,9 +49,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Missing required password fields' }, { status: 400 })
     }
 
-    if (newPassword.length < 6) {
-      return NextResponse.json({ ok: false, error: 'Password must be at least 6 characters' }, { status: 400 })
-    }
+    const passwordError = assertStrongPassword(newPassword)
+    if (passwordError) return passwordError
 
     if (newPassword !== confirmPassword) {
       return NextResponse.json({ ok: false, error: 'Passwords do not match' }, { status: 400 })

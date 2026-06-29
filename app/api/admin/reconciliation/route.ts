@@ -4,7 +4,7 @@ import { supabaseRest } from '@/lib/db/supabase-rest'
 import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseFeature(request, 'reconciliation', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'reconciliation'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   const res = await supabaseRest(

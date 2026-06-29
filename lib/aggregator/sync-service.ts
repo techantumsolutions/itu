@@ -43,6 +43,7 @@ import {
 } from '@/lib/aggregator/country-registry'
 import { validateCountriesTable } from '@/lib/aggregator/country-startup-validation'
 import { buildSystemOperatorInput } from '@/lib/aggregator/operator-normalizer'
+import { resolveSystemOperatorIdForSync } from '@/lib/aggregator/resolve-system-operator-id'
 import { buildSystemPlanInput, scorePlanCandidate, isValidSystemPlan } from '@/lib/aggregator/plan-normalizer'
 import { validateOperatorTelecomService, validateRawOperatorPlans, extractRawPlanFields } from '@/lib/aggregator/telecom-validator'
 import { CatalogIntelligenceEngine, isMobileTelecomDomain, segmentOperatorPlansAtIngestion } from '@/lib/aggregator/catalog-intelligence'
@@ -593,21 +594,14 @@ export async function syncAggregatorProvider(
         rawPlans: plans.map((p) => p.raw ?? p),
       })
 
-      let systemOperatorId: string | null = null
-      
-      // Look up operator alias first
-      try {
-        const normName = op.providerOperatorName.trim().toUpperCase()
-        const aliasRes = await supabaseRest(`operator_aliases?alias_name=eq.${encodeURIComponent(normName)}&limit=1`, { cache: 'no-store' })
-        if (aliasRes.ok) {
-          const alias = await aliasRes.json()
-          if (alias && alias.length > 0 && alias[0].system_operator_id) {
-            systemOperatorId = alias[0].system_operator_id
-          }
-        }
-      } catch (err) {
-        console.error('Failed to look up operator alias:', err)
-      }
+      let systemOperatorId: string | null = await resolveSystemOperatorIdForSync({
+        serviceProviderId: providerId,
+        providerOperatorId: operatorId,
+        providerOperatorRawId: rawOperator.id,
+        providerOperatorName: op.providerOperatorName,
+        countryIso3: op.countryCode || op.isoCode || plans[0]?.countryIso3 || 'UNK',
+        telecomOperatorName,
+      })
 
       if (!systemOperatorId) {
         const systemOperatorInput = buildSystemOperatorInput(plans[0], telecomOperatorName)
@@ -1049,17 +1043,17 @@ export async function runLocalOperatorSync(providerId?: string) {
         }
 
         // Resolve System Operator ID
-        let systemOperatorId: string | null = null
-        const aliasRes = await supabaseRest(`operator_aliases?alias_name=eq.${encodeURIComponent(normName)}&limit=1`, { cache: 'no-store' })
-        if (aliasRes.ok) {
-          const alias = await aliasRes.json()
-          if (alias && alias.length > 0 && alias[0].system_operator_id) {
-            systemOperatorId = alias[0].system_operator_id
-          }
-        }
+        const country = rawOp.country_code || rawOp.iso_code || 'UNK'
+        let systemOperatorId: string | null = await resolveSystemOperatorIdForSync({
+          serviceProviderId: provider.id,
+          providerOperatorId: rawOp.provider_operator_id,
+          providerOperatorRawId: rawOp.id,
+          providerOperatorName: rawOp.provider_operator_name,
+          countryIso3: country,
+          telecomOperatorName,
+        })
 
         if (!systemOperatorId) {
-          const country = rawOp.country_code || rawOp.iso_code || 'UNK'
           const dummyPlan = { countryIso3: country, operatorName: telecomOperatorName } as any
           const input = buildSystemOperatorInput(dummyPlan, telecomOperatorName)
           if (input) {

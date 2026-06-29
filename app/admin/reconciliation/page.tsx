@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { useProviderDisplay } from '@/components/admin/provider-display-context'
 
 type ReconciliationReport = {
   id: string
@@ -16,6 +17,7 @@ type ReconciliationReport = {
 }
 
 export default function ReconciliationPage() {
+  const { displayProvider } = useProviderDisplay()
   const [reports, setReports] = useState<ReconciliationReport[]>([])
 
   useEffect(() => {
@@ -56,7 +58,11 @@ export default function ReconciliationPage() {
               ) : (
                 reports.map((report) => (
                   <TableRow key={report.id}>
-                    <TableCell>{report.provider || '—'}</TableCell>
+                    <TableCell>
+                      {report.provider
+                        ? displayProvider({ name: report.provider, code: report.provider })
+                        : '—'}
+                    </TableCell>
                     <TableCell>{report.period_start || '—'} to {report.period_end || '—'}</TableCell>
                     <TableCell><Badge>{report.status}</Badge></TableCell>
                     <TableCell>{report.created_at ? new Date(report.created_at).toLocaleString() : '—'}</TableCell>

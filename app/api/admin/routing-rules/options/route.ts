@@ -9,7 +9,7 @@ import {
 import { ROUTING_RULE_NAME_OPTIONS } from '@/lib/routing/rule-form-options'
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseFeature(request, 'routing', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'routing'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { Check, ChevronsUpDown, Package, RefreshCcw, Loader2, GitMerge, ChevronDown } from 'lucide-react'
+import { Check, ChevronsUpDown, Package, RefreshCcw, Loader2, GitMerge, ChevronDown, ArrowLeft } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -28,6 +28,9 @@ import { Label } from '@/components/ui/label'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import type { SystemPlanProviderCostBreakdown } from '@/lib/admin/provider-cost-breakdown'
 import { formatMoney } from '@/lib/admin/provider-pricing-extractor'
+import { useAuthStore } from '@/lib/stores'
+import { clientHasAdminPermission } from '@/lib/auth/client-features'
+import { useProviderDisplay } from '@/components/admin/provider-display-context'
 
 type ProductPlan = {
   id: string
@@ -37,6 +40,7 @@ type ProductPlan = {
   category: string
   active: boolean
   provider_count?: number
+  provider_names?: string[]
 }
 
 type CountryOption = {
@@ -157,6 +161,13 @@ function sumProviderFees(rechargeCost: {
 
 export default function AdminProductsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const user = useAuthStore((s) => s.user)
+  const { displayProvider, displayProvidersCsv } = useProviderDisplay()
+  const canSync = user && clientHasAdminPermission(user, 'plans.sync')
+  const canEdit = user && clientHasAdminPermission(user, 'plans.edit')
+  const showSelection = !!canEdit
+  const showStatusToggle = !!canEdit
   const [plans, setPlans] = useState<ProductPlan[]>([])
   const [countryOptions, setCountryOptions] = useState<CountryOption[]>([])
   const [planNameFilter, setPlanNameFilter] = useState('')
@@ -182,6 +193,23 @@ export default function AdminProductsPage() {
   const [costLoading, setCostLoading] = useState(false)
   const [costError, setCostError] = useState<string | null>(null)
   const [costBreakdown, setCostBreakdown] = useState<SystemPlanProviderCostBreakdown | null>(null)
+
+  const fromOperators = searchParams.get('from') === 'operators'
+  const operatorsTab = searchParams.get('tab')
+  const returnOperatorsHref =
+    operatorsTab === 'provider' || operatorsTab === 'system'
+      ? `/admin/integrations/operators?tab=${operatorsTab}`
+      : '/admin/integrations/operators'
+
+  const initializedOperatorFromUrl = useRef(false)
+  useEffect(() => {
+    if (initializedOperatorFromUrl.current) return
+    const operatorName = searchParams.get('operatorName')?.trim()
+    if (!operatorName) return
+    setOperatorFilter(operatorName)
+    setDebouncedOperator(operatorName)
+    initializedOperatorFromUrl.current = true
+  }, [searchParams])
 
   const countryNameMap = useMemo(() => {
     const map = new Map<string, string>()
@@ -401,6 +429,8 @@ export default function AdminProductsPage() {
     }
   }
 
+  const tableColSpan = 7 + (showSelection ? 1 : 0) + (showStatusToggle ? 1 : 0)
+
   const sortedPlans = useMemo(() => {
     return [...plans].sort((a, b) => {
       const countryA = countryNameMap.get(a.country_iso3.toUpperCase()) || countryDisplayName(a.country_iso3) || ''
@@ -421,6 +451,14 @@ export default function AdminProductsPage() {
 
   return (
     <div className="space-y-6">
+      {fromOperators ? (
+        <Button variant="ghost" size="sm" className="-ml-2 w-fit" asChild>
+          <Link href={returnOperatorsHref}>
+            <ArrowLeft className="mr-2 size-4" />
+            Back to operators
+          </Link>
+        </Button>
+      ) : null}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Plans</h1>
@@ -429,7 +467,7 @@ export default function AdminProductsPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {selectedIds.length >= 2 ? (
+          {canEdit && selectedIds.length >= 2 ? (
             <Button
               variant="default"
               onClick={() => {
@@ -446,6 +484,7 @@ export default function AdminProductsPage() {
             <RefreshCcw className="mr-2 size-4" />
             Refresh
           </Button>
+          {canSync ? (
           <Button onClick={() => void triggerSync()} disabled={refreshing}>
             {refreshing
               ? 'Syncing…'
@@ -453,6 +492,7 @@ export default function AdminProductsPage() {
                 ? `Sync ${countryNameMap.get(appliedCountry) || appliedCountry}`
                 : 'Sync all countries'}
           </Button>
+          ) : null}
         </div>
       </div>
 
@@ -467,6 +507,7 @@ export default function AdminProductsPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                {showSelection ? (
                 <TableHead className="w-[50px]">
                   <Checkbox
                     checked={
@@ -484,16 +525,19 @@ export default function AdminProductsPage() {
                     }}
                   />
                 </TableHead>
+                ) : null}
                 <TableHead className="w-[28%]">Plan name</TableHead>
                 <TableHead className="w-[12%]">Country</TableHead>
                 <TableHead className="w-[24%]">Operator name</TableHead>
-                {/* <TableHead className="w-[10%]">Providers</TableHead> */}
+                <TableHead className="w-[16%]">Provider</TableHead>
                 <TableHead className="w-[12%]">Category</TableHead>
                 <TableHead className="w-[12%]">Status</TableHead>
+                {showStatusToggle ? (
                 <TableHead className="w-[12%] text-right">Action</TableHead>
+                ) : null}
               </TableRow>
               <TableRow className="hover:bg-transparent">
-                <TableHead className="py-2"></TableHead>
+                {showSelection ? <TableHead className="py-2" /> : null}
                 <TableHead className="py-2 font-normal normal-case">
                   <Input
                     placeholder="Search plan…"
@@ -544,19 +588,19 @@ export default function AdminProductsPage() {
                     ]}
                   />
                 </TableHead>
-                <TableHead className="py-2"></TableHead>
+                {showStatusToggle ? <TableHead className="py-2" /> : null}
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={tableColSpan} className="py-8 text-center text-muted-foreground">
                     Loading products…
                   </TableCell>
                 </TableRow>
               ) : sortedPlans.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={tableColSpan} className="py-8 text-center text-muted-foreground">
                     No products match your filters. Sync providers to ingest plans from more countries.
                   </TableCell>
                 </TableRow>
@@ -567,6 +611,7 @@ export default function AdminProductsPage() {
                     className="cursor-pointer hover:bg-muted/40"
                     onClick={() => void openProviderCosts(plan.id)}
                   >
+                    {showSelection ? (
                     <TableCell className="w-[50px]" onClick={(e) => e.stopPropagation()}>
                       <Checkbox
                         checked={selectedIds.includes(plan.id)}
@@ -579,6 +624,7 @@ export default function AdminProductsPage() {
                         }}
                       />
                     </TableCell>
+                    ) : null}
                     <TableCell className="font-medium">{plan.plan_name}</TableCell>
                     <TableCell>
                       {plan.country_iso3 ? (
@@ -593,15 +639,18 @@ export default function AdminProductsPage() {
                       )}
                     </TableCell>
                     <TableCell>{plan.operator_name || '—'}</TableCell>
-                    {/* <TableCell>
-                      <Badge variant="outline">{plan.provider_count ?? 0}</Badge>
-                    </TableCell> */}
+                    <TableCell>
+                      {(plan.provider_names ?? []).length > 0
+                        ? displayProvidersCsv(plan.provider_names ?? [])
+                        : '—'}
+                    </TableCell>
                     <TableCell className="capitalize">{plan.category || '—'}</TableCell>
                     <TableCell>
                       <Badge variant={plan.active ? 'default' : 'secondary'}>
                         {plan.active ? 'Active' : 'Inactive'}
                       </Badge>
                     </TableCell>
+                    {showStatusToggle ? (
                     <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex justify-end items-center">
                         {togglingId === plan.id ? (
@@ -614,6 +663,7 @@ export default function AdminProductsPage() {
                         )}
                       </div>
                     </TableCell>
+                    ) : null}
                   </TableRow>
                 ))
               )}
@@ -838,7 +888,12 @@ export default function AdminProductsPage() {
                       {costBreakdown.providers.map((provider) => (
                           <TableRow key={`${provider.providerId}:${provider.providerPlanId}`}>
                             <TableCell>
-                              <div className="font-medium">{provider.providerName}</div>
+                              <div className="font-medium">
+                                {displayProvider({
+                                  id: provider.providerId,
+                                  name: provider.providerName,
+                                })}
+                              </div>
                               <div className="text-xs text-muted-foreground">{provider.providerPlanId}</div>
                             </TableCell>
                             <TableCell>{provider.providerPlanName || provider.rawPlanName || '—'}</TableCell>
@@ -892,7 +947,11 @@ export default function AdminProductsPage() {
                       provider.rawData ? (
                         <div key={`raw-${provider.providerId}:${provider.providerPlanId}`} className="rounded-md border p-3">
                           <p className="text-xs font-semibold mb-2">
-                            {provider.providerName} · {provider.providerPlanName || provider.providerPlanId}
+                            {displayProvider({
+                              id: provider.providerId,
+                              name: provider.providerName,
+                            })}{' '}
+                            · {provider.providerPlanName || provider.providerPlanId}
                           </p>
                           <pre className="max-h-40 overflow-auto rounded-md bg-muted p-3 text-[10px] leading-relaxed">
                             {JSON.stringify(provider.rawData, null, 2)}

@@ -14,7 +14,15 @@ export async function POST(req: Request) {
     }
 
     const cacheKey = `pending_register:v1:${email}`
-    const record = await cacheGetJson<{ email: string; password?: string; name?: string; otp: string }>(cacheKey)
+    const record = await cacheGetJson<{
+      email: string
+      password?: string
+      name?: string
+      otp: string
+      phone?: string
+      country_code?: string
+      country?: string
+    }>(cacheKey)
 
     if (!record) {
       return NextResponse.json({ ok: false, error: 'Registration session expired. Please start over.' }, { status: 400 })

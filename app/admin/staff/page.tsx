@@ -11,15 +11,17 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useAuthStore } from '@/lib/stores'
-import { isClientSuperAdmin } from '@/lib/tickets/auth-headers'
 import { toast } from 'sonner'
 import type { User } from '@/lib/types'
+import { clientHasAdminPermission } from '@/lib/auth/client-features'
 import {
-  ADMIN_FEATURE_KEYS,
-  ADMIN_FEATURE_LABELS,
+  ADMIN_PERMISSION_GROUPS,
+  ADMIN_PERMISSION_KEYS,
+  ADMIN_PERMISSION_LABELS,
   defaultLimitedAdminPermissions,
-  type AdminFeatureKey,
-} from '@/lib/auth/admin-features'
+  migrateLegacyPermissions,
+  type AdminPermissionKey,
+} from '@/lib/auth/admin-permissions'
 import { ChevronDown, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -66,12 +68,16 @@ export default function AdminStaffPage() {
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
-  const [perm, setPerm] = useState<Record<AdminFeatureKey, boolean>>(defaultLimitedAdminPermissions())
+  const [perm, setPerm] = useState<Record<AdminPermissionKey, boolean>>(defaultLimitedAdminPermissions())
   const [saving, setSaving] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
 
+  const canView = user && clientHasAdminPermission(user, 'admin_users.view')
+  const canCreate = user && clientHasAdminPermission(user, 'admin_users.create')
+  const canEdit = user && clientHasAdminPermission(user, 'admin_users.edit')
+
   const load = useCallback(async () => {
-    if (!user || !isClientSuperAdmin(user)) return
+    if (!canView) return
     setLoading(true)
     try {
       const res = await fetch('/api/admin/staff', { credentials: 'include', headers: adminHeaders(user) })
@@ -83,25 +89,25 @@ export default function AdminStaffPage() {
     } finally {
       setLoading(false)
     }
-  }, [user])
+  }, [canView, user])
 
   useEffect(() => {
-    if (user && !isClientSuperAdmin(user)) {
-      toast.error('Super admin only')
+    if (user && !canView) {
+      toast.error('You do not have permission to view admin users')
       router.replace('/admin')
     }
-  }, [user, router])
+  }, [user, canView, router])
 
   useEffect(() => {
     void load()
   }, [load])
 
-  const togglePerm = (k: AdminFeatureKey, v: boolean) => {
+  const togglePerm = (k: AdminPermissionKey, v: boolean) => {
     setPerm((p) => ({ ...p, [k]: v }))
   }
 
   const createStaff = async () => {
-    if (!user || !isClientSuperAdmin(user)) return
+    if (!user || !canCreate) return
     setSaving(true)
     try {
       const res = await fetch('/api/admin/staff', {
@@ -125,7 +131,7 @@ export default function AdminStaffPage() {
     }
   }
 
-  if (!user || !isClientSuperAdmin(user)) {
+  if (!user || !canView) {
     return <div className="p-6 text-sm text-muted-foreground">Checking access…</div>
   }
 
@@ -137,10 +143,10 @@ export default function AdminStaffPage() {
         <div>
           <h1 className="text-2xl font-bold">Admin users</h1>
           <p className="text-muted-foreground text-sm">
-            Super admins manage limited admins. Run <code className="text-xs">profiles_admin_roles.sql</code> in
-            Supabase so the owner account is <code className="text-xs">super_admin</code>.
+            Manage limited admin accounts and their module permissions.
           </p>
         </div>
+        {canCreate ? (
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button className="shrink-0 rounded-xl bg-neutral-900 text-white hover:bg-neutral-800">
@@ -189,26 +195,33 @@ export default function AdminStaffPage() {
                       <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent className="w-[300px] max-h-[300px] overflow-y-auto p-1.5 rounded-xl shadow-elevated" align="start">
-                    {ADMIN_FEATURE_KEYS.map((k) => (
-                      <DropdownMenuItem
-                        key={k}
-                        onSelect={(e: Event) => {
-                          e.preventDefault()
-                          togglePerm(k, !perm[k])
-                        }}
-                        className="rounded-lg cursor-pointer flex items-center gap-2.5"
-                      >
-                        <div className={cn(
-                          "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
-                          perm[k]
-                            ? "border-neutral-900 bg-neutral-900 text-white"
-                            : "border-neutral-300 bg-white"
-                        )}>
-                          {perm[k] && <Check className="size-3 text-white stroke-[3px]" />}
-                        </div>
-                        <span className="text-sm text-neutral-700">{ADMIN_FEATURE_LABELS[k]}</span>
-                      </DropdownMenuItem>
+                  <DropdownMenuContent className="w-[340px] max-h-[360px] overflow-y-auto p-1.5 rounded-xl shadow-elevated" align="start">
+                    {ADMIN_PERMISSION_GROUPS.map((group) => (
+                      <div key={group.module} className="px-1 py-1">
+                        <p className="px-2 py-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                          {group.module}
+                        </p>
+                        {group.keys.map((k) => (
+                          <DropdownMenuItem
+                            key={k}
+                            onSelect={(e: Event) => {
+                              e.preventDefault()
+                              togglePerm(k, !perm[k])
+                            }}
+                            className="rounded-lg cursor-pointer flex items-center gap-2.5"
+                          >
+                            <div className={cn(
+                              "flex size-4 shrink-0 items-center justify-center rounded-[4px] border transition-colors",
+                              perm[k]
+                                ? "border-neutral-900 bg-neutral-900 text-white"
+                                : "border-neutral-300 bg-white"
+                            )}>
+                              {perm[k] && <Check className="size-3 text-white stroke-[3px]" />}
+                            </div>
+                            <span className="text-sm text-neutral-700">{ADMIN_PERMISSION_LABELS[k]}</span>
+                          </DropdownMenuItem>
+                        ))}
+                      </div>
                     ))}
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -226,6 +239,7 @@ export default function AdminStaffPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        ) : null}
       </div>
 
       <Card>
@@ -241,13 +255,15 @@ export default function AdminStaffPage() {
                   <TableHead className="whitespace-nowrap">Role</TableHead>
                   <TableHead className="whitespace-nowrap">Status</TableHead>
                   <TableHead className="whitespace-nowrap">Permissions</TableHead>
+                  {canEdit ? (
                   <TableHead className="whitespace-nowrap">Actions</TableHead>
+                  ) : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={canEdit ? 5 : 4} className="py-8 text-center text-muted-foreground">
                       Loading…
                     </TableCell>
                   </TableRow>
@@ -256,6 +272,7 @@ export default function AdminStaffPage() {
                     <StaffPermissionsRow
                       key={row.id}
                       row={row}
+                      canEdit={!!canEdit}
                       onSave={async (next) => {
                         await saveRow(user, row, next)
                         await load()
@@ -278,7 +295,7 @@ export default function AdminStaffPage() {
   )
 }
 
-async function saveRow(actor: User, row: StaffRow, next: Record<AdminFeatureKey, boolean>) {
+async function saveRow(actor: User, row: StaffRow, next: Record<AdminPermissionKey, boolean>) {
   if (row.app_role === 'super_admin') {
     toast.error('Cannot change permissions for super admin accounts here')
     return
@@ -316,21 +333,24 @@ async function toggleStatus(actor: User, id: string, active: boolean) {
 
 function StaffPermissionsRow({
   row,
+  canEdit,
   onSave,
   onToggleStatus,
 }: {
   row: StaffRow
-  onSave: (p: Record<AdminFeatureKey, boolean>) => void | Promise<void>
+  canEdit: boolean
+  onSave: (p: Record<AdminPermissionKey, boolean>) => void | Promise<void>
   onToggleStatus: (id: string, active: boolean) => void | Promise<void>
 }) {
-  const base: Record<AdminFeatureKey, boolean> = { ...defaultLimitedAdminPermissions() }
+  const base = defaultLimitedAdminPermissions()
   const raw = row.admin_permissions
   if (raw && typeof raw === 'object') {
-    for (const k of ADMIN_FEATURE_KEYS) {
-      if (k in raw) base[k] = Boolean((raw as Record<string, boolean>)[k])
+    const migrated = migrateLegacyPermissions(raw)
+    for (const k of ADMIN_PERMISSION_KEYS) {
+      base[k] = migrated[k]
     }
   } else if (row.app_role === 'admin') {
-    for (const k of ADMIN_FEATURE_KEYS) base[k] = true
+    for (const k of ADMIN_PERMISSION_KEYS) base[k] = true
   }
   const [local, setLocal] = useState(base)
 
@@ -359,7 +379,7 @@ function StaffPermissionsRow({
       <TableCell className="whitespace-nowrap">
         {row.app_role === 'super_admin' ? (
           <span className="text-sm text-muted-foreground">Full access</span>
-        ) : (
+        ) : canEdit ? (
           <Popover>
             <PopoverTrigger asChild>
               <Button size="sm" variant="outline" className="w-fit text-xs font-semibold gap-1.5 border-neutral-200">
@@ -369,19 +389,24 @@ function StaffPermissionsRow({
                 </span>
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[340px] p-4 space-y-4" align="start">
+            <PopoverContent className="w-[380px] max-h-[420px] overflow-y-auto p-4 space-y-4" align="start">
               <div className="space-y-1">
                 <h4 className="font-semibold text-sm text-neutral-900">Admin Permissions</h4>
-                <p className="text-xs text-neutral-500">Enable or disable features for this admin account.</p>
+                <p className="text-xs text-neutral-500">Enable or disable module actions for this admin account.</p>
               </div>
-              <div className="grid gap-2 grid-cols-2 border-t border-neutral-100 pt-3">
-                {ADMIN_FEATURE_KEYS.map((k) => (
-                  <label key={k} className="flex items-center gap-2 text-xs cursor-pointer select-none hover:text-neutral-900 text-neutral-600">
-                    <Checkbox checked={local[k]} onCheckedChange={(c) => setLocal((p) => ({ ...p, [k]: c === true }))} />
-                    <span className="truncate">{ADMIN_FEATURE_LABELS[k]}</span>
-                  </label>
-                ))}
-              </div>
+              {ADMIN_PERMISSION_GROUPS.map((group) => (
+                <div key={group.module} className="border-t border-neutral-100 pt-3 first:border-t-0 first:pt-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground mb-2">{group.module}</p>
+                  <div className="grid gap-2">
+                    {group.keys.map((k) => (
+                      <label key={k} className="flex items-center gap-2 text-xs cursor-pointer select-none hover:text-neutral-900 text-neutral-600">
+                        <Checkbox checked={local[k]} onCheckedChange={(c) => setLocal((p) => ({ ...p, [k]: c === true }))} />
+                        <span className="truncate">{ADMIN_PERMISSION_LABELS[k]}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))}
               <div className="border-t border-neutral-100 pt-3 flex justify-end gap-2">
                 <Button size="sm" className="w-full text-xs font-semibold" onClick={() => void onSave(local)}>
                   Save Permissions
@@ -389,8 +414,11 @@ function StaffPermissionsRow({
               </div>
             </PopoverContent>
           </Popover>
+        ) : (
+          <span className="text-sm text-muted-foreground">{activeCount} permissions</span>
         )}
       </TableCell>
+      {canEdit ? (
       <TableCell className="whitespace-nowrap">
         {row.app_role === 'super_admin' ? (
           <span className="text-xs text-muted-foreground">-</span>
@@ -403,6 +431,7 @@ function StaffPermissionsRow({
           </div>
         )}
       </TableCell>
+      ) : null}
     </TableRow>
   )
 }

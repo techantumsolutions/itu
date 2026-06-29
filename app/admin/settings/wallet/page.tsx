@@ -9,10 +9,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import { useAuthStore } from '@/lib/stores'
+import { clientHasAdminPermission } from '@/lib/auth/client-features'
 
 export default function WalletSettingsPage() {
+  const user = useAuthStore((s) => s.user)
+  const canManage = user && clientHasAdminPermission(user, 'wallet.manage')
   const [percentage, setPercentage] = useState<number>(100)
-  const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(true)
   const [loading, setLoading] = useState<boolean>(false)
   const [saving, setSaving] = useState<boolean>(false)
 
@@ -33,27 +36,14 @@ export default function WalletSettingsPage() {
     }
   }
 
-  const checkUserRole = async () => {
-    try {
-      const res = await fetch('/api/auth/me')
-      if (res.ok) {
-        const body = await res.json()
-        setIsSuperAdmin(body.user?.role === 'super_admin')
-      }
-    } catch {
-      // Default to true to allow testing (server will reject anyway if unauthorized)
-    }
-  }
-
   useEffect(() => {
-    void checkUserRole()
     void fetchSettings()
   }, [])
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!isSuperAdmin) {
-      toast.error('Only super administrators can modify wallet settings.')
+    if (!canManage) {
+      toast.error('You do not have permission to modify wallet settings.')
       return
     }
     if (percentage < 0 || percentage > 100) {
@@ -135,7 +125,7 @@ export default function WalletSettingsPage() {
                         max="100"
                         value={percentage}
                         onChange={(e) => setPercentage(Number(e.target.value))}
-                        disabled={!isSuperAdmin}
+                        disabled={!canManage}
                         className="w-full h-2 bg-neutral-200 rounded-lg appearance-none cursor-pointer accent-primary"
                       />
                       <div className="relative w-24 flex items-center">
@@ -146,7 +136,7 @@ export default function WalletSettingsPage() {
                           max="100"
                           value={percentage}
                           onChange={(e) => setPercentage(Math.min(100, Math.max(0, Number(e.target.value))))}
-                          disabled={!isSuperAdmin}
+                          disabled={!canManage}
                           className="pr-6 font-semibold"
                         />
                         <span className="absolute right-3 font-semibold text-neutral-500">%</span>
@@ -186,7 +176,7 @@ export default function WalletSettingsPage() {
                 </div>
               )}
             </CardContent>
-            {isSuperAdmin && (
+            {canManage ? (
               <CardFooter className="border-t border-border/40 pt-4 flex justify-end">
                 <Button type="submit" disabled={saving || loading}>
                   {saving ? (
@@ -202,11 +192,11 @@ export default function WalletSettingsPage() {
                   )}
                 </Button>
               </CardFooter>
-            )}
+            ) : null}
           </form>
         </Card>
 
-        {!isSuperAdmin && (
+        {!canManage ? (
           <Card className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5 h-fit">
             <CardHeader className="p-0 pb-2">
               <CardTitle className="text-sm font-semibold text-amber-900 flex items-center gap-1.5">
@@ -215,10 +205,10 @@ export default function WalletSettingsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0 text-xs text-amber-900/80 leading-relaxed">
-              Only Super Administrators have permission to modify wallet usage restrictions and maximum consumption limits.
+              You need the Wallet — Manage permission to modify usage restrictions and maximum consumption limits.
             </CardContent>
           </Card>
-        )}
+        ) : null}
       </div>
     </div>
   )

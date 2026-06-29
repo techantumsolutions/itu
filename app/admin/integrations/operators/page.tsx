@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { RefreshCcw, Search, Loader2, GitMerge, Play, CheckCircle2, XCircle, AlertCircle, GitFork, Check, ChevronsUpDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -33,6 +34,9 @@ import {
 } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/lib/stores'
+import { clientHasAdminPermission } from '@/lib/auth/client-features'
+import { useProviderDisplay } from '@/components/admin/provider-display-context'
 
 export function CompactDateTime({ value }: { value: unknown }) {
   const d = new Date(String(value ?? ''))
@@ -176,7 +180,25 @@ function ComboFilter({
   )
 }
 
+function productsHrefForOperator(operatorName: string, tab: 'system' | 'provider') {
+  const q = new URLSearchParams({
+    operatorName: operatorName.trim(),
+    from: 'operators',
+    tab,
+  })
+  return `/admin/products?${q.toString()}`
+}
+
 export default function OperatorsPage() {
+  const searchParams = useSearchParams()
+  const user = useAuthStore((s) => s.user)
+  const { displayProvider, displayProvidersCsv, displayProviderOption } = useProviderDisplay()
+  const canSync = user && clientHasAdminPermission(user, 'operators.sync')
+  const canEdit = user && clientHasAdminPermission(user, 'operators.edit')
+  const canCreate = user && clientHasAdminPermission(user, 'operators.create')
+  const canDelete = user && clientHasAdminPermission(user, 'operators.delete')
+  const showSelection = !!canEdit
+  const showRowActions = !!canEdit
   const [rawOperators, setRawOperators] = useState<any[]>([])
   const [systemOperators, setSystemOperators] = useState<any[]>([])
   const [providers, setProviders] = useState<any[]>([])
@@ -200,6 +222,11 @@ export default function OperatorsPage() {
 
   // Filters state
   const [dataType, setDataType] = useState<'system' | 'provider'>('system')
+
+  useEffect(() => {
+    const tab = searchParams.get('tab')
+    if (tab === 'system' || tab === 'provider') setDataType(tab)
+  }, [searchParams])
   const [providerFilter, setProviderFilter] = useState('ALL')
   const [countryFilter, setCountryFilter] = useState('ALL')
   const [search, setSearch] = useState('')
@@ -546,6 +573,7 @@ export default function OperatorsPage() {
         id: op.id,
         mainName: op.system_operator_name,
         secondaryText: op.slug,
+        providerNames: (op.mappedProviderNames ?? []).filter(Boolean) as string[],
         countryCode: op.country_id,
         operatorType: op.operator_type || '—',
         status: op.status,
@@ -557,7 +585,9 @@ export default function OperatorsPage() {
       mapped = list.map((op) => ({
         id: op.id,
         mainName: op.provider_operator_name,
-        secondaryText: `${op.provider_operator_id} (${op.provider_name ?? 'Raw'})`,
+        providerOperatorId: op.provider_operator_id,
+        providerRefName: op.provider_name ?? null,
+        providerId: op.provider_id ?? null,
         countryCode: op.iso_code || op.country_code,
         operatorType: op.operator_type || '—',
         status: op.status,
@@ -649,14 +679,16 @@ export default function OperatorsPage() {
             <RefreshCcw className={`mr-2 size-4 ${refreshing ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
+          {canSync ? (
           <Button onClick={() => void triggerSyncAll()} disabled={loading || refreshing}>
             {refreshing ? 'Syncing…' : 'Sync all providers'}
           </Button>
-          {dataType === 'system' && (
+          ) : null}
+          {canSync && dataType === 'system' ? (
             <Button variant="secondary" onClick={() => void triggerLocalSync()} disabled={loading || refreshing}>
               Sync System Operators
             </Button>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -682,7 +714,12 @@ export default function OperatorsPage() {
                 <SelectContent>
                   {providers.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
-                      {p.name} ({p.code})
+                      {displayProviderOption({
+                        id: p.id,
+                        code: p.code,
+                        name: p.name,
+                        priority: Number(p.priority) || 0,
+                      })}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -794,7 +831,12 @@ export default function OperatorsPage() {
                     <SelectItem value="ALL">All Providers</SelectItem>
                     {providers.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.name}
+                        {displayProviderOption({
+                          id: p.id,
+                          code: p.code,
+                          name: p.name,
+                          priority: Number(p.priority) || 0,
+                        })}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -836,7 +878,7 @@ export default function OperatorsPage() {
           </div>
           {/* Counts info / Merge Operators action */}
           <div className='w-full flex justify-end'>
-            {selectedIds.length >= 2 && dataType === 'system' ? (
+            {canEdit && selectedIds.length >= 2 && dataType === 'system' ? (
               <Button
                 variant="default"
                 size="sm"
@@ -860,7 +902,7 @@ export default function OperatorsPage() {
             <Table>
               <TableHeader className="bg-muted/50">
                 <TableRow>
-                  {dataType === 'system' ? (
+                  {showSelection && dataType === 'system' ? (
                     <TableHead className="w-[50px]">
                       <Checkbox
                         checked={
@@ -880,18 +922,21 @@ export default function OperatorsPage() {
                     </TableHead>
                   ) : null}
                   <TableHead className="font-semibold text-muted-foreground">Operator</TableHead>
+                  <TableHead className="font-semibold text-muted-foreground">Provider</TableHead>
                   <TableHead className="font-semibold text-muted-foreground">Country</TableHead>
                   <TableHead className="font-semibold text-muted-foreground">Status</TableHead>
                   <TableHead className="font-semibold text-muted-foreground">
                     {dataType === 'system' ? 'Updated' : 'Fetched'}
                   </TableHead>
+                  {showRowActions ? (
                   <TableHead className="font-semibold text-muted-foreground text-right w-[240px] min-w-[240px]">Actions</TableHead>
+                  ) : null}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={dataType === 'system' ? 6 : 5} className="py-12 text-center text-muted-foreground">
+                    <TableCell colSpan={showSelection && dataType === 'system' ? (showRowActions ? 7 : 6) : (showRowActions ? 6 : 5)} className="py-12 text-center text-muted-foreground">
                       <div className="flex items-center justify-center gap-2">
                         <Loader2 className="h-5 w-5 animate-spin text-primary" />
                         <span>Loading operators data...</span>
@@ -900,7 +945,7 @@ export default function OperatorsPage() {
                   </TableRow>
                 ) : paginatedRows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={dataType === 'system' ? 6 : 5} className="py-12 text-center text-muted-foreground font-medium">
+                    <TableCell colSpan={dataType === 'system' ? (showRowActions ? 7 : 6) : (showRowActions ? 6 : 5)} className="py-12 text-center text-muted-foreground font-medium">
                       No records found.
                     </TableCell>
                   </TableRow>
@@ -908,7 +953,7 @@ export default function OperatorsPage() {
                   paginatedRows.map((row) => {
                     return (
                       <TableRow key={row.id} className="hover:bg-muted/30 transition-colors">
-                        {dataType === 'system' ? (
+                        {showSelection && dataType === 'system' ? (
                           <TableCell className="w-[50px]">
                             <Checkbox
                               checked={selectedIds.includes(row.id)}
@@ -927,12 +972,35 @@ export default function OperatorsPage() {
                         <TableCell>
                           <div className="min-w-0 leading-tight">
                             <div className="truncate font-semibold text-foreground">{row.mainName}</div>
-                            {row.secondaryText ? (
+                            {dataType === 'provider' && row.providerOperatorId ? (
+                              <div className="truncate text-xs text-muted-foreground mt-0.5 font-mono">
+                                {row.providerOperatorId} (
+                                {displayProvider({
+                                  id: row.providerId,
+                                  name: row.providerRefName ?? 'Raw',
+                                })}
+                                )
+                              </div>
+                            ) : row.secondaryText ? (
                               <div className="truncate text-xs text-muted-foreground mt-0.5 font-mono">
                                 {row.secondaryText}
                               </div>
                             ) : null}
                           </div>
+                        </TableCell>
+
+                        {/* Provider Column */}
+                        <TableCell>
+                          <span className="text-sm text-foreground">
+                            {dataType === 'system'
+                              ? (row.providerNames?.length
+                                  ? displayProvidersCsv(row.providerNames)
+                                  : '—')
+                              : displayProvider({
+                                  id: row.providerId,
+                                  name: row.providerRefName ?? undefined,
+                                })}
+                          </span>
                         </TableCell>
 
                         {/* Country Column */}
@@ -959,12 +1027,11 @@ export default function OperatorsPage() {
                           <CompactDateTime value={row.dateValue} />
                         </TableCell>
 
-                        {/* Actions Column */}
+                        {showRowActions ? (
                         <TableCell className="text-right w-[240px] min-w-[240px]">
                           <div className="flex justify-end items-center gap-2 flex-row whitespace-nowrap">
-                            {dataType === 'system' && (
+                            {canEdit && dataType === 'system' && (
                               <>
-                                {/* Edit Name Button */}
                                 <Button
                                   size="icon"
                                   variant="ghost"
@@ -979,7 +1046,6 @@ export default function OperatorsPage() {
                                 >
                                   <Pencil className="h-4 w-4" />
                                 </Button>
-                                {/* Status Toggle Button */}
                                 <Button
                                   size="icon"
                                   variant="ghost"
@@ -1006,26 +1072,22 @@ export default function OperatorsPage() {
                                 </Button>
                               </>
                             )}
-                            {/* Plans view button */}
                             <Button size="sm" variant="outline" className="h-8 text-xs font-medium" asChild>
-                              <Link
-                                href={
-                                  row.isSystem
-                                    ? `/admin/integrations/plans?systemOperatorId=${row.id}`
-                                    : `/admin/integrations/plans?operatorRawId=${row.id}`
-                                }
-                              >
+                              <Link href={productsHrefForOperator(row.mainName, dataType)}>
                                 Plans
                               </Link>
                             </Button>
-                            {/*                    {dataType === 'provider' && (
-                              // Map action button for provider raw operators
-                              <Button size="sm" variant="ghost" className="h-8 text-xs font-medium text-primary" asChild>
-                                <Link href="/admin/integrations/operator-mapping">Map</Link>
-                              </Button>
-                            )} */}
                           </div>
                         </TableCell>
+                        ) : (
+                        <TableCell className="text-right">
+                          <Button size="sm" variant="outline" className="h-8 text-xs font-medium" asChild>
+                            <Link href={productsHrefForOperator(row.mainName, dataType)}>
+                              Plans
+                            </Link>
+                          </Button>
+                        </TableCell>
+                        )}
                       </TableRow>
                     )
                   })

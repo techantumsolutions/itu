@@ -1,15 +1,13 @@
 import { NextResponse } from 'next/server'
-import { isAdminRequest } from '@/lib/tickets/auth-headers'
-import { adminCanManageProviders } from '@/lib/auth/require-admin-feature'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import { syncProviderCatalog } from '@/lib/lcr/sync-catalog'
 import { normalizeCountryList } from '@/lib/lcr/countries'
 import { invalidatePublicCatalogCache } from '@/lib/catalog/invalidate-public-cache'
 import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function POST(request: Request) {
-  if (!(await adminCanManageProviders(request))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const denied = await requireAdminPermission(request, 'providers.sync')
+  if (denied) return denied
 
   const body = await request.json().catch(() => ({}))
   const providerId = typeof body.providerId === 'string' ? body.providerId.trim() : ''

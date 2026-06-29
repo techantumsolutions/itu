@@ -1,5 +1,11 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { mergeRoutingLogPricing, parseRoutingLogStatus, formatProviderCostDual } from '@/lib/routing/log-pricing'
+import {
+  batchLoadInternalPlanRechargeValues,
+  batchLoadLegacySkuRechargeValues,
+  batchLoadSystemPlanRechargeValues,
+  type PlanRechargeValue,
+} from '@/lib/catalog/plan-recharge-value'
 import type { RechargeRoutingSource } from '@/lib/recharge-orchestration/routing-log-fields'
 import { planMappingPricingKey } from '@/lib/catalog/provider-wholesale-pricing'
 import { batchResolvePlanMappingPricing } from '@/lib/routing/plan-mapping-pricing'
@@ -586,6 +592,386 @@ export async function enrichRoutingLogsWithPricing<T extends RoutingLogRow>(logs
       providerDestinationAmount: resolvedWholesale?.destinationAmount ?? null,
       providerDestinationCurrency: resolvedWholesale?.destinationCurrency ?? null,
       pricingSource,
+    }
+  })
+}
+
+const SYSTEM_OPERATOR_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Parse routing_logs.operator_id (`system:{uuid}`, bare uuid, or slug/name). */
+export function parseRoutingLogOperatorRef(operatorId: string | null | undefined): {
+  uuid: string | null
+  raw: string | null
+} {
+  if (!operatorId?.trim()) return { uuid: null, raw: null }
+  const trimmed = operatorId.trim()
+  const withoutPrefix = trimmed.toLowerCase().startsWith('system:') ? trimmed.slice(7) : trimmed
+  if (SYSTEM_OPERATOR_UUID_RE.test(withoutPrefix)) {
+    return { uuid: withoutPrefix, raw: trimmed }
+  }
+  return { uuid: null, raw: withoutPrefix }
+}
+
+export async function enrichRoutingLogsWithOperatorNames<T extends RoutingLogRow>(
+  logs: T[],
+): Promise<(T & { operatorName: string | null })[]> {
+  if (logs.length === 0) return []
+
+  const uuidSet = new Set<string>()
+  const countrySet = new Set<string>()
+
+  for (const log of logs) {
+    const { uuid } = parseRoutingLogOperatorRef(log.operatorId)
+    if (uuid) uuidSet.add(uuid)
+    const country = log.countryId?.trim().toUpperCase()
+    if (country) countrySet.add(country)
+  }
+
+  const nameByUuid = new Map<string, string>()
+  const uuidList = [...uuidSet]
+  for (let i = 0; i < uuidList.length; i += 50) {
+    const chunk = uuidList.slice(i, i + 50)
+    const res = await supabaseRest(
+      `system_operators?id=in.(${chunk.map(enc).join(',')})&select=id,system_operator_name,slug`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) continue
+    const rows = (await res.json()) as Array<{
+      id: string
+      system_operator_name?: string | null
+      slug?: string | null
+    }>
+    for (const row of rows) {
+      const name = String(row.system_operator_name ?? row.slug ?? row.id)
+      nameByUuid.set(String(row.id), name)
+    }
+  }
+
+  const nameByCountrySlug = new Map<string, string>()
+  const nameByCountryName = new Map<string, string>()
+
+  for (const country of countrySet) {
+    const res = await supabaseRest(
+      `system_operators?country_id=eq.${enc(country)}&select=id,system_operator_name,slug&limit=500`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) continue
+    const rows = (await res.json()) as Array<{
+      id: string
+      system_operator_name?: string | null
+      slug?: string | null
+    }>
+    for (const row of rows) {
+      const name = String(row.system_operator_name ?? row.slug ?? row.id)
+      nameByUuid.set(String(row.id), name)
+      const slug = String(row.slug ?? '').trim().toLowerCase()
+      if (slug) nameByCountrySlug.set(`${country}:${slug}`, name)
+      const opName = String(row.system_operator_name ?? '').trim().toLowerCase()
+      if (opName) nameByCountryName.set(`${country}:${opName}`, name)
+    }
+  }
+
+  return logs.map((log) => {
+    const { uuid, raw } = parseRoutingLogOperatorRef(log.operatorId)
+    let operatorName: string | null = null
+
+    if (uuid && nameByUuid.has(uuid)) {
+      operatorName = nameByUuid.get(uuid)!
+    } else {
+      const country = log.countryId?.trim().toUpperCase()
+      const ref = raw?.trim().toLowerCase()
+      if (country && ref) {
+        operatorName =
+          nameByCountrySlug.get(`${country}:${ref}`) ??
+          nameByCountryName.get(`${country}:${ref}`) ??
+          null
+      }
+      if (!operatorName && raw && !uuid) {
+        operatorName = raw
+      }
+    }
+
+    return { ...log, operatorName }
+  })
+}
+
+async function batchResolvePlanDisplayNames(planIds: string[]): Promise<Map<string, string>> {
+  const nameByPlanRef = new Map<string, string>()
+  const unique = [...new Set(planIds.map((id) => id.trim()).filter(Boolean))]
+  if (!unique.length) return nameByPlanRef
+
+  const uuidRefs = unique.filter((id) => SYSTEM_OPERATOR_UUID_RE.test(id))
+  const nonUuidRefs = unique.filter((id) => !SYSTEM_OPERATOR_UUID_RE.test(id))
+
+  for (let i = 0; i < uuidRefs.length; i += 50) {
+    const chunk = uuidRefs.slice(i, i + 50)
+    const res = await supabaseRest(
+      `system_plans?id=in.(${chunk.map(enc).join(',')})&select=id,system_plan_name,internal_plan_id`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) continue
+    const rows = (await res.json()) as Array<{
+      id: string
+      system_plan_name?: string | null
+      internal_plan_id?: string | null
+    }>
+    for (const row of rows) {
+      const name = String(row.system_plan_name ?? '').trim()
+      if (!name) continue
+      nameByPlanRef.set(row.id, name)
+      if (row.internal_plan_id) {
+        nameByPlanRef.set(String(row.internal_plan_id), name)
+      }
+    }
+  }
+
+  const unresolvedUuids = uuidRefs.filter((id) => !nameByPlanRef.has(id))
+  for (let i = 0; i < unresolvedUuids.length; i += 50) {
+    const chunk = unresolvedUuids.slice(i, i + 50)
+    const res = await supabaseRest(
+      `system_plans?internal_plan_id=in.(${chunk.map(enc).join(',')})&select=id,internal_plan_id,system_plan_name`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) continue
+    const rows = (await res.json()) as Array<{
+      id: string
+      internal_plan_id?: string | null
+      system_plan_name?: string | null
+    }>
+    for (const row of rows) {
+      const internalId = row.internal_plan_id ? String(row.internal_plan_id) : null
+      const name = String(row.system_plan_name ?? '').trim()
+      if (!name || !internalId) continue
+      nameByPlanRef.set(internalId, name)
+      nameByPlanRef.set(row.id, name)
+    }
+  }
+
+  const internalUnresolved = uuidRefs.filter((id) => !nameByPlanRef.has(id))
+  for (let i = 0; i < internalUnresolved.length; i += 50) {
+    const chunk = internalUnresolved.slice(i, i + 50)
+    const res = await supabaseRest(
+      `internal_plans?id=in.(${chunk.map(enc).join(',')})&select=id,uti_plan_name`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) continue
+    const rows = (await res.json()) as Array<{ id: string; uti_plan_name?: string | null }>
+    for (const row of rows) {
+      const name = String(row.uti_plan_name ?? '').trim()
+      if (name) nameByPlanRef.set(String(row.id), name)
+    }
+  }
+
+  const skuRefs = [...nonUuidRefs, ...uuidRefs.filter((id) => !nameByPlanRef.has(id))]
+  const uniqueSkuRefs = [...new Set(skuRefs)]
+  for (let i = 0; i < uniqueSkuRefs.length; i += 50) {
+    const chunk = uniqueSkuRefs.slice(i, i + 50)
+    const res = await supabaseRest(
+      `plans?sku_code=in.(${chunk.map(enc).join(',')})&select=sku_code,plan_name`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) continue
+    const rows = (await res.json()) as Array<{ sku_code?: string | null; plan_name?: string | null }>
+    for (const row of rows) {
+      const sku = String(row.sku_code ?? '').trim()
+      const name = String(row.plan_name ?? '').trim()
+      if (sku && name) nameByPlanRef.set(sku, name)
+    }
+  }
+
+  return nameByPlanRef
+}
+
+function planNameFromRefs(
+  refs: Array<string | null | undefined>,
+  nameByRef: Map<string, string>,
+): string | null {
+  for (const ref of refs) {
+    const key = ref?.trim()
+    if (!key) continue
+    const name = nameByRef.get(key)
+    if (name) return name
+  }
+  return null
+}
+
+function collectPlanRefsForLog(
+  log: RoutingLogRow,
+  attempt: { internal_plan_id: string | null; routing_decision: unknown } | undefined,
+  planRefsByTx: Map<string, string[]>,
+): string[] {
+  const routingStatus = (log as RoutingLogRow & { routingLogStatus?: string }).routingLogStatus
+  const refs = [
+    routingLogSystemPlanId(attempt, routingStatus ?? log.status),
+    attempt?.internal_plan_id,
+    ...(log.transactionId ? planRefsByTx.get(log.transactionId) ?? [] : []),
+    log.productId,
+  ]
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const ref of refs) {
+    const key = ref?.trim()
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    out.push(key)
+  }
+  return out
+}
+
+function planRechargeFromRefs(
+  refs: string[],
+  systemRecharge: Map<string, PlanRechargeValue>,
+  internalRecharge: Map<string, PlanRechargeValue>,
+  skuRecharge: Map<string, PlanRechargeValue>,
+): PlanRechargeValue | null {
+  for (const ref of refs) {
+    const hit = systemRecharge.get(ref) ?? internalRecharge.get(ref) ?? skuRecharge.get(ref)
+    if (hit) return hit
+  }
+  return null
+}
+
+function planRechargeFromLogFaceValue(log: RoutingLogRow): PlanRechargeValue | null {
+  const amount = log.destinationFaceValue ?? log.providerDestinationAmount ?? null
+  const currency = log.destinationCurrency ?? log.providerDestinationCurrency ?? null
+  if (amount == null || !Number.isFinite(amount) || amount <= 0) return null
+  const code = String(currency ?? '').trim().toUpperCase()
+  if (!code) return null
+  return { amount, currency: code }
+}
+
+export async function enrichRoutingLogsWithPlanNames<T extends RoutingLogRow>(
+  logs: T[],
+): Promise<(T & { planName: string | null; planRechargeAmount: number | null; planRechargeCurrency: string | null })[]> {
+  if (logs.length === 0) return []
+
+  const transactionIds = [
+    ...new Set(logs.map((log) => log.transactionId).filter((id): id is string => Boolean(id))),
+  ]
+
+  const attemptByRef = new Map<
+    string,
+    { internal_plan_id: string | null; routing_decision: unknown }
+  >()
+  const productNameByTx = new Map<string, string>()
+  const extraPlanRefs: string[] = []
+  const planRefsByTx = new Map<string, string[]>()
+
+  for (let i = 0; i < transactionIds.length; i += 50) {
+    const chunk = transactionIds.slice(i, i + 50)
+    const [attemptRes, orderRes, txRes] = await Promise.all([
+      supabaseRest(
+        `lcr_v2_recharge_attempts?distributor_ref=in.(${chunk.map(enc).join(',')})&select=distributor_ref,internal_plan_id,routing_decision`,
+        { cache: 'no-store' },
+      ),
+      supabaseRest(
+        `recharge_orders?transaction_id=in.(${chunk.map(enc).join(',')})&select=transaction_id,product_name,sku_code,plan_id`,
+        { cache: 'no-store' },
+      ),
+      supabaseRest(
+        `transactions?id=in.(${chunk.map(enc).join(',')})&select=id,metadata`,
+        { cache: 'no-store' },
+      ),
+    ])
+
+    if (attemptRes.ok) {
+      const rows = (await attemptRes.json()) as Array<{
+        distributor_ref: string
+        internal_plan_id: string | null
+        routing_decision: unknown
+      }>
+      for (const row of rows) {
+        attemptByRef.set(row.distributor_ref, {
+          internal_plan_id: row.internal_plan_id,
+          routing_decision: row.routing_decision,
+        })
+        if (row.internal_plan_id?.trim()) extraPlanRefs.push(row.internal_plan_id.trim())
+        const systemPlanId = routingLogSystemPlanId(row, null)
+        if (systemPlanId) extraPlanRefs.push(systemPlanId)
+      }
+    }
+
+    if (orderRes.ok) {
+      const rows = (await orderRes.json()) as Array<{
+        transaction_id: string
+        product_name?: string | null
+        sku_code?: string | null
+        plan_id?: string | null
+      }>
+      for (const row of rows) {
+        const txId = String(row.transaction_id ?? '').trim()
+        const productName = String(row.product_name ?? '').trim()
+        if (txId && productName) productNameByTx.set(txId, productName)
+        if (row.plan_id?.trim()) extraPlanRefs.push(row.plan_id.trim())
+        if (row.sku_code?.trim()) extraPlanRefs.push(row.sku_code.trim())
+      }
+    }
+
+    if (txRes.ok) {
+      const rows = (await txRes.json()) as Array<{
+        id: string
+        metadata?: Record<string, unknown> | null
+      }>
+      for (const row of rows) {
+        const txId = String(row.id ?? '').trim()
+        if (!txId) continue
+        const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : {}
+        const refs: string[] = []
+        const planId = typeof meta.plan_id === 'string' ? meta.plan_id.trim() : ''
+        const systemPlanId = typeof meta.system_plan_id === 'string' ? meta.system_plan_id.trim() : ''
+        if (systemPlanId) {
+          refs.push(systemPlanId)
+          extraPlanRefs.push(systemPlanId)
+        }
+        if (planId) {
+          refs.push(planId)
+          extraPlanRefs.push(planId)
+        }
+        if (refs.length) planRefsByTx.set(txId, refs)
+      }
+    }
+  }
+
+  const planIds = [
+    ...logs.map((log) => log.productId).filter((id): id is string => Boolean(id?.trim())),
+    ...extraPlanRefs,
+  ]
+  const nameByRef = await batchResolvePlanDisplayNames(planIds)
+
+  const allPlanRefs = new Set<string>()
+  for (const log of logs) {
+    const attempt = log.transactionId ? attemptByRef.get(log.transactionId) : undefined
+    for (const ref of collectPlanRefsForLog(log, attempt, planRefsByTx)) {
+      allPlanRefs.add(ref)
+    }
+  }
+  const refList = [...allPlanRefs]
+  const uuidRefs = refList.filter((id) => SYSTEM_OPERATOR_UUID_RE.test(id))
+  const nonUuidRefs = refList.filter((id) => !SYSTEM_OPERATOR_UUID_RE.test(id))
+  const [systemRecharge, internalRecharge, skuRecharge] = await Promise.all([
+    batchLoadSystemPlanRechargeValues(uuidRefs),
+    batchLoadInternalPlanRechargeValues(uuidRefs),
+    batchLoadLegacySkuRechargeValues(nonUuidRefs),
+  ])
+
+  return logs.map((log) => {
+    const attempt = log.transactionId ? attemptByRef.get(log.transactionId) : undefined
+    const planRefs = collectPlanRefsForLog(log, attempt, planRefsByTx)
+
+    const planName =
+      planNameFromRefs(planRefs, nameByRef) ??
+      (log.transactionId ? productNameByTx.get(log.transactionId) ?? null : null)
+
+    const recharge =
+      planRechargeFromRefs(planRefs, systemRecharge, internalRecharge, skuRecharge) ??
+      planRechargeFromLogFaceValue(log)
+
+    return {
+      ...log,
+      planName,
+      planRechargeAmount: recharge?.amount ?? null,
+      planRechargeCurrency: recharge?.currency ?? null,
     }
   })
 }

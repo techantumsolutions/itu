@@ -38,6 +38,7 @@ import { FooterPaymentLogos } from '@/components/footer-payment-logos'
 import { TargetedAdBanner } from '@/components/targeted-ad-banner'
 import { CMSTypographyScope } from '@/components/cms-typography-scope'
 import { AdManager } from '@/components/ui/ads/ad-manager'
+import { SessionIdleGuard } from '@/components/session-idle-guard'
 
 const navLinks = [
   { href: '/', label: 'Home', match: (p: string) => p === '/' },
@@ -267,6 +268,7 @@ export default function PublicLayout({
 
   return (
     <CMSTypographyScope className="min-h-screen flex flex-col bg-background">
+      <SessionIdleGuard variant="public" />
       <header
         className={cn(
           'pointer-events-none fixed inset-x-0 z-50 flex justify-center transition-[padding] duration-200 max-w-6xl mx-auto',

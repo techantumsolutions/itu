@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ADMIN_FEATURE_LABELS, type AdminFeatureKey } from '@/lib/auth/admin-features'
+import { validatePassword } from '@/lib/validators/password'
+import { PasswordRequirementsHint } from '@/components/password-requirements-hint'
 
 function SetupPasswordForm() {
   const router = useRouter()
@@ -29,6 +31,7 @@ function SetupPasswordForm() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [showPasswordErrors, setShowPasswordErrors] = useState(false)
 
   useEffect(() => {
     if (!token) {
@@ -66,13 +69,13 @@ function SetupPasswordForm() {
       return
     }
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters long.')
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.')
       return
     }
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.')
+    if (!validatePassword(password).valid) {
+      setShowPasswordErrors(true)
       return
     }
 
@@ -106,7 +109,7 @@ function SetupPasswordForm() {
 
   return (
     <div className="bg-white px-4 py-10 md:py-16">
-      <div className="mx-auto grid w-full max-w-5xl items-stretch gap-10 lg:grid-cols-2 lg:max-h-[700px]">
+      <div className="mx-auto grid w-full max-w-5xl items-stretch gap-10 lg:grid-cols-2">
         {/* Left Side Branding Image */}
         <div className="flex justify-center lg:justify-start">
           <div className="flex w-full max-w-md flex-col">
@@ -159,7 +162,7 @@ function SetupPasswordForm() {
 
           <CardContent className="px-6 pb-8 pt-2 md:px-8">
             {error ? (
-              <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+              <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700 whitespace-pre-line">
                 {error}
               </div>
             ) : null}
@@ -227,8 +230,11 @@ function SetupPasswordForm() {
                     <Input
                       type={showPassword ? 'text' : 'password'}
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="At least 8 characters"
+                      onChange={(e) => {
+                        setPassword(e.target.value)
+                        setShowPasswordErrors(false)
+                      }}
+                      placeholder="Create a secure password"
                       className="h-12 rounded-xl pr-10"
                       required
                     />
@@ -241,6 +247,7 @@ function SetupPasswordForm() {
                       {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                     </button>
                   </div>
+                  <PasswordRequirementsHint className="mt-1" password={password} showErrors={showPasswordErrors} />
                 </div>
 
                 {/* Confirm Password */}

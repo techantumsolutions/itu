@@ -17,6 +17,8 @@ import {
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Badge } from '@/components/ui/badge'
+import { ModulePermissionShell } from '@/components/admin/module-permission-shell'
+import { useAdminModulePermissions } from '@/lib/hooks/use-admin-module-permissions'
 
 type Settings = {
   enabled: boolean
@@ -35,6 +37,7 @@ type PriorityRow = {
 }
 
 export default function LcrEnginePage() {
+  const { canEdit } = useAdminModulePermissions('lcr')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [schemaReady, setSchemaReady] = useState(true)
@@ -119,7 +122,7 @@ export default function LcrEnginePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <ModulePermissionShell module="lcr" className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">LCR Engine</h1>
@@ -230,10 +233,13 @@ export default function LcrEnginePage() {
             </div>
           </div>
 
-          <Button onClick={() => void saveSettings()} disabled={saving || loading}>
+          <Button onClick={() => void saveSettings()} disabled={saving || loading} data-perm="edit">
             <Save className="mr-2 size-4" />
             Save settings
           </Button>
+          {!canEdit ? (
+            <p className="text-sm text-muted-foreground">You have view-only access to LCR settings.</p>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -292,6 +298,6 @@ export default function LcrEnginePage() {
           </Button>
         </CardContent>
       </Card> */}
-    </div>
+    </ModulePermissionShell>
   )
 }

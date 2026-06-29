@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { cacheGetJson, cacheDel } from '@/lib/cache/redis'
 import { runtimeEnv } from '@/lib/env/runtime'
 import { logAdminActivity } from '@/lib/auth/audit'
+import { assertStrongPassword } from '@/lib/validators/password-api'
 
 export async function POST(req: Request) {
   try {
@@ -13,9 +14,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Missing token or password' }, { status: 400 })
     }
 
-    if (password.length < 8) {
-      return NextResponse.json({ ok: false, error: 'Password must be at least 8 characters' }, { status: 400 })
-    }
+    const passwordError = assertStrongPassword(password)
+    if (passwordError) return passwordError
 
     // 1. Retrieve details from Redis
     const cacheKey = `admin_invite:token:${token}`

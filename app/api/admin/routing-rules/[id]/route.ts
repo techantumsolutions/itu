@@ -6,7 +6,7 @@ import { logAdminActivity } from '@/lib/auth/audit'
 type Params = { params: Promise<{ id: string }> }
 
 export async function PUT(request: Request, { params }: Params) {
-  if (!(await adminCanUseFeature(request, 'routing', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'routing'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -54,7 +54,7 @@ export async function PUT(request: Request, { params }: Params) {
 }
 
 export async function DELETE(request: Request, { params }: Params) {
-  if (!(await adminCanUseFeature(request, 'routing', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'routing'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

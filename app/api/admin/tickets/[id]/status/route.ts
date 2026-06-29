@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { isAdminRequest } from '@/lib/tickets/auth-headers'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import { getTicketAdmin, setTicketStatus } from '@/lib/tickets/db-persistence'
 import type { TicketStatus } from '@/lib/tickets/types'
 import { logAdminActivity } from '@/lib/auth/audit'
@@ -10,9 +10,8 @@ type Ctx = { params: Promise<{ id: string }> }
 const ALLOWED: TicketStatus[] = ['open', 'in_progress', 'resolved']
 
 export async function PATCH(request: Request, context: Ctx) {
-  if (!isAdminRequest(request)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const denied = await requireAdminPermission(request, 'tickets.edit')
+  if (denied) return denied
 
   const { id: ticketId } = await context.params
 

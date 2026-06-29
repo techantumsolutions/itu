@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/lib/stores'
 import { Shield, Lock, Eye, EyeOff, Loader2, CheckCircle2 } from 'lucide-react'
+import { validatePassword } from '@/lib/validators/password'
+import { PasswordRequirementsHint } from '@/components/password-requirements-hint'
 
 export default function AccountSecurityPage() {
   const { user } = useAuthStore()
@@ -21,6 +23,7 @@ export default function AccountSecurityPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [showPasswordErrors, setShowPasswordErrors] = useState(false)
 
   if (!user) return null
 
@@ -31,13 +34,13 @@ export default function AccountSecurityPage() {
     setError('')
     setSuccess('')
 
-    if (newPassword.length < 6) {
-      setError('New password must be at least 6 characters long.')
+    if (newPassword !== confirmPassword) {
+      setError('New passwords do not match.')
       return
     }
 
-    if (newPassword !== confirmPassword) {
-      setError('New passwords do not match.')
+    if (!validatePassword(newPassword).valid) {
+      setShowPasswordErrors(true)
       return
     }
 
@@ -105,7 +108,7 @@ export default function AccountSecurityPage() {
           </CardHeader>
           <CardContent className="space-y-4 max-w-md pt-2">
             {error && (
-              <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+              <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700 whitespace-pre-line">
                 {error}
               </div>
             )}
@@ -146,8 +149,11 @@ export default function AccountSecurityPage() {
                     id="new-pass"
                     type={showNew ? 'text' : 'password'}
                     value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    placeholder="Min 6 characters"
+                    onChange={(e) => {
+                      setNewPassword(e.target.value)
+                      setShowPasswordErrors(false)
+                    }}
+                    placeholder="Create a secure password"
                     className="h-10 rounded-xl pr-10"
                     required
                   />
@@ -159,6 +165,7 @@ export default function AccountSecurityPage() {
                     {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                <PasswordRequirementsHint className="mt-1" password={newPassword} showErrors={showPasswordErrors} />
               </div>
 
               <div className="space-y-2">

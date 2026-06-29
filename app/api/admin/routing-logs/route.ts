@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
-import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
-import { listRoutingLogs, enrichRoutingLogsWithPricing } from '@/lib/routing/repository'
+import { adminCanUseFeature, requireAdminPermission } from '@/lib/auth/require-admin-feature'
+import { listRoutingLogs, enrichRoutingLogsWithPricing, enrichRoutingLogsWithOperatorNames, enrichRoutingLogsWithPlanNames } from '@/lib/routing/repository'
 import { parseRoutingLogStatus } from '@/lib/routing/log-pricing'
 
 function wholesaleFromGroupedLog(log: {
@@ -21,9 +21,8 @@ function wholesaleFromGroupedLog(log: {
 }
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseFeature(request, 'routing', { allowLegacyHeader: true }))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const denied = await requireAdminPermission(request, 'routing_logs.view')
+  if (denied) return denied
 
   const url = new URL(request.url)
   const countryId = url.searchParams.get('countryId') ?? undefined
@@ -231,6 +230,8 @@ export async function GET(request: Request) {
   const total = groupedLogs.length
   const paginated = groupedLogs.slice(offset, offset + limit)
   const enriched = await enrichRoutingLogsWithPricing(paginated)
+  const withOperatorNames = await enrichRoutingLogsWithOperatorNames(enriched)
+  const withPlanNames = await enrichRoutingLogsWithPlanNames(withOperatorNames)
 
-  return NextResponse.json({ logs: enriched, total, limit, offset })
+  return NextResponse.json({ logs: withPlanNames, total, limit, offset })
 }

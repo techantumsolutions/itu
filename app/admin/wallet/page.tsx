@@ -1,6 +1,8 @@
 "use client"
 
 import { useState } from "react"
+import { useAuthStore } from "@/lib/stores"
+import { clientHasAdminPermission } from "@/lib/auth/client-features"
 import {
   Wallet,
   Plus,
@@ -39,6 +41,8 @@ import { cn } from "@/lib/utils"
 const quickAmounts = [10, 25, 50, 100, 250, 500]
 
 export default function WalletPage() {
+  const user = useAuthStore((s) => s.user)
+  const canManage = user && clientHasAdminPermission(user, 'wallet.manage')
   const { balance, transactions, topUp, isLoading } = useWalletStore()
   const [topUpAmount, setTopUpAmount] = useState("")
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -147,6 +151,7 @@ export default function WalletPage() {
               </div>
             </div>
             <div className="flex gap-3 mt-6">
+              {canManage ? (
               <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                 <DialogTrigger asChild>
                   <Button className="bg-primary-foreground text-primary hover:bg-primary-foreground/90">
@@ -201,6 +206,7 @@ export default function WalletPage() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
+              ) : null}
               <Button variant="outline" className="bg-primary-foreground/10 border-primary-foreground/20 text-primary-foreground hover:bg-primary-foreground/20">
                 <History className="h-4 w-4 mr-2" />
                 History

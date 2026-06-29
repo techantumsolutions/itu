@@ -11,7 +11,7 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  if (!(await adminCanUseFeature(request, 'products', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'products'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -32,7 +32,7 @@ export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
-  if (!(await adminCanUseFeature(request, 'products', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'products'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

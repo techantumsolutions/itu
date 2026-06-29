@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { logAdminActivity } from '@/lib/auth/audit'
+import { isStrongPassword, PASSWORD_API_ERROR_MESSAGE } from '@/lib/validators/password'
 
 export async function GET(request: Request) {
   const ctx = await getAdminFromAccessCookie(request)
@@ -40,6 +41,22 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as { passwords?: Record<string, string> }
     const passwords = body.passwords ?? {}
+
+    for (const [path, raw] of Object.entries(passwords)) {
+      const value = (raw ?? '').trim()
+      if (value && !isStrongPassword(value)) {
+        return NextResponse.json(
+          {
+            ok: false,
+            success: false,
+            error: PASSWORD_API_ERROR_MESSAGE,
+            message: PASSWORD_API_ERROR_MESSAGE,
+            path,
+          },
+          { status: 400 },
+        )
+      }
+    }
 
     // Save mapping in app_settings table
     const res = await supabaseRest('app_settings?on_conflict=key', {

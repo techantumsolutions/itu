@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { isAdminRequest, getRequestUser } from '@/lib/tickets/auth-headers'
+import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-rest'
 import { getDtoneCredentialsFromEnv } from '@/lib/dtone'
 import { getValuetopupCredentialsFromEnv } from '@/lib/valuetopup'
-import { adminCanManageProviders } from '@/lib/auth/require-admin-feature'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import { logAdminActivity } from '@/lib/auth/audit'
 
 function readEnv(name: string): string | undefined {
@@ -16,10 +16,8 @@ function dingEnvConfigured(): boolean {
 }
 
 export async function POST(request: Request) {
-  if (!isAdminRequest(request)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  if (!(await adminCanManageProviders(request))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const denied = await requireAdminPermission(request, 'providers.create')
+  if (denied) return denied
   if (!isSupabaseCatalogConfigured()) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 })
   }

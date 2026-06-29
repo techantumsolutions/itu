@@ -1,6 +1,7 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { batchLoadSystemPlanMappedDetails } from '@/lib/catalog/system-plan-mapped-details'
 import type { PlanRechargeValue } from '@/lib/catalog/raw-plan-recharge'
+import { normalizeProviderCostSync } from '@/lib/routing/normalize-provider-cost'
 
 export type { PlanRechargeValue } from '@/lib/catalog/raw-plan-recharge'
 export { rechargeValueFromRawPlan } from '@/lib/catalog/raw-plan-recharge'
@@ -66,7 +67,47 @@ export async function batchLoadInternalPlanRechargeValues(
   return result
 }
 
-import { normalizeProviderCostSync } from '@/lib/routing/normalize-provider-cost'
+/** Legacy catalog `plans` table recharge face value by SKU. */
+export async function batchLoadLegacySkuRechargeValues(
+  skuCodes: string[],
+): Promise<Map<string, PlanRechargeValue>> {
+  const result = new Map<string, PlanRechargeValue>()
+  const unique = [...new Set(skuCodes.map((s) => s.trim()).filter(Boolean))]
+  if (!unique.length) return result
+
+  const finite = (v: unknown): number | null => {
+    const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v) : NaN
+    return Number.isFinite(n) && n > 0 ? n : null
+  }
+
+  for (let i = 0; i < unique.length; i += 50) {
+    const chunk = unique.slice(i, i + 50)
+    const res = await supabaseRest(
+      `plans?sku_code=in.(${chunk.map(enc).join(',')})&select=sku_code,min_receive_amount,receive_currency,price_inr`,
+      { cache: 'no-store' },
+    )
+    if (!res.ok) continue
+    const rows = (await res.json()) as Array<{
+      sku_code?: string | null
+      min_receive_amount?: number | string | null
+      receive_currency?: string | null
+      price_inr?: number | string | null
+    }>
+    for (const row of rows) {
+      const sku = String(row.sku_code ?? '').trim()
+      if (!sku) continue
+      const amount = finite(row.min_receive_amount) ?? finite(row.price_inr)
+      if (amount == null) continue
+      const currency =
+        String(row.receive_currency ?? '').trim().toUpperCase() ||
+        (finite(row.price_inr) != null ? 'INR' : '')
+      if (!currency) continue
+      result.set(sku, { amount, currency })
+    }
+  }
+
+  return result
+}
 
 export function derivedDisplayPrices(amount: number, currency: string): { price_inr: number; price_eur: number } {
   const inr = normalizeProviderCostSync({

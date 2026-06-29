@@ -11,7 +11,7 @@ const mergeSchema = z.object({
 })
 
 export async function POST(request: Request) {
-  if (!(await adminCanUseFeature(request, 'products', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'products'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

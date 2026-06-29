@@ -17,13 +17,19 @@ import {
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatMoney, formatProviderCostDual } from '@/lib/routing/log-pricing'
+import { formatPlanRechargeValue } from '@/lib/catalog/plan-recharge-value'
+import { useProviderDisplay } from '@/components/admin/provider-display-context'
 
 type LogRow = {
   id: string
   transactionId: string | null
   countryId: string | null
   operatorId: string | null
+  operatorName?: string | null
   productId: string | null
+  planName?: string | null
+  planRechargeAmount?: number | null
+  planRechargeCurrency?: string | null
   providerCode?: string
   providerName?: string
   routingType: 'RULE' | 'LCR'
@@ -55,6 +61,7 @@ type Provider = { id: string; code: string; name: string }
 const PAGE_SIZE = 10
 
 export default function RoutingLogsPage() {
+  const { displayProvider } = useProviderDisplay()
   const [logs, setLogs] = useState<LogRow[]>([])
   const [totalLogs, setTotalLogs] = useState(0)
   const [providers, setProviders] = useState<Provider[]>([])
@@ -174,7 +181,7 @@ export default function RoutingLogsPage() {
                   <SelectItem value="ALL">All providers</SelectItem>
                   {providers.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
-                      {p.name}
+                      {displayProvider({ id: p.id, code: p.code, name: p.name })}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -252,8 +259,23 @@ export default function RoutingLogsPage() {
                             </div>
                             <TableCell className="font-mono text-xs truncate" title={log.transactionId ?? ''}>{log.transactionId ?? '—'}</TableCell>
                             <TableCell>{log.countryId ?? '—'}</TableCell>
-                            <TableCell className="truncate" title={log.operatorId ?? ''}>{log.operatorId ?? '—'}</TableCell>
-                            <TableCell className="font-mono text-xs truncate" title={log.productId ?? ''}>{log.productId ?? '—'}</TableCell>
+                            <TableCell className="truncate" title={log.operatorName ?? log.operatorId ?? ''}>
+                              {log.operatorName ?? log.operatorId ?? '—'}
+                            </TableCell>
+                            <TableCell className="min-w-0">
+                              {log.planName ? (
+                                <div className="min-w-0 leading-tight">
+                                  <div className="truncate font-medium" title={log.planName}>
+                                    {log.planName}
+                                  </div>
+                                  <div className="truncate text-xs text-muted-foreground">
+                                    {formatPlanRechargeValue(log.planRechargeAmount, log.planRechargeCurrency)}
+                                  </div>
+                                </div>
+                              ) : (
+                                '—'
+                              )}
+                            </TableCell>
                             <TableCell>
                               <Badge variant={log.routingType === 'RULE' ? 'default' : 'secondary'}>{log.routingType}</Badge>
                             </TableCell>
@@ -261,9 +283,18 @@ export default function RoutingLogsPage() {
                             <TableCell className='text-center'>
                               <Badge variant={ruleMatched === 'Yes' ? 'default' : 'outline'}>{ruleMatched}</Badge>
                             </TableCell>
-                            <TableCell className="truncate text-center" title={ruleProvider}>{ruleProvider}</TableCell>
+                            <TableCell className="truncate text-center" title={ruleProvider}>
+                              {ruleProvider === '—'
+                                ? '—'
+                                : displayProvider({ name: ruleProvider, code: ruleProvider })}
+                            </TableCell>
                             <TableCell className="font-semibold text-center">{totalAttempts}</TableCell>
-                            <TableCell className="text-center">{log.providerName ?? log.providerCode ?? '—'}</TableCell>
+                            <TableCell className="text-center">
+                              {displayProvider({
+                                name: log.providerName,
+                                code: log.providerCode,
+                              })}
+                            </TableCell>
                             <TableCell className="text-xs text-center">{formatMoney(log.userAmount, log.userCurrency)}</TableCell>
                             <TableCell className="text-xs text-center">
                               {log.providerCostDisplay ??
@@ -386,7 +417,10 @@ export default function RoutingLogsPage() {
                                                 className="rounded border bg-muted/30 p-2 font-mono text-[11px] break-all space-y-0.5"
                                               >
                                                 <div className="font-semibold text-foreground">
-                                                  {row.provider_name ?? row.provider_id}
+                                                  {displayProvider({
+                                                    id: row.provider_id,
+                                                    name: row.provider_name,
+                                                  })}
                                                 </div>
                                                 <div>SKU: {row.provider_plan_id ?? '—'}</div>
                                                 <div>
@@ -426,7 +460,12 @@ export default function RoutingLogsPage() {
                                       </div>
                                       <div>
                                         <div className="text-muted-foreground">Selected Provider</div>
-                                        <div className="font-semibold text-sm text-primary">{detail.routing_decision?.selected_provider ?? '—'}</div>
+                                        <div className="font-semibold text-sm text-primary">
+                                          {displayProvider({
+                                            name: detail.routing_decision?.selected_provider,
+                                            id: detail.routing_decision?.selected_provider_id,
+                                          })}
+                                        </div>
                                       </div>
                                       <div className="col-span-2">
                                         <div className="text-muted-foreground">Routing Decision Reason</div>
@@ -445,7 +484,12 @@ export default function RoutingLogsPage() {
                                         const evaluatedList = detail.routing_decision?.evaluated_providers ?? detail.routing_decision?.evaluatedProviders ?? []
                                         return Array.isArray(evaluatedList) && evaluatedList.length > 0 ? (
                                           evaluatedList.map((ev: any, idx: number) => {
-                                            const providerName = ev.providerName || ev.providerId || ev.provider || '—'
+                                            const rawProviderName = ev.providerName || ev.providerId || ev.provider || '—'
+                                            const providerName = displayProvider({
+                                              id: ev.providerId,
+                                              name: ev.providerName || (typeof ev.provider === 'string' ? ev.provider : undefined),
+                                              code: ev.providerCode,
+                                            })
                                             const isSkipped = ev.skipped === true
                                             const isEligible = !isSkipped && (ev.eligibility ?? ev.eligible ?? false)
                                             const cost = ev.provider_wholesale_amount ?? ev.costPrice ?? ev.cost
@@ -459,7 +503,7 @@ export default function RoutingLogsPage() {
                                               ev.providerId === detail.routing_decision?.selected_provider_id ||
                                               ev.providerId === detail.routing_decision?.selected_provider ||
                                               ev.provider === detail.routing_decision?.selected_provider ||
-                                              providerName === detail.routing_decision?.selected_provider
+                                              rawProviderName === detail.routing_decision?.selected_provider
 
                                             return (
                                               <div 
@@ -531,7 +575,12 @@ export default function RoutingLogsPage() {
                                             <div className="space-y-1">
                                               <div className="flex items-center justify-between">
                                                 <span className="font-semibold text-xs text-foreground">
-                                                  Attempt #{idx + 1}: {hop.providerName}
+                                                  Attempt #{idx + 1}:{' '}
+                                                  {displayProvider({
+                                                    name: hop.providerName,
+                                                    code: hop.providerCode,
+                                                    id: hop.providerId,
+                                                  })}
                                                 </span>
                                                 <Badge variant={hop.ok ? 'success' : hop.skipped ? 'outline' : 'destructive'} className="text-[10px]">
                                                   {hop.ok ? 'Success' : hop.skipped ? 'Skipped' : 'Failed'}

@@ -4,7 +4,7 @@ import { createRoutingRule, listRoutingRules } from '@/lib/routing/repository'
 import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseFeature(request, 'routing', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'routing'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -13,7 +13,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!(await adminCanUseFeature(request, 'routing', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'routing'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

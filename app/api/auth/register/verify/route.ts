@@ -4,6 +4,12 @@ import { supabaseSignUpEmail, supabaseSignInWithPassword, supabaseAdminCreateUse
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
 import { buildUserFromProfile } from '@/lib/auth/build-auth-user'
+import { assertStrongPassword } from '@/lib/validators/password-api'
+import {
+  parseProfilePhoneFromParts,
+  profilePhoneExists,
+  PROFILE_PHONE_EXISTS_MESSAGE,
+} from '@/lib/auth/profile-phone'
 
 function cookieOptions() {
   const isProd = process.env.NODE_ENV === 'production'
@@ -26,7 +32,15 @@ export async function POST(req: Request) {
     }
 
     const cacheKey = `pending_register:v1:${email}`
-    const record = await cacheGetJson<{ email: string; password?: string; name?: string; otp: string }>(cacheKey)
+    const record = await cacheGetJson<{
+      email: string
+      password?: string
+      name?: string
+      otp: string
+      phone?: string
+      country_code?: string
+      country?: string
+    }>(cacheKey)
 
     if (!record) {
       return NextResponse.json({ ok: false, error: 'Registration session expired or not found. Please start over.' }, { status: 400 })
@@ -36,11 +50,28 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Invalid verification code' }, { status: 400 })
     }
 
-    // Check if the user is already logged in with a phone-only account
+    const passwordError = assertStrongPassword(record.password || '')
+    if (passwordError) return passwordError
+
     const cookie = req.headers.get('cookie') ?? ''
     const om = cookie.match(/(?:^|;\s*)itu-user-id=([^;]+)/)
     const otpUserId = om?.[1] ? decodeURIComponent(om[1]) : ''
 
+    if (record.phone && record.country_code) {
+      const parsed = parseProfilePhoneFromParts(
+        record.phone,
+        record.country || 'IN',
+        record.country_code,
+      )
+      if (parsed.ok) {
+        const exists = await profilePhoneExists(parsed.parsed, otpUserId || undefined)
+        if (exists) {
+          return NextResponse.json({ ok: false, error: PROFILE_PHONE_EXISTS_MESSAGE }, { status: 400 })
+        }
+      }
+    }
+
+    // Check if the user is already logged in with a phone-only account
     let oldProfile: any = null
     if (otpUserId) {
       oldProfile = await fetchProfileForUser(otpUserId)
@@ -83,9 +114,9 @@ export async function POST(req: Request) {
           id: user.id,
           email: record.email,
           name: record.name || oldProfile?.name || '',
-          phone: oldProfile?.phone || null,
-          country_code: oldProfile?.country_code || null,
-          country: oldProfile?.country || null,
+          phone: record.phone || oldProfile?.phone || null,
+          country_code: record.country_code || oldProfile?.country_code || null,
+          country: record.country || oldProfile?.country || null,
           language: oldProfile?.language || null,
           currency: oldProfile?.currency || null,
           image: oldProfile?.image || null,

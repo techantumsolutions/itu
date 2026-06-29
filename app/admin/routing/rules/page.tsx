@@ -39,6 +39,9 @@ import {
   toNullableRuleField,
 } from '@/lib/routing/rule-form-options'
 import { cn } from '@/lib/utils'
+import { ModulePermissionShell } from '@/components/admin/module-permission-shell'
+import { useAdminModulePermissions } from '@/lib/hooks/use-admin-module-permissions'
+import { useProviderDisplay } from '@/components/admin/provider-display-context'
 
 type Rule = {
   id: string
@@ -113,6 +116,10 @@ async function fetchOperators(countryIso3: string) {
 const PAGE_SIZE = 10
 
 export default function RoutingRulesPage() {
+  const { canCreate, canEdit } = useAdminModulePermissions('routing_rules')
+  const { displayProvider } = useProviderDisplay()
+  const showWriteCols = !!canEdit
+  const tableColSpan = showWriteCols ? 8 : 6
   const [rules, setRules] = useState<Rule[]>([])
   const [countries, setCountries] = useState<CountryOption[]>([])
   const [cascadeOperators, setCascadeOperators] = useState<OperatorOption[]>([])
@@ -484,7 +491,7 @@ export default function RoutingRulesPage() {
   }, [form.countryIds, allCountriesSelected, countries])
 
   return (
-    <div className="space-y-6">
+    <ModulePermissionShell module="routing_rules" className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold">Routing Rules</h1>
@@ -495,10 +502,12 @@ export default function RoutingRulesPage() {
             <RefreshCcw className="mr-2 size-4" />
             Refresh
           </Button>
-          <Button onClick={openCreate} disabled={!countries.length}>
+          {canCreate ? (
+          <Button onClick={openCreate} disabled={!countries.length} data-perm="create">
             <Plus className="mr-2 size-4" />
             Add rule
           </Button>
+          ) : null}
         </div>
       </div>
 
@@ -540,20 +549,26 @@ export default function RoutingRulesPage() {
                 <TableHead className="w-[10%]">Operator</TableHead>
                 <TableHead className="w-[10%]">Provider</TableHead>
                 <TableHead className="w-[10%]">Priority</TableHead>
-                <TableHead className="w-[8%]">Enabled</TableHead>
-                <TableHead className="w-[8%] text-right pr-4">Actions</TableHead>
+                {showWriteCols ? (
+                <>
+                <TableHead className="w-[8%]" data-perm-col="edit">Enabled</TableHead>
+                <TableHead className="w-[8%] text-right pr-4" data-perm-col="edit">Actions</TableHead>
+                </>
+                ) : (
+                <TableHead className="w-[8%]">Status</TableHead>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={tableColSpan} className="py-8 text-center text-muted-foreground">
                     Loading…
                   </TableCell>
                 </TableRow>
               ) : filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={tableColSpan} className="py-8 text-center text-muted-foreground">
                     No routing rules found.
                   </TableCell>
                 </TableRow>
@@ -566,10 +581,16 @@ export default function RoutingRulesPage() {
                     </TableCell>
                     <TableCell>{operatorLabel(rule.operatorId)}</TableCell>
                     <TableCell>
-                      {rule.providerName ?? rule.providerCode ?? rule.providerId.slice(0, 8)}
+                      {displayProvider({
+                        id: rule.providerId,
+                        code: rule.providerCode,
+                        name: rule.providerName,
+                      })}
                     </TableCell>
                     <TableCell>{rule.priority}</TableCell>
-                    <TableCell>
+                    {showWriteCols ? (
+                    <>
+                    <TableCell data-perm-col="edit">
                       <div className="flex items-center gap-2">
                         <Switch
                           checked={rule.status === 'ACTIVE'}
@@ -582,21 +603,21 @@ export default function RoutingRulesPage() {
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell>
+                    <TableCell data-perm-col="edit">
                       <div className="flex justify-end gap-1 sm:gap-2">
-                        <Button variant="outline" size="sm" onClick={() => openEdit(rule)} title="Edit">
+                        {canEdit ? (
+                        <Button variant="outline" size="sm" onClick={() => openEdit(rule)} title="Edit" data-perm="edit">
                           <Pencil className="size-4 sm:mr-2" /> <span className="hidden sm:inline">Edit</span>
                         </Button>
-                        {/* <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => void deleteRule(rule.id)}
-                          title="Delete"
-                        >
-                          <Trash2 className="size-4 sm:mr-2" /> <span className="hidden sm:inline">Delete</span>
-                        </Button> */}
+                        ) : null}
                       </div>
                     </TableCell>
+                    </>
+                    ) : (
+                    <TableCell>
+                      <span className="text-xs text-muted-foreground">{rule.status === 'ACTIVE' ? 'Active' : 'Inactive'}</span>
+                    </TableCell>
+                    )}
                   </TableRow>
                 ))
               )}
@@ -775,7 +796,7 @@ export default function RoutingRulesPage() {
                   <SelectContent>
                     {providers.map((p) => (
                       <SelectItem key={p.id} value={p.id}>
-                        {p.label}
+                        {displayProvider({ id: p.id, code: p.code, name: p.name })}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -793,6 +814,6 @@ export default function RoutingRulesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </ModulePermissionShell>
   )
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import { dbFindRechargeByDistributorRef } from '@/lib/lcr-v2/recharge-db'
 import {
   buildRoutingAuditDetailFromLogs,
@@ -58,9 +58,8 @@ async function loadPlanMappingPricing(input: {
 }
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseFeature(request, 'routing', { allowLegacyHeader: true }))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const denied = await requireAdminPermission(request, 'routing_logs.view')
+  if (denied) return denied
 
   const url = new URL(request.url)
   const transactionId = url.searchParams.get('transactionId')

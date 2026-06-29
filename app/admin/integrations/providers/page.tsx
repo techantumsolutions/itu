@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Play, CheckCircle2, XCircle, AlertCircle, Loader2, GitFork } from 'lucide-react'
 import { toast } from 'sonner'
+import { useProviderDisplay } from '@/components/admin/provider-display-context'
 
 type StepStatus = 'idle' | 'running' | 'success' | 'failed'
 
@@ -93,6 +94,7 @@ const INITIAL_STEPS: PipelineStep[] = [
 ]
 
 export default function IntegrationProvidersPage() {
+  const { displayProviderOption } = useProviderDisplay()
   const [providers, setProviders] = useState<any[]>([])
   const [selectedProviderId, setSelectedProviderId] = useState<string>('')
   const [steps, setSteps] = useState<PipelineStep[]>(INITIAL_STEPS)
@@ -183,7 +185,12 @@ export default function IntegrationProvidersPage() {
                 <SelectContent>
                   {providers.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
-                      {p.name} ({p.code})
+                      {displayProviderOption({
+                        id: p.id,
+                        code: p.code,
+                        name: p.name,
+                        priority: Number(p.priority) || 0,
+                      })}
                     </SelectItem>
                   ))}
                 </SelectContent>

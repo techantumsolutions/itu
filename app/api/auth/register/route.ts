@@ -3,17 +3,69 @@ import { supabaseRest } from '@/lib/db/supabase-rest'
 import { generateOtp } from '@/lib/security/otp'
 import { cacheSetJson } from '@/lib/cache/redis'
 import { runtimeEnv } from '@/lib/env/runtime'
+import { assertStrongPassword } from '@/lib/validators/password-api'
+import {
+  parseProfilePhoneFromParts,
+  profilePhoneExists,
+  PROFILE_PHONE_EXISTS_MESSAGE,
+} from '@/lib/auth/profile-phone'
 import nodemailer from 'nodemailer'
+
+type PendingRegisterRecord = {
+  email: string
+  password?: string
+  name?: string
+  otp: string
+  phone?: string
+  country_code?: string
+  country?: string
+}
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json().catch(() => null)) as { email?: string; password?: string; name?: string } | null
+    const body = (await req.json().catch(() => null)) as {
+      email?: string
+      password?: string
+      name?: string
+      phone?: string
+      countryCode?: string
+      dialCode?: string
+    } | null
     const email = (body?.email ?? '').trim().toLowerCase()
     const password = (body?.password ?? '').trim()
     const name = (body?.name ?? '').trim()
+    const phoneInput = (body?.phone ?? '').trim()
+    const countryCode = (body?.countryCode ?? 'IN').trim().toUpperCase()
+    const dialCode = (body?.dialCode ?? '91').trim()
 
     if (!email || !password || !name) {
       return NextResponse.json({ ok: false, error: 'Missing fields' }, { status: 400 })
+    }
+
+    const passwordError = assertStrongPassword(password)
+    if (passwordError) return passwordError
+
+    let phoneFields: Pick<PendingRegisterRecord, 'phone' | 'country_code' | 'country'> = {}
+    if (phoneInput) {
+      const parsedPhone = parseProfilePhoneFromParts(phoneInput, countryCode, dialCode)
+      if (!parsedPhone.ok) {
+        return NextResponse.json({ ok: false, error: parsedPhone.error }, { status: 400 })
+      }
+
+      try {
+        const exists = await profilePhoneExists(parsedPhone.parsed)
+        if (exists) {
+          return NextResponse.json({ ok: false, error: PROFILE_PHONE_EXISTS_MESSAGE }, { status: 400 })
+        }
+      } catch (e) {
+        console.error('Check phone duplicate error:', e)
+      }
+
+      phoneFields = {
+        phone: parsedPhone.parsed.nationalNumber,
+        country_code: parsedPhone.parsed.dialCode,
+        country: parsedPhone.parsed.countryIso,
+      }
     }
 
     // 1. Check if email already registered in profiles
@@ -36,7 +88,7 @@ export async function POST(req: Request) {
     // 3. Store user details and OTP in Redis (valid for 15 minutes)
     const ttlSeconds = 15 * 60
     const cacheKey = `pending_register:v1:${email}`
-    await cacheSetJson(cacheKey, { email, password, name, otp }, ttlSeconds)
+    await cacheSetJson(cacheKey, { email, password, name, otp, ...phoneFields }, ttlSeconds)
 
     // 4. Send email with OTP via nodemailer
     const smtpHost = runtimeEnv('SMTP_HOST')

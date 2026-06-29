@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server'
-import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-rest'
 import { listProviderPriorities, replaceProviderPriorities } from '@/lib/routing/repository'
 import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseFeature(request, 'routing', { allowLegacyHeader: true }))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const denied = await requireAdminPermission(request, 'lcr.view')
+  if (denied) return denied
 
   const priorities = await listProviderPriorities()
 
@@ -20,9 +19,8 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  if (!(await adminCanUseFeature(request, 'routing', { allowLegacyHeader: true }))) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const denied = await requireAdminPermission(request, 'lcr.edit')
+  if (denied) return denied
 
   const body = await request.json().catch(() => ({}))
   const items = Array.isArray(body.priorities)

@@ -10,7 +10,7 @@ import {
 import { convertServerPatchToFullTree } from 'next/dist/client/components/segment-cache/navigation'
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseAnyFeature(request, ['integrations', 'products'], { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseAnyFeature(request, ['integrations', 'products']))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   if (!isSupabaseCatalogConfigured()) {

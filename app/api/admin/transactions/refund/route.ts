@@ -4,7 +4,7 @@ import { supabaseRest } from '@/lib/db/supabase-rest'
 
 export async function POST(request: Request) {
   // 1. Authenticate request and check permissions
-  if (!(await adminCanUseFeature(request, 'transactions', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'transactions'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

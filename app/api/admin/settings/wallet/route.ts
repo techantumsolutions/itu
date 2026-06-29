@@ -1,17 +1,15 @@
 import { NextResponse } from 'next/server'
-import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { logAdminActivity } from '@/lib/auth/audit'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 
 export async function GET(request: Request) {
-  const ctx = await getAdminFromAccessCookie(request)
-  if (!ctx?.user || (ctx.user.role !== 'admin' && ctx.user.role !== 'super_admin')) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const denied = await requireAdminPermission(request, 'wallet.view')
+  if (denied) return denied
 
   try {
     const res = await supabaseRest('app_settings?key=eq.wallet_max_consumption_percentage&select=value&limit=1', { cache: 'no-store' })
-    let percentage = 100 // default fallback
+    let percentage = 100
     if (res.ok) {
       const rows = await res.json()
       if (rows.length > 0 && rows[0].value !== undefined) {
@@ -25,10 +23,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const ctx = await getAdminFromAccessCookie(request)
-  if (!ctx?.user || ctx.user.role !== 'super_admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const denied = await requireAdminPermission(request, 'wallet.manage')
+  if (denied) return denied
 
   try {
     const body = await request.json().catch(() => ({}))

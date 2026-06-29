@@ -20,8 +20,11 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useAuthStore } from "@/lib/stores"
 import { isClientSuperAdmin } from "@/lib/tickets/auth-headers"
+import { clientHasAdminPermission } from "@/lib/auth/client-features"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { validatePassword, PASSWORD_API_ERROR_MESSAGE } from '@/lib/validators/password'
+import { PasswordRequirementsHint } from '@/components/password-requirements-hint'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
@@ -97,7 +100,7 @@ function SettingsContent() {
   const router = useRouter()
   const [isSaving, setIsSaving] = useState(false)
   const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "profile")
-
+  const [focusedPasswordField, setFocusedPasswordField] = useState<string | null>(null)
   const [rechargeFees, setRechargeFees] = useState({
     taxPercent: 0,
     platformFeePercent: 2,
@@ -107,8 +110,10 @@ function SettingsContent() {
   const [savingRechargeFees, setSavingRechargeFees] = useState(false)
 
   const isSuperAdmin = isClientSuperAdmin(user)
+  const canEditSettings = !!(user && clientHasAdminPermission(user, 'settings.edit'))
   const [passwords, setPasswords] = useState<Record<string, string>>({})
   const [showPassMap, setShowPassMap] = useState<Record<string, boolean>>({})
+  const [pagePasswordErrors, setPagePasswordErrors] = useState<Record<string, boolean>>({})
 
   // Security password update states
   const [currentPassword, setCurrentPassword] = useState("")
@@ -118,6 +123,7 @@ function SettingsContent() {
   const [showCurrentPass, setShowCurrentPass] = useState(false)
   const [showNewPass, setShowNewPass] = useState(false)
   const [showConfirmPass, setShowConfirmPass] = useState(false)
+  const [showSecurityPasswordErrors, setShowSecurityPasswordErrors] = useState(false)
 
   // Global 2FA States & Handlers
   const [global2FAEnabled, setGlobal2FAEnabled] = useState(false)
@@ -174,8 +180,8 @@ function SettingsContent() {
   }, [activeTab])
 
   const handleSaveRechargeFees = async () => {
-    if (!isSuperAdmin) {
-      toast.error('Only super administrators can update recharge processing fees.')
+    if (!canEditSettings) {
+      toast.error('You do not have permission to update recharge processing fees.')
       return
     }
     setSavingRechargeFees(true)
@@ -248,8 +254,8 @@ function SettingsContent() {
   }, [activeTab])
 
   const handleToggle2FA = async () => {
-    if (!isSuperAdmin) {
-      toast.error('Only super administrators can toggle global 2FA settings.')
+    if (!canEditSettings) {
+      toast.error('You do not have permission to change global 2FA settings.')
       return
     }
     setIsSaving2FA(true)
@@ -279,12 +285,13 @@ function SettingsContent() {
       toast.error("Please fill in all password fields")
       return
     }
-    if (newPassword.length < 6) {
-      toast.error("New password must be at least 6 characters long")
-      return
-    }
     if (newPassword !== confirmPassword) {
       toast.error("New passwords do not match")
+      return
+    }
+    if (!validatePassword(newPassword).valid) {
+      setShowSecurityPasswordErrors(true)
+      toast.error(PASSWORD_API_ERROR_MESSAGE)
       return
     }
 
@@ -330,6 +337,20 @@ function SettingsContent() {
   }, [isSuperAdmin])
 
   const handleSavePasswords = async () => {
+    const invalidPaths: Record<string, boolean> = {}
+    for (const [path, raw] of Object.entries(passwords)) {
+      const value = (raw ?? '').trim()
+      if (value && !validatePassword(value).valid) {
+        invalidPaths[path] = true
+      }
+    }
+    if (Object.keys(invalidPaths).length > 0) {
+      setPagePasswordErrors(invalidPaths)
+      toast.error(PASSWORD_API_ERROR_MESSAGE)
+      return
+    }
+
+    setPagePasswordErrors({})
     setIsSaving(true)
     try {
       const res = await fetch('/api/admin/settings/page-passwords', {
@@ -649,7 +670,7 @@ function SettingsContent() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className={cn("grid w-full", isSuperAdmin ? "grid-cols-7" : "grid-cols-6")}>
+        <TabsList className={cn("grid w-full", canEditSettings ? "grid-cols-7" : "grid-cols-6")}>
           <TabsTrigger value="profile" className="gap-2">
             <User className="h-4 w-4" />
             <span className="hidden sm:inline">Profile</span>
@@ -674,7 +695,7 @@ function SettingsContent() {
             <History className="h-4 w-4" />
             <span className="hidden sm:inline">Activity Logs</span>
           </TabsTrigger>
-          {isSuperAdmin && (
+          {canEditSettings && (
             <TabsTrigger value="passwords" className="gap-2">
               <Lock className="h-4 w-4" />
               <span className="hidden sm:inline">Passwords</span>
@@ -955,8 +976,11 @@ function SettingsContent() {
                       id="new-password"
                       type={showNewPass ? 'text' : 'password'}
                       value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="At least 6 characters"
+                      onChange={(e) => {
+                        setNewPassword(e.target.value)
+                        setShowSecurityPasswordErrors(false)
+                      }}
+                      placeholder="Create a secure password"
                       className="h-10 rounded-xl pr-10 border-neutral-200"
                     />
                     <button
@@ -968,6 +992,11 @@ function SettingsContent() {
                       {showNewPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
+                  <PasswordRequirementsHint
+                    className="mt-1"
+                    password={newPassword}
+                    showErrors={showSecurityPasswordErrors}
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="confirm-password">Confirm New Password</Label>
@@ -1008,14 +1037,15 @@ function SettingsContent() {
               <div className="space-y-4">
                 <h3 className="font-medium">Two-Factor Authentication</h3>
                 <p className="text-sm text-muted-foreground">
-                  {global2FAEnabled 
-                    ? "Two-factor authentication is globally enabled for all administrators and super administrators." 
+                  {global2FAEnabled
+                    ? "Two-factor authentication is globally enabled for all administrators and super administrators."
                     : "Add an extra layer of security to all administrative accounts"}
                 </p>
-                <Button 
+                {canEditSettings ? (
+                <Button
                   variant={global2FAEnabled ? "destructive" : "outline"}
                   onClick={handleToggle2FA}
-                  disabled={isSaving2FA || !isSuperAdmin}
+                  disabled={isSaving2FA}
                 >
                   {isSaving2FA ? (
                     <>
@@ -1026,9 +1056,9 @@ function SettingsContent() {
                     global2FAEnabled ? "Disable 2FA" : "Enable 2FA"
                   )}
                 </Button>
-                {!isSuperAdmin && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Only super administrators can configure global security policies.
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    You do not have permission to change global security policies.
                   </p>
                 )}
               </div>
@@ -1206,7 +1236,7 @@ function SettingsContent() {
                             taxPercent: Number(e.target.value) || 0,
                           }))
                         }
-                        disabled={!isSuperAdmin}
+                        readOnly={!canEditSettings}
                       />
                     </div>
                     <div className="space-y-2">
@@ -1224,7 +1254,7 @@ function SettingsContent() {
                             platformFeePercent: Number(e.target.value) || 0,
                           }))
                         }
-                        disabled={!isSuperAdmin}
+                        readOnly={!canEditSettings}
                       />
                     </div>
                     <div className="space-y-2">
@@ -1242,7 +1272,7 @@ function SettingsContent() {
                             paymentGatewayFeePercent: Number(e.target.value) || 0,
                           }))
                         }
-                        disabled={!isSuperAdmin}
+                        readOnly={!canEditSettings}
                       />
                     </div>
                   </div>
@@ -1264,13 +1294,14 @@ function SettingsContent() {
                       rechargeFees.platformFeePercent +
                       rechargeFees.paymentGatewayFeePercent)) /
                     100).toFixed(2)}
-                  {!isSuperAdmin && ' — only super administrators can edit these values.'}
+                  {!canEditSettings && ' — you do not have permission to edit these values.'}
                 </p>
               </CardContent>
+              {canEditSettings ? (
               <CardFooter>
                 <Button
                   onClick={handleSaveRechargeFees}
-                  disabled={savingRechargeFees || loadingRechargeFees || !isSuperAdmin}
+                  disabled={savingRechargeFees || loadingRechargeFees}
                   className="w-full sm:w-auto"
                 >
                   {savingRechargeFees ? (
@@ -1286,6 +1317,7 @@ function SettingsContent() {
                   )}
                 </Button>
               </CardFooter>
+              ) : null}
             </Card>
           </div>
         </TabsContent>
@@ -1423,7 +1455,7 @@ function SettingsContent() {
                     >
                       Previous
                     </Button>
-                    
+
                     {/* Page indicator */}
                     <span className="text-xs font-semibold px-2">
                       Page {safeCurrentPage} of {totalPages}
@@ -1445,7 +1477,7 @@ function SettingsContent() {
           </Card>
         </TabsContent>
 
-        {isSuperAdmin && (
+        {canEditSettings && (
           <TabsContent value="passwords">
             <Card>
               <CardHeader>
@@ -1458,29 +1490,53 @@ function SettingsContent() {
                 <div className="space-y-4">
                   {MANAGEABLE_PATHS.map((item) => {
                     const isVisible = showPassMap[item.path] || false
+                    const pagePasswordValue = passwords[item.path] || ''
+                    const showHint = pagePasswordValue.length > 0 || pagePasswordErrors[item.path]
                     return (
-                      <div key={item.path} className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between border-b border-neutral-100 pb-4 last:border-0 last:pb-0">
-                        <div className="space-y-0.5">
-                          <Label className="font-semibold text-neutral-800">{item.label}</Label>
-                          <p className="text-xs text-muted-foreground">Path: {item.path}</p>
+                      <div key={item.path} className="border-b border-neutral-100 flex flex-col justify-end pb-4 last:border-0 last:pb-0">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="space-y-0.5">
+                            <Label className="font-semibold text-neutral-800">{item.label}</Label>
+                            <p className="text-xs text-muted-foreground">Path: {item.path}</p>
+                          </div>
+                          <div className="relative w-full sm:w-64">
+                            <Input
+                              type={isVisible ? 'text' : 'password'}
+                              value={pagePasswordValue}
+                              onFocus={() => setFocusedPasswordField(item.path)}
+                              onBlur={() => setFocusedPasswordField(null)}
+                              onChange={(e) => {
+                                const value = e.target.value
+                                setPasswords((prev) => ({ ...prev, [item.path]: value }))
+                                setPagePasswordErrors((prev) => {
+                                  if (!prev[item.path]) return prev
+                                  const next = { ...prev }
+                                  delete next[item.path]
+                                  return next
+                                })
+                              }}
+                              placeholder="No password set"
+                              className="h-10 rounded-xl pr-10 border-neutral-200"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPassMap(prev => ({ ...prev, [item.path]: !isVisible }))}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
+                              aria-label={isVisible ? 'Hide password' : 'Show password'}
+                            >
+                              {isVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                          </div>
                         </div>
-                        <div className="relative w-full sm:w-64">
-                          <Input
-                            type={isVisible ? 'text' : 'password'}
-                            value={passwords[item.path] || ''}
-                            onChange={(e) => setPasswords(prev => ({ ...prev, [item.path]: e.target.value }))}
-                            placeholder="No password set"
-                            className="h-10 rounded-xl pr-10 border-neutral-200"
+                        {focusedPasswordField === item.path && (
+                          <PasswordRequirementsHint
+                            className="mt-2 sm:ml-auto sm:max-w-md"
+                            password={pagePasswordValue}
+                            showErrors={
+                              pagePasswordErrors[item.path] || pagePasswordValue.length > 0
+                            }
                           />
-                          <button
-                            type="button"
-                            onClick={() => setShowPassMap(prev => ({ ...prev, [item.path]: !isVisible }))}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-400 hover:text-neutral-700"
-                            aria-label={isVisible ? 'Hide password' : 'Show password'}
-                          >
-                            {isVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                          </button>
-                        </div>
+                        )}
                       </div>
                     )
                   })}
@@ -1615,7 +1671,7 @@ function SettingsContent() {
               <div className="grid grid-cols-3 gap-2 text-sm border-b border-neutral-100 pb-4">
                 <span className="font-semibold text-neutral-500">Date</span>
                 <span className="col-span-2 text-neutral-800">{new Date(selectedLog.created_at).toLocaleString()}</span>
-                
+
                 <span className="font-semibold text-neutral-500">Administrator</span>
                 <span className="col-span-2 text-neutral-800">{selectedLog.admin_email}</span>
 

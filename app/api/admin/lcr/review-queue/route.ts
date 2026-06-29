@@ -1,9 +1,11 @@
 import { NextResponse } from 'next/server'
-import { isAdminRequest } from '@/lib/tickets/auth-headers'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 
 export async function GET(request: Request) {
-  if (!isAdminRequest(request)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const denied = await requireAdminPermission(request, 'lcr.view')
+  if (denied) return denied
+
   const url = new URL(request.url)
   const status = (url.searchParams.get('status') ?? 'pending').trim().toLowerCase()
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? '50'), 1), 200)
@@ -17,4 +19,3 @@ export async function GET(request: Request) {
   const rows = await res.json()
   return NextResponse.json({ items: rows, pagination: { limit, offset } })
 }
-

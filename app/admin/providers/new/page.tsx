@@ -18,8 +18,8 @@ import { ArrowLeft } from 'lucide-react'
 import { useAuthStore } from '@/lib/stores'
 import { toast } from 'sonner'
 import type { User } from '@/lib/types'
-import { isClientAdminUser, isClientSuperAdmin } from '@/lib/tickets/auth-headers'
-import { clientHasAdminFeature } from '@/lib/auth/client-features'
+import { isClientAdminUser } from '@/lib/tickets/auth-headers'
+import { clientHasAdminPermission } from '@/lib/auth/client-features'
 
 function adminHeaders(user: User) {
   return {
@@ -56,7 +56,7 @@ export default function AdminAddProviderPage() {
       router.replace('/account')
       return
     }
-    if (!isClientSuperAdmin(user) && !clientHasAdminFeature(user, 'providers_manage')) {
+    if (!clientHasAdminPermission(user, 'providers.create')) {
       toast.error('You do not have permission to add providers')
       router.replace('/admin/providers')
       return
@@ -82,7 +82,7 @@ export default function AdminAddProviderPage() {
 
   const handleSubmit = async () => {
     if (!user || !isClientAdminUser(user)) return
-    if (!isClientSuperAdmin(user) && !clientHasAdminFeature(user, 'providers_manage')) return
+    if (!clientHasAdminPermission(user, 'providers.create')) return
     const code = addCode.trim().toUpperCase()
     const name = addName.trim()
     if (!code || !name) {
@@ -139,7 +139,7 @@ export default function AdminAddProviderPage() {
     }
   }
 
-  if (!user || !isClientAdminUser(user) || (!isClientSuperAdmin(user) && !clientHasAdminFeature(user, 'providers_manage'))) {
+  if (!user || !isClientAdminUser(user) || !clientHasAdminPermission(user, 'providers.create')) {
     return (
       <div className="p-6 text-sm text-muted-foreground">
         Checking access…

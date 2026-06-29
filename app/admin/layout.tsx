@@ -6,6 +6,8 @@ import { DashboardHeader } from '@/components/dashboard-header'
 import { AdminAuthGate } from '@/components/admin-auth-gate'
 
 import { PagePasswordGate } from '@/components/page-password-gate'
+import { SessionIdleGuard } from '@/components/session-idle-guard'
+import { AdminProviderDisplayProvider } from '@/components/admin/provider-display-context'
 
 export default function DashboardLayout({
   children,
@@ -14,6 +16,8 @@ export default function DashboardLayout({
 }) {
   return (
     <AdminAuthGate>
+      <SessionIdleGuard variant="admin" />
+      <AdminProviderDisplayProvider>
       <SidebarProvider>
         <AppSidebar />
         <SidebarInset className="h-svh min-w-0 overflow-y-auto overflow-x-hidden bg-mesh bg-background">
@@ -27,6 +31,7 @@ export default function DashboardLayout({
           </div>
         </SidebarInset>
       </SidebarProvider>
+      </AdminProviderDisplayProvider>
     </AdminAuthGate>
   )
 }

@@ -65,7 +65,7 @@ function mapTransaction(row: TransactionRow) {
 }
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseFeature(request, 'transactions', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'transactions'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

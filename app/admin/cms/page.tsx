@@ -59,6 +59,7 @@ import {
   LifeBuoy,
 } from 'lucide-react'
 import Link from 'next/link'
+import { ModulePermissionShell } from '@/components/admin/module-permission-shell'
 
 function FooterLinksEditor({
   title,
@@ -78,6 +79,7 @@ function FooterLinksEditor({
           size="sm"
           variant="secondary"
           className="h-8 gap-2"
+          data-perm="create"
           onClick={() => onChange([...links, { label: 'New Link', href: '/' }])}
         >
           <Plus className="h-3 w-3" />
@@ -113,6 +115,7 @@ function FooterLinksEditor({
               variant="ghost"
               size="icon"
               className="shrink-0 text-destructive h-8 w-8"
+              data-perm="delete"
               onClick={() => {
                 const updated = links.filter((_, i) => i !== idx)
                 onChange(updated)
@@ -247,7 +250,7 @@ export default function CMSPage() {
   }
 
   return (
-    <div className="space-y-6 p-4 sm:p-5 lg:p-6">
+    <ModulePermissionShell module="cms" className="space-y-6 p-4 sm:p-5 lg:p-6">
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -264,7 +267,7 @@ export default function CMSPage() {
           </Button>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="outline" className="gap-2">
+              <Button variant="outline" className="gap-2" data-perm="edit">
                 <RotateCcw className="h-4 w-4" />
                 Reset to Default
               </Button>
@@ -282,7 +285,7 @@ export default function CMSPage() {
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
-          <Button onClick={handleSave} disabled={saveStatus === 'saving'} className="gap-2">
+          <Button onClick={handleSave} disabled={saveStatus === 'saving'} className="gap-2" data-perm="edit">
             {saveStatus === 'saving' ? (
               <>Saving...</>
             ) : saveStatus === 'saved' ? (
@@ -365,7 +368,7 @@ export default function CMSPage() {
                         onChange={(e) => void handleUpload(e.target.files?.[0], (url) => updateHero({ backgroundImage: url }))}
                       />
                       {content.hero.backgroundImage && (
-                        <Button type="button" variant="destructive" size="sm" onClick={() => updateHero({ backgroundImage: '' })}>
+                        <Button type="button" variant="destructive" size="sm" data-perm="edit" onClick={() => updateHero({ backgroundImage: '' })}>
                           Remove
                         </Button>
                       )}
@@ -642,6 +645,7 @@ export default function CMSPage() {
                   <Button
                     type="button"
                     className="shrink-0 gap-2"
+                    data-perm="create"
                     onClick={() =>
                       addOperatorSliderItem({ imageSrc: '', alt: 'Operator', isActive: true })
                     }
@@ -691,10 +695,10 @@ export default function CMSPage() {
                       <TableRow>
                         <TableHead className="w-24">Preview</TableHead>
                         <TableHead>Alt text</TableHead>
-                        <TableHead className="w-40">Upload</TableHead>
-                        <TableHead className="w-24">Active</TableHead>
+                        <TableHead className="w-40" data-perm-col="edit">Upload</TableHead>
+                        <TableHead className="w-24" data-perm-col="edit">Active</TableHead>
                         <TableHead className="w-24">Order</TableHead>
-                        <TableHead className="w-16" />
+                        <TableHead className="w-16" data-perm-col="delete" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -763,12 +767,13 @@ export default function CMSPage() {
                                 title="Position Order"
                               />
                             </TableCell>
-                            <TableCell>
+                            <TableCell data-perm-col="delete">
                               <Button
                                 type="button"
                                 variant="ghost"
                                 size="icon"
                                 className="text-destructive"
+                                data-perm="delete"
                                 onClick={() => deleteOperatorSliderItem(row.id)}
                                 aria-label="Remove row"
                               >
@@ -852,9 +857,9 @@ export default function CMSPage() {
                         <TableHead>Accent text</TableHead>
                         <TableHead>Rest of title</TableHead>
                         <TableHead className="w-44">Upload</TableHead>
-                        <TableHead className="w-24">Active</TableHead>
+                        <TableHead className="w-24" data-perm-col="edit">Active</TableHead>
                         <TableHead className="w-24">Order</TableHead>
-                        <TableHead className="w-16" />
+                        <TableHead className="w-16" data-perm-col="delete" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -934,12 +939,13 @@ export default function CMSPage() {
                                 title="Position Order"
                               />
                             </TableCell>
-                            <TableCell>
+                            <TableCell data-perm-col="delete">
                               <Button
                                 type="button"
                                 variant="ghost"
                                 size="icon"
                                 className="text-destructive"
+                                data-perm="delete"
                                 onClick={() => deleteSectionThreeFeature(row.id)}
                                 aria-label="Remove"
                               >
@@ -1006,9 +1012,9 @@ export default function CMSPage() {
                         <TableHead>Line 1</TableHead>
                         <TableHead>Line 2</TableHead>
                         <TableHead className="w-44">Upload</TableHead>
-                        <TableHead className="w-24">Active</TableHead>
+                        <TableHead className="w-24" data-perm-col="edit">Active</TableHead>
                         <TableHead className="w-24">Order</TableHead>
-                        <TableHead className="w-16" />
+                        <TableHead className="w-16" data-perm-col="delete" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1080,12 +1086,13 @@ export default function CMSPage() {
                                 title="Position Order"
                               />
                             </TableCell>
-                            <TableCell>
+                            <TableCell data-perm-col="delete">
                               <Button
                                 type="button"
                                 variant="ghost"
                                 size="icon"
                                 className="text-destructive"
+                                data-perm="delete"
                                 onClick={() => deleteHowItWorksStep(row.id)}
                                 aria-label="Remove"
                               >
@@ -1112,6 +1119,7 @@ export default function CMSPage() {
                   <Button
                     type="button"
                     className="shrink-0 gap-2"
+                    data-perm="create"
                     onClick={() =>
                       addCountriesGridItem({
                         countryCode: 'US',
@@ -1163,9 +1171,9 @@ export default function CMSPage() {
                         <TableHead>Country name</TableHead>
                         <TableHead className="w-44">Upload</TableHead>
                         <TableHead className="w-24">Popular</TableHead>
-                        <TableHead className="w-24">Active</TableHead>
+                        <TableHead className="w-24" data-perm-col="edit">Active</TableHead>
                         <TableHead className="w-24">Order</TableHead>
-                        <TableHead className="w-16" />
+                        <TableHead className="w-16" data-perm-col="delete" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1244,12 +1252,13 @@ export default function CMSPage() {
                                 title="Position Order"
                               />
                             </TableCell>
-                            <TableCell>
+                            <TableCell data-perm-col="delete">
                               <Button
                                 type="button"
                                 variant="ghost"
                                 size="icon"
                                 className="text-destructive"
+                                data-perm="delete"
                                 onClick={() => deleteCountriesGridItem(row.id)}
                                 aria-label="Remove"
                               >
@@ -1546,7 +1555,7 @@ export default function CMSPage() {
                 </div>
                 <Dialog>
                   <DialogTrigger asChild>
-                    <Button className="gap-2">
+                    <Button className="gap-2" data-perm="create">
                       <Plus className="h-4 w-4" />
                       Add FAQ
                     </Button>
@@ -1632,8 +1641,8 @@ export default function CMSPage() {
                   <TableRow>
                     <TableHead className="w-10"></TableHead>
                     <TableHead>Question</TableHead>
-                    <TableHead className="w-20">Active</TableHead>
-                    <TableHead className="w-24">Actions</TableHead>
+                    <TableHead className="w-20" data-perm-col="edit">Active</TableHead>
+                    <TableHead className="w-24" data-perm-col="edit">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1648,7 +1657,7 @@ export default function CMSPage() {
                           <p className="font-medium">{item.question}</p>
                           <p className="text-sm text-muted-foreground line-clamp-1">{item.answer}</p>
                         </TableCell>
-                        <TableCell>
+                        <TableCell data-perm-col="edit">
                           <Switch
                             checked={item.isActive}
                             onCheckedChange={(checked) => updateFAQItem(item.id, { isActive: checked })}
@@ -1658,7 +1667,7 @@ export default function CMSPage() {
                           <div className="flex items-center gap-1">
                             <Dialog>
                               <DialogTrigger asChild>
-                                <Button variant="ghost" size="icon" onClick={() => setEditingFAQ(item)}>
+                                <Button variant="ghost" size="icon" data-perm="edit" onClick={() => setEditingFAQ(item)}>
                                   <Pencil className="h-4 w-4" />
                                 </Button>
                               </DialogTrigger>
@@ -1741,7 +1750,7 @@ export default function CMSPage() {
                 </div>
                 <Dialog>
                   <DialogTrigger asChild>
-                    <Button className="gap-2">
+                    <Button className="gap-2" data-perm="create">
                       <Plus className="h-4 w-4" />
                       Add Country
                     </Button>
@@ -1840,8 +1849,8 @@ export default function CMSPage() {
                     <TableHead>Country</TableHead>
                     <TableHead>Code</TableHead>
                     <TableHead>Dial Code</TableHead>
-                    <TableHead className="w-20">Active</TableHead>
-                    <TableHead className="w-24">Actions</TableHead>
+                    <TableHead className="w-20" data-perm-col="edit">Active</TableHead>
+                    <TableHead className="w-24" data-perm-col="edit">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1860,7 +1869,7 @@ export default function CMSPage() {
                         </TableCell>
                         <TableCell>{country.code}</TableCell>
                         <TableCell>{country.dialCode}</TableCell>
-                        <TableCell>
+                        <TableCell data-perm-col="edit">
                           <Switch
                             checked={country.isActive}
                             onCheckedChange={(checked) => {
@@ -1994,7 +2003,7 @@ export default function CMSPage() {
                   <h3 className="text-lg font-semibold">Help FAQs</h3>
                   <Dialog>
                     <DialogTrigger asChild>
-                      <Button size="sm" className="gap-2">
+                      <Button size="sm" className="gap-2" data-perm="create">
                         <Plus className="h-4 w-4" />
                         Add FAQ
                       </Button>
@@ -2068,8 +2077,8 @@ export default function CMSPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Question</TableHead>
-                      <TableHead className="w-20">Active</TableHead>
-                      <TableHead className="w-24">Actions</TableHead>
+                      <TableHead className="w-20" data-perm-col="edit">Active</TableHead>
+                      <TableHead className="w-24" data-perm-col="edit">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -2361,6 +2370,6 @@ export default function CMSPage() {
 
         {/* Typography tab removed — site is locked to Aeonik */}
       </Tabs>
-    </div>
+    </ModulePermissionShell>
   )
 }

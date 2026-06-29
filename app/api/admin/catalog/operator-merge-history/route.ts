@@ -4,7 +4,7 @@ import { loadAllOperatorMergeHistory } from '@/lib/aggregator/operator-merge-his
 import { normalizeCountryIso3 } from '@/lib/lcr/countries'
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseFeature(request, 'integrations', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'integrations'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

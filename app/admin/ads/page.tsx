@@ -2,13 +2,14 @@
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Megaphone, LayoutTemplate, BarChart3 } from 'lucide-react'
+import { ModulePermissionShell } from '@/components/admin/module-permission-shell'
 import { CampaignsTab } from './components/campaigns-tab'
 import { CreativesTab } from './components/creatives-tab'
 import { PerformanceTab } from './components/performance-tab'
 
 export default function AdminAdsPage() {
   return (
-    <div className="space-y-6">
+    <ModulePermissionShell module="ads" className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Ads Manager</h1>
         <p className="text-muted-foreground">Manage your campaigns, creatives, and view performance.</p>
@@ -39,6 +40,6 @@ export default function AdminAdsPage() {
           <PerformanceTab />
         </TabsContent>
       </Tabs>
-    </div>
+    </ModulePermissionShell>
   )
 }

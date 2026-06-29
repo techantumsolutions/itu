@@ -6,7 +6,7 @@ import { aggListRawOperators, aggListSystemOperators, aggListProviders } from '@
 // getNormalizedBaseName has been moved to lib/aggregator/repository.ts
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseFeature(request, 'integrations', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'integrations'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   if (!isSupabaseCatalogConfigured()) return NextResponse.json({ rawOperators: [], systemOperators: [], providers: [], configured: false })

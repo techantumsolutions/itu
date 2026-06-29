@@ -35,7 +35,7 @@ async function loadSystemOperatorsInfo(ids: string[]): Promise<Map<string, { nam
 }
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseFeature(request, 'products', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'products'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -149,7 +149,7 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  if (!(await adminCanUseFeature(request, 'products', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'products'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

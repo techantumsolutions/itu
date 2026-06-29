@@ -1,23 +1,20 @@
 import { NextResponse } from 'next/server'
 import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
 import { supabaseRest, isSupabaseCatalogConfigured } from '@/lib/db/supabase-rest'
-import { ADMIN_FEATURE_KEYS } from '@/lib/auth/admin-features'
+import { mergePermissionsInput, permissionsToStorage } from '@/lib/auth/admin-permissions'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import { logAdminActivity } from '@/lib/auth/audit'
 
 function mergePermissions(input: Record<string, unknown> | null | undefined): Record<string, boolean> {
-  const base: Record<string, boolean> = {}
-  for (const k of ADMIN_FEATURE_KEYS) base[k] = false
-  if (input && typeof input === 'object' && !Array.isArray(input)) {
-    for (const k of ADMIN_FEATURE_KEYS) {
-      if (k in input) base[k] = Boolean((input as Record<string, unknown>)[k])
-    }
-  }
-  return base
+  return permissionsToStorage(mergePermissionsInput(input))
 }
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
+  const denied = await requireAdminPermission(request, 'admin_users.edit')
+  if (denied) return denied
+
   const actor = await getAdminFromAccessCookie(request)
-  if (!actor?.user || actor.user.role !== 'super_admin') {
+  if (!actor?.user) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   if (!isSupabaseCatalogConfigured()) {
@@ -49,7 +46,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     return NextResponse.json({ error: 'cannot_modify_super_admin' }, { status: 400 })
   }
 
-  const updatePayload: Record<string, any> = { updated_at: new Date().toISOString() }
+  const updatePayload: Record<string, unknown> = { updated_at: new Date().toISOString() }
   if (body.permissions !== undefined) {
     updatePayload.admin_permissions = mergePermissions(body.permissions)
   }
@@ -63,7 +60,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     body: JSON.stringify(updatePayload),
   })
   if (!res.ok) return NextResponse.json({ error: await res.text() }, { status: 500 })
-  const updated = (await res.json()) as any[]
+  const updated = (await res.json()) as unknown[]
 
   await logAdminActivity({
     action: 'Update Staff Permissions/Status',

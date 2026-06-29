@@ -6,6 +6,8 @@ import { Eye, EyeOff, Loader2, Shield } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { validatePassword } from '@/lib/validators/password'
+import { PasswordRequirementsHint } from '@/components/password-requirements-hint'
 
 function ResetPasswordForm() {
   const router = useRouter()
@@ -20,6 +22,7 @@ function ResetPasswordForm() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [showPasswordErrors, setShowPasswordErrors] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -30,13 +33,13 @@ function ResetPasswordForm() {
       return
     }
 
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters long.')
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.')
       return
     }
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.')
+    if (!validatePassword(password).valid) {
+      setShowPasswordErrors(true)
       return
     }
 
@@ -79,7 +82,7 @@ function ResetPasswordForm() {
 
           <CardContent className="space-y-5 bg-white px-6 py-8">
             {error ? (
-              <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700" role="alert">
+              <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700 whitespace-pre-line" role="alert">
                 {error}
               </div>
             ) : null}
@@ -117,8 +120,11 @@ function ResetPasswordForm() {
                     <Input
                       type={showPassword ? 'text' : 'password'}
                       value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="At least 6 characters"
+                      onChange={(e) => {
+                        setPassword(e.target.value)
+                        setShowPasswordErrors(false)
+                      }}
+                      placeholder="Create a secure password"
                       className="h-11 rounded-xl pr-10"
                       required
                     />
@@ -131,6 +137,7 @@ function ResetPasswordForm() {
                       {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                     </button>
                   </div>
+                  <PasswordRequirementsHint className="mt-1" password={password} showErrors={showPasswordErrors} />
                 </div>
 
                 {/* Confirm Password */}

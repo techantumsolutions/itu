@@ -22,7 +22,7 @@ async function fetchAllCountryRows(): Promise<{ country_iso3?: string }[]> {
 }
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseFeature(request, 'products', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'products'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

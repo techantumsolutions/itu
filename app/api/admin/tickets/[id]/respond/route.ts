@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { isAdminRequest } from '@/lib/tickets/auth-headers'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import { addMessage, bumpToInProgressIfNeeded, getTicketAdmin } from '@/lib/tickets/db-persistence'
 import type { Ticket } from '@/lib/tickets/types'
 import { logAdminActivity } from '@/lib/auth/audit'
@@ -8,9 +8,8 @@ import { notifyNewMessage, notifyStatusUpdate } from '@/lib/tickets/socket-notif
 type Ctx = { params: Promise<{ id: string }> }
 
 export async function POST(request: Request, context: Ctx) {
-  if (!isAdminRequest(request)) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const denied = await requireAdminPermission(request, 'tickets.edit')
+  if (denied) return denied
 
   const { id: ticketId } = await context.params
 

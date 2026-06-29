@@ -1,16 +1,33 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
-import { Eye, EyeOff, Loader2, CheckCircle2, ArrowLeft, Mail } from 'lucide-react'
+import { Eye, EyeOff, Loader2, CheckCircle2, ArrowLeft, Check, ChevronDown } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useCMSStore } from '@/lib/cms-store'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
+import { validatePassword } from '@/lib/validators/password'
+import { PasswordRequirementsHint } from '@/components/password-requirements-hint'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import {
+  countriesList,
+  getFlagEmoji,
+  getNationalPhoneDigitBounds,
+  validateNationalPhoneDigits,
+} from '@/lib/country-codes'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -24,6 +41,20 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [acceptTerms, setAcceptTerms] = useState(false)
+  const [phone, setPhone] = useState('')
+  const [selectedCountryCode, setSelectedCountryCode] = useState('IN')
+  const [selectedDialCode, setSelectedDialCode] = useState('91')
+  const [openCountry, setOpenCountry] = useState(false)
+  const [showPhoneError, setShowPhoneError] = useState(false)
+
+  const phoneBounds = useMemo(
+    () => getNationalPhoneDigitBounds(selectedCountryCode),
+    [selectedCountryCode],
+  )
+  const phoneValidation = useMemo(
+    () => (phone.trim() ? validateNationalPhoneDigits(phone, selectedCountryCode) : null),
+    [phone, selectedCountryCode],
+  )
 
   // OTP states
   const [otpValue, setOtpValue] = useState('')
@@ -31,6 +62,7 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [sendingOtp, setSendingOtp] = useState(false)
   const [verifyingOtp, setVerifyingOtp] = useState(false)
+  const [showPasswordErrors, setShowPasswordErrors] = useState(false)
 
   useEffect(() => {
     if (step !== 'otp') return
@@ -48,9 +80,22 @@ export default function RegisterPage() {
       return
     }
 
+    if (!validatePassword(password).valid) {
+      setShowPasswordErrors(true)
+      return
+    }
+
     if (!acceptTerms) {
       setError('Please accept the terms and conditions')
       return
+    }
+
+    if (phone.trim()) {
+      if (!phoneValidation?.valid) {
+        setShowPhoneError(true)
+        setError(phoneValidation?.error || 'Enter a valid mobile number for this country')
+        return
+      }
     }
 
     setIsLoading(true)
@@ -61,7 +106,14 @@ export default function RegisterPage() {
         body: JSON.stringify({ 
           email: email.trim().toLowerCase(), 
           password: password.trim(), 
-          name: name.trim() 
+          name: name.trim(),
+          ...(phone.trim()
+            ? {
+                phone: phoneValidation?.digits || phone.replace(/\D/g, ''),
+                countryCode: selectedCountryCode,
+                dialCode: selectedDialCode,
+              }
+            : {}),
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -128,7 +180,7 @@ export default function RegisterPage() {
 
   return (
     <div className="bg-white px-4 py-10 md:py-16">
-      <div className="mx-auto grid w-full max-w-5xl items-stretch gap-10 lg:grid-cols-2 lg:max-h-[700px]">
+      <div className="mx-auto grid w-full max-w-5xl items-stretch gap-10 lg:grid-cols-2">
         <div className="flex justify-center lg:justify-start">
           <div className="flex w-full max-w-md flex-col">
             <div className="relative flex-1 overflow-hidden rounded-3xl bg-[#f6c84c] shadow-[0_24px_70px_-34px_rgba(15,23,42,0.45)]">
@@ -156,8 +208,8 @@ export default function RegisterPage() {
                 <p className="text-sm text-neutral-500">Enter your details to get started</p>
               </CardHeader>
 
-              <CardContent className="max-h-[700px] overflow-y-auto px-6 pb-8 pt-2 md:px-8">
-                {error ? <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</div> : null}
+              <CardContent className="overflow-y-auto px-6 pb-8 pt-2 md:px-8">
+                {error ? <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700 whitespace-pre-line">{error}</div> : null}
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">
@@ -171,12 +223,94 @@ export default function RegisterPage() {
                   </div>
 
                   <div className="space-y-2">
+                    <p className="text-sm font-semibold text-neutral-700">Mobile number <span className="font-normal text-neutral-400">(optional)</span></p>
+                    <div className="flex items-center gap-2">
+                      <Popover open={openCountry} onOpenChange={setOpenCountry}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            role="combobox"
+                            aria-expanded={openCountry}
+                            className="flex h-12 items-center gap-1 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-100 shrink-0 min-w-[110px] justify-between shadow-none"
+                          >
+                            <span className="truncate">
+                              {selectedCountryCode
+                                ? `${getFlagEmoji(selectedCountryCode)} +${selectedDialCode}`
+                                : `+${selectedDialCode}`}
+                            </span>
+                            <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[300px] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search country or code..." />
+                            <CommandList>
+                              <CommandEmpty>No country found.</CommandEmpty>
+                              <CommandGroup>
+                                {countriesList.map((c) => (
+                                  <CommandItem
+                                    key={c.code}
+                                    value={`${c.name} ${c.code} ${c.dialCode}`}
+                                    onSelect={() => {
+                                      setSelectedDialCode(c.dialCode)
+                                      setSelectedCountryCode(c.code)
+                                      setOpenCountry(false)
+                                      setShowPhoneError(false)
+                                    }}
+                                    className="flex items-center justify-between py-2 cursor-pointer"
+                                  >
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-base">{c.flag}</span>
+                                      <span className="font-medium text-neutral-900">{c.name}</span>
+                                      <span className="text-neutral-400 font-normal">(+{c.dialCode})</span>
+                                    </div>
+                                    {selectedCountryCode === c.code && (
+                                      <Check className="h-4 w-4 text-[var(--hero-cta-orange)]" />
+                                    )}
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      <Input
+                        type="tel"
+                        inputMode="numeric"
+                        value={phone}
+                        onChange={(e) => {
+                          const digits = e.target.value.replace(/\D/g, '').slice(0, phoneBounds.maxDigits)
+                          setPhone(digits)
+                          setShowPhoneError(false)
+                        }}
+                        placeholder="Contact number"
+                        className="h-12 rounded-xl flex-1"
+                        autoComplete="tel-national"
+                        maxLength={phoneBounds.maxDigits}
+                      />
+                    </div>
+                    {showPhoneError && phoneValidation && !phoneValidation.valid ? (
+                      <p className="text-xs font-medium text-red-600">{phoneValidation.error}</p>
+                    ) : phone.trim() ? (
+                      <p className="text-xs text-neutral-500">
+                        Enter {phoneBounds.minDigits === phoneBounds.maxDigits
+                          ? `${phoneBounds.minDigits} digits`
+                          : `${phoneBounds.minDigits}–${phoneBounds.maxDigits} digits`} for this country
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-2">
                     <p className="text-sm font-semibold text-neutral-700">Password</p>
                     <div className="relative">
                       <Input
                         type={showPassword ? 'text' : 'password'}
                         value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        onChange={(e) => {
+                          setPassword(e.target.value)
+                          setShowPasswordErrors(false)
+                        }}
                         placeholder="Create a password"
                         className="h-12 rounded-xl pr-10"
                         required
@@ -190,6 +324,7 @@ export default function RegisterPage() {
                         {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                       </button>
                     </div>
+                    <PasswordRequirementsHint className="mt-1" password={password} showErrors={showPasswordErrors} />
                   </div>
 
                   <div className="space-y-2">
@@ -258,7 +393,7 @@ export default function RegisterPage() {
               </CardHeader>
 
               <CardContent className="px-6 pb-8 pt-2 md:px-8">
-                {error ? <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">{error}</div> : null}
+                {error ? <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700 whitespace-pre-line">{error}</div> : null}
 
                 <div className="mx-auto w-full max-w-sm space-y-6 pb-2">
                   <div className="flex justify-center">

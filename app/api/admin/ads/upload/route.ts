@@ -3,7 +3,7 @@ import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { runtimeEnv } from '@/lib/env/runtime'
 
 export async function POST(request: Request) {
-  const isAuthorized = await adminCanUseFeature(request, 'ads', { allowLegacyHeader: true });
+  const isAuthorized = await adminCanUseFeature(request, 'ads');
   if (!isAuthorized) {
     console.error('Upload Route: adminCanUseFeature returned false! Headers:', Object.fromEntries(request.headers.entries()));
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

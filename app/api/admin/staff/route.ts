@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server'
 import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
 import { supabaseRest, isSupabaseCatalogConfigured } from '@/lib/db/supabase-rest'
-import { ADMIN_FEATURE_KEYS, ADMIN_FEATURE_LABELS, type AdminFeatureKey } from '@/lib/auth/admin-features'
+import {
+  ADMIN_PERMISSION_KEYS,
+  ADMIN_PERMISSION_LABELS,
+  mergePermissionsInput,
+  permissionsToStorage,
+  type AdminPermissionKey,
+} from '@/lib/auth/admin-permissions'
+import { adminHasPermission, requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import { supabaseAdminCreateUser } from '@/lib/supabase/admin-users'
 import { cacheSetJson } from '@/lib/cache/redis'
 import { logAdminActivity } from '@/lib/auth/audit'
@@ -10,19 +17,14 @@ import nodemailer from 'nodemailer'
 import crypto from 'crypto'
 
 function mergePermissions(input: Record<string, unknown> | null | undefined): Record<string, boolean> {
-  const base: Record<string, boolean> = {}
-  for (const k of ADMIN_FEATURE_KEYS) base[k] = false
-  if (input && typeof input === 'object' && !Array.isArray(input)) {
-    for (const k of ADMIN_FEATURE_KEYS) {
-      if (k in input) base[k] = Boolean((input as Record<string, unknown>)[k])
-    }
-  }
-  return base
+  return permissionsToStorage(mergePermissionsInput(input))
 }
 
 export async function GET(request: Request) {
+  const denied = await requireAdminPermission(request, 'admin_users.view')
+  if (denied) return denied
   const ctx = await getAdminFromAccessCookie(request)
-  if (!ctx?.user || ctx.user.role !== 'super_admin') {
+  if (!ctx?.user) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   if (!isSupabaseCatalogConfigured()) {
@@ -38,8 +40,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = await requireAdminPermission(request, 'admin_users.create')
+  if (denied) return denied
   const ctx = await getAdminFromAccessCookie(request)
-  if (!ctx?.user || ctx.user.role !== 'super_admin') {
+  if (!ctx?.user) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   if (!isSupabaseCatalogConfigured()) {
@@ -111,7 +115,7 @@ export async function POST(request: Request) {
 
     const activePermLabels = Object.entries(permissions)
       .filter(([_, v]) => v === true)
-      .map(([k]) => ADMIN_FEATURE_LABELS[k as AdminFeatureKey] || k)
+      .map(([k]) => ADMIN_PERMISSION_LABELS[k as AdminPermissionKey] || k)
 
     const permHtml = activePermLabels.length > 0
       ? `<ul style="margin: 0; padding-left: 20px; color: #4a5568; font-size: 14px;">

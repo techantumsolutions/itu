@@ -4,7 +4,7 @@ import { loadPlanMergeHistory } from '@/lib/aggregator/plan-merge-history'
 import { normalizeCountryIso3 } from '@/lib/lcr/countries'
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseFeature(request, 'products', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'products'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

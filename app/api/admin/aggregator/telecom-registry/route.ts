@@ -4,7 +4,7 @@ import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-res
 import { listDomainOperatorRegistry } from '@/lib/aggregator/telecom-registry'
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseFeature(request, 'integrations', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'integrations'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

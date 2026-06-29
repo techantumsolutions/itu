@@ -3,6 +3,7 @@ import { supabaseRest } from '@/lib/db/supabase-rest'
 import type { SiteContent } from '@/lib/cms-store'
 import { cacheDel, cacheGetJson, cacheSetJson } from '@/lib/cache/redis'
 import { logAdminActivity } from '@/lib/auth/audit'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -56,6 +57,9 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const denied = await requireAdminPermission(req, 'cms.edit')
+  if (denied) return denied
+
   try {
     const body = (await req.json().catch(() => null)) as { content?: SiteContent } | null
     if (!body?.content) return NextResponse.json({ ok: false, error: 'Missing content' }, { status: 400 })

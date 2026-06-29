@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { supabaseSignInWithPassword, supabaseAdminUpdateUser } from '@/lib/supabase/auth-rest'
+import { assertStrongPassword } from '@/lib/validators/password-api'
 
 export async function POST(request: Request) {
   const user = getRequestUser(request)
@@ -14,8 +15,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Missing current or new password' }, { status: 400 })
   }
 
-  if (newPassword.length < 6) {
-    return NextResponse.json({ error: 'New password must be at least 6 characters long' }, { status: 400 })
+  const passwordError = assertStrongPassword(newPassword)
+  if (passwordError) {
+    const body = await passwordError.json()
+    return NextResponse.json(body, { status: 400 })
   }
 
   try {

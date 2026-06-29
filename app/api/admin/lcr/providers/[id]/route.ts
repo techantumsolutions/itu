@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server'
-import { isAdminRequest, getRequestUser } from '@/lib/tickets/auth-headers'
+import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { logAdminActivity } from '@/lib/auth/audit'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
-  if (!isAdminRequest(request)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const denied = await requireAdminPermission(request, 'providers.edit')
+  if (denied) return denied
+
   const actor = getRequestUser(request)
   const { id } = await ctx.params
   const body = await request.json().catch(() => ({}))
@@ -43,12 +46,14 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     details: { id, patch },
   })
 
-  const rows = (await res.json()) as any[]
+  const rows = (await res.json()) as unknown[]
   return NextResponse.json({ provider: rows?.[0] ?? null })
 }
 
 export async function DELETE(request: Request, ctx: { params: Promise<{ id: string }> }) {
-  if (!isAdminRequest(request)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const denied = await requireAdminPermission(request, 'providers.delete')
+  if (denied) return denied
+
   const actor = getRequestUser(request)
   const { id } = await ctx.params
 
@@ -74,4 +79,3 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
 
   return NextResponse.json({ success: true })
 }
-

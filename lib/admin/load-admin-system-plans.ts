@@ -1,5 +1,8 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
-import { aggCountProvidersBySystemPlanIds } from '@/lib/aggregator/repository'
+import {
+  aggCountProvidersBySystemPlanIds,
+  aggProviderNamesBySystemPlanIds,
+} from '@/lib/aggregator/repository'
 import { normalizeCountryIso3 } from '@/lib/lcr/countries'
 
 function enc(v: string): string {
@@ -15,6 +18,7 @@ export type AdminSystemPlanRow = {
   category: string
   active: boolean
   provider_count: number
+  provider_names: string[]
 }
 
 async function loadSystemOperatorsInfo(
@@ -133,9 +137,11 @@ export async function loadAdminSystemPlans(input: {
   }>
 
   const systemIds = rows.map((row) => row.system_operator_id).filter(Boolean) as string[]
-  const [systemOperatorInfo, providerCounts] = await Promise.all([
+  const planIds = rows.map((row) => row.id).filter(Boolean)
+  const [systemOperatorInfo, providerCounts, providerNamesByPlan] = await Promise.all([
     loadSystemOperatorsInfo(systemIds),
-    aggCountProvidersBySystemPlanIds(rows.map((row) => row.id).filter(Boolean)),
+    aggCountProvidersBySystemPlanIds(planIds),
+    aggProviderNamesBySystemPlanIds(planIds),
   ])
 
   const systemPlans = rows.map((row) => {
@@ -154,6 +160,7 @@ export async function loadAdminSystemPlans(input: {
       category: row.plan_type || 'Unknown',
       active,
       provider_count: providerCounts.get(row.id) ?? 0,
+      provider_names: providerNamesByPlan.get(row.id) ?? [],
     }
   })
 

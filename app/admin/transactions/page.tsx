@@ -29,6 +29,8 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Search, Filter, Download, MoreHorizontal, Eye, RefreshCw, RotateCcw } from 'lucide-react'
 import { useAuthStore } from '@/lib/stores'
+import { clientHasAdminPermission } from '@/lib/auth/client-features'
+import { useProviderDisplay } from '@/components/admin/provider-display-context'
 import { toast } from 'sonner'
 import { resolveTransactionDisplayStatus } from '@/lib/transactions/display-status'
 import {
@@ -68,6 +70,7 @@ type AdminTransaction = {
 
 export default function AdminTransactionsPage() {
   const user = useAuthStore((s) => s.user)
+  const { displayProvider } = useProviderDisplay()
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [dateFilter, setDateFilter] = useState<string>('all')
@@ -78,6 +81,7 @@ export default function AdminTransactionsPage() {
   const [refundDialogOpen, setRefundDialogOpen] = useState(false)
   const [refundTransaction, setRefundTransaction] = useState<AdminTransaction | null>(null)
   const [refunding, setRefunding] = useState(false)
+  const canRefund = !!(user && clientHasAdminPermission(user, 'customers.edit'))
 
   useEffect(() => {
     const params = new URLSearchParams()
@@ -126,15 +130,26 @@ export default function AdminTransactionsPage() {
     
     // 1. Check recharge details provider (populated from DB/routing logs)
     let p = order.rechargeDetails?.provider
-    if (p && p !== '—' && p !== 'null') return p
+    if (p && p !== '—' && p !== 'null') {
+      return displayProvider({ name: p, code: p })
+    }
     
     // 2. Check metadata fields directly
     p = order.metadata?.provider_code || order.metadata?.provider_name || order.metadata?.provider
-    if (p && p !== '—' && p !== 'null') return p
+    if (p && p !== '—' && p !== 'null') {
+      return displayProvider({ name: p, code: p })
+    }
     
     // 3. Check LCR routing metadata
-    p = order.metadata?.routing?.selected?.providerCode || order.metadata?.routing?.selected?.providerName
-    if (p && p !== '—' && p !== 'null') return p
+    const routing = order.metadata?.routing?.selected
+    if (routing) {
+      const label = displayProvider({
+        name: routing.providerName,
+        code: routing.providerCode,
+        id: routing.providerId,
+      })
+      if (label !== '—') return label
+    }
     
     return '—'
   }
@@ -426,13 +441,13 @@ export default function AdminTransactionsPage() {
                               <Eye className="mr-2 h-4 w-4" />
                               View Details
                             </DropdownMenuItem>
-                            {order.status === 'failed' && (
+                            {order.status === 'failed' && canRefund ? (
                               <DropdownMenuItem>
                                 <RefreshCw className="mr-2 h-4 w-4" />
                                 Retry
                               </DropdownMenuItem>
-                            )}
-                            {order.type === 'recharge' && order.status === 'failed' && (
+                            ) : null}
+                            {canRefund && order.type === 'recharge' && order.status === 'failed' ? (
                               <DropdownMenuItem
                                 className="text-red-600 focus:text-red-700"
                                 onClick={() => {
@@ -443,7 +458,7 @@ export default function AdminTransactionsPage() {
                                 <RotateCcw className="mr-2 h-4 w-4 text-red-600" />
                                 Refund Wallet
                               </DropdownMenuItem>
-                            )}
+                            ) : null}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>

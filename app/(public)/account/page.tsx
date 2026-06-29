@@ -21,6 +21,8 @@ import {
 } from '@/components/ui/command'
 import { countriesList, getFlagEmoji } from '@/lib/country-codes'
 import { parsePhoneNumberFromString } from 'libphonenumber-js'
+import { validatePassword } from '@/lib/validators/password'
+import { PasswordRequirementsHint } from '@/components/password-requirements-hint'
 
 export default function AccountProfilePage() {
   const { user, setSession } = useAuthStore()
@@ -45,6 +47,7 @@ export default function AccountProfilePage() {
   const [regSuccess, setRegSuccess] = useState('')
   const [sendingRegOtp, setSendingRegOtp] = useState(false)
   const [verifyingRegOtp, setVerifyingRegOtp] = useState(false)
+  const [showRegPasswordErrors, setShowRegPasswordErrors] = useState(false)
 
   // States for verification modal when updating email/phone
   const [showVerifyModal, setShowVerifyModal] = useState(false)
@@ -323,13 +326,13 @@ export default function AccountProfilePage() {
       return
     }
 
-    if (regPassword.length < 6) {
-      setRegError('Password must be at least 6 characters long')
+    if (regPassword !== regConfirmPassword) {
+      setRegError('Passwords do not match')
       return
     }
 
-    if (regPassword !== regConfirmPassword) {
-      setRegError('Passwords do not match')
+    if (!validatePassword(regPassword).valid) {
+      setShowRegPasswordErrors(true)
       return
     }
 
@@ -652,7 +655,7 @@ export default function AccountProfilePage() {
           </CardHeader>
           <CardContent className="pt-6">
             {regError && (
-              <div className="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm font-medium text-red-700">
+              <div className="mb-4 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm font-medium text-red-700 whitespace-pre-line">
                 {regError}
               </div>
             )}
@@ -690,8 +693,11 @@ export default function AccountProfilePage() {
                       <Input
                         type={showRegPassword ? 'text' : 'password'}
                         value={regPassword}
-                        onChange={(e) => setRegPassword(e.target.value)}
-                        placeholder="Min 6 characters"
+                        onChange={(e) => {
+                          setRegPassword(e.target.value)
+                          setShowRegPasswordErrors(false)
+                        }}
+                        placeholder="Create a secure password"
                         className="h-10 rounded-xl bg-white border-amber-200/60 pr-10 focus-visible:ring-amber-500"
                         required
                       />
@@ -703,6 +709,7 @@ export default function AccountProfilePage() {
                         {showRegPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
+                    <PasswordRequirementsHint className="mt-1" password={regPassword} showErrors={showRegPasswordErrors} />
                   </div>
 
                   <div className="space-y-2">

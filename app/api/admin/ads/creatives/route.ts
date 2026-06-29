@@ -3,7 +3,7 @@ import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 
 export async function GET(request: Request) {
-  if (!(await adminCanUseFeature(request, 'ads', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'ads'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!(await adminCanUseFeature(request, 'ads', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'ads'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  if (!(await adminCanUseFeature(request, 'ads', { allowLegacyHeader: true }))) {
+  if (!(await adminCanUseFeature(request, 'ads'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
   
