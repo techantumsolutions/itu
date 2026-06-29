@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { useAuthStore } from '@/lib/stores'
 import { Gift, Sparkles, Clock, ArrowRight, Info, Coins, Phone, Loader2 } from 'lucide-react'
 import Link from 'next/link'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 type LedgerEntry = {
   id: string
@@ -222,107 +223,219 @@ export default function RewardsPage() {
             <div className="flex items-center justify-center py-12">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : entries.length === 0 ? (
-            <div className="text-center py-8">
-              <Gift className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
-              <p className="font-medium">No points activity yet</p>
-              <p className="text-sm text-muted-foreground mb-4">
-                Start earning points by making your first recharge
-              </p>
-              <Button asChild>
-                <Link href="/">
-                  Make a Recharge
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
-              </Button>
-            </div>
           ) : (
-            <div className="space-y-3">
-              {entries.map((entry) => {
-                const txn = entry.transactions
-                const trigger = entry.metadata?.trigger
-                const mobileNumber = txn?.metadata?.mobile_number || txn?.description || '—'
-                const amount = txn?.amount
-                const currency = txn?.currency || 'INR'
-                const status = txn?.status
-                const date = new Date(entry.created_at)
+            <Tabs defaultValue="received" className="space-y-4">
+              <TabsList className="grid w-full grid-cols-2 max-w-[400px]">
+                <TabsTrigger value="received">Received Points</TabsTrigger>
+                <TabsTrigger value="consumed">Consumed Points</TabsTrigger>
+              </TabsList>
 
-                return (
-                  <div
-                    key={entry.id}
-                    className="rounded-lg border p-4 hover:bg-muted/30 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      {/* Left: details */}
-                      <div className="flex items-start gap-3 min-w-0">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 shrink-0">
-                          <Sparkles className="h-5 w-5" />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-semibold text-sm">{triggerLabel(trigger)}</p>
-                            <Badge
-                              variant="outline"
-                              className={`text-[10px] px-1.5 py-0 h-5 ${triggerColor(trigger)}`}
-                            >
-                              {trigger || 'REWARD'}
-                            </Badge>
-                          </div>
-
-                          {/* Recharge details */}
-                          <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <Phone className="h-3 w-3 shrink-0" />
-                            <span className="truncate">{mobileNumber}</span>
-                          </div>
-
-                          {amount != null && (
-                            <p className="text-xs text-muted-foreground mt-0.5">
-                              Recharge: {amount.toFixed(2)} {currency}
-                              {status && (
-                                <span
-                                  className={`ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                                    status === 'completed'
-                                      ? 'bg-emerald-50 text-emerald-700'
-                                      : status === 'failed'
-                                        ? 'bg-red-50 text-red-700'
-                                        : 'bg-amber-50 text-amber-700'
-                                  }`}
-                                >
-                                  {status}
-                                </span>
-                              )}
-                            </p>
-                          )}
-
-                          <p className="text-[11px] text-muted-foreground mt-1">
-                            {date.toLocaleDateString(undefined, {
-                              day: 'numeric',
-                              month: 'short',
-                              year: 'numeric',
-                            })}{' '}
-                            at{' '}
-                            {date.toLocaleTimeString(undefined, {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Right: points earned */}
-                      <div className="text-right shrink-0">
-                        <p className="text-lg font-bold text-emerald-600">
-                          +{entry.points}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">
-                          pts (${(entry.points * pointValue).toFixed(2)})
-                        </p>
-                      </div>
-                    </div>
+              <TabsContent value="received">
+                {entries.filter((e) => e.points > 0).length === 0 ? (
+                  <div className="text-center py-8">
+                    <Gift className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                    <p className="font-medium">No reward points earned yet</p>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Start earning points by making your first recharge
+                    </p>
+                    <Button asChild>
+                      <Link href="/">
+                        Make a Recharge
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </Link>
+                    </Button>
                   </div>
-                )
-              })}
-            </div>
+                ) : (
+                  <div className="space-y-3">
+                    {entries
+                      .filter((e) => e.points > 0)
+                      .map((entry) => {
+                        const txn = entry.transactions
+                        const trigger = entry.metadata?.trigger
+                        const mobileNumber = txn?.metadata?.mobile_number || txn?.description || '—'
+                        const amount = txn?.amount
+                        const currency = txn?.currency || 'INR'
+                        const status = txn?.status
+                        const date = new Date(entry.created_at)
+
+                        return (
+                          <div
+                            key={entry.id}
+                            className="rounded-lg border p-4 hover:bg-muted/30 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              {/* Left: details */}
+                              <div className="flex items-start gap-3 min-w-0">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 shrink-0">
+                                  <Sparkles className="h-5 w-5" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="font-semibold text-sm">{triggerLabel(trigger)}</p>
+                                    <Badge
+                                      variant="outline"
+                                      className={`text-[10px] px-1.5 py-0 h-5 ${triggerColor(trigger)}`}
+                                    >
+                                      {trigger || 'REWARD'}
+                                    </Badge>
+                                  </div>
+
+                                  {/* Recharge details */}
+                                  <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    <Phone className="h-3 w-3 shrink-0" />
+                                    <span className="truncate">{mobileNumber}</span>
+                                  </div>
+
+                                  {amount != null && (
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      Recharge: {amount.toFixed(2)} {currency}
+                                      {status && (
+                                        <span
+                                          className={`ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${status === 'completed'
+                                              ? 'bg-emerald-50 text-emerald-700'
+                                              : status === 'failed'
+                                                ? 'bg-red-50 text-red-700'
+                                                : 'bg-amber-50 text-amber-700'
+                                            }`}
+                                        >
+                                          {status}
+                                        </span>
+                                      )}
+                                    </p>
+                                  )}
+
+                                  <p className="text-[11px] text-muted-foreground mt-1">
+                                    {date.toLocaleDateString(undefined, {
+                                      day: 'numeric',
+                                      month: 'short',
+                                      year: 'numeric',
+                                    })}{' '}
+                                    at{' '}
+                                    {date.toLocaleTimeString(undefined, {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Right: points earned */}
+                              <div className="text-right shrink-0">
+                                <p className="text-lg font-bold text-emerald-600">
+                                  +{entry.points}
+                                </p>
+                                <p className="text-[11px] text-muted-foreground">
+                                  pts (${(entry.points * pointValue).toFixed(2)})
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                  </div>
+                )}
+              </TabsContent>
+
+              <TabsContent value="consumed">
+                {entries.filter((e) => e.points < 0).length === 0 ? (
+                  <div className="text-center py-8">
+                    <Coins className="h-12 w-12 mx-auto text-muted-foreground mb-3" />
+                    <p className="font-medium">No points consumed yet</p>
+                    <p className="text-sm text-muted-foreground">
+                      Points you redeem during mobile recharges will appear here
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {entries
+                      .filter((e) => e.points < 0)
+                      .map((entry) => {
+                        const txn = entry.transactions
+                        const trigger = entry.metadata?.trigger
+                        const mobileNumber = txn?.metadata?.mobile_number || txn?.description || '—'
+                        const amount = txn?.amount
+                        const currency = txn?.currency || 'INR'
+                        const status = txn?.status
+                        const date = new Date(entry.created_at)
+
+                        return (
+                          <div
+                            key={entry.id}
+                            className="rounded-lg border p-4 hover:bg-muted/30 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              {/* Left: details */}
+                              <div className="flex items-start gap-3 min-w-0">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-50 text-red-600 shrink-0">
+                                  <Coins className="h-5 w-5" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="font-semibold text-sm">Redeemed Discount</p>
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[10px] px-1.5 py-0 h-5 bg-red-100 text-red-700 border-red-200"
+                                    >
+                                      CONSUMED
+                                    </Badge>
+                                  </div>
+
+                                  {/* Recharge details */}
+                                  <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                                    <Phone className="h-3 w-3 shrink-0" />
+                                    <span className="truncate">{mobileNumber}</span>
+                                  </div>
+
+                                  {amount != null && (
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      Recharge: {amount.toFixed(2)} {currency}
+                                      {status && (
+                                        <span
+                                          className={`ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium ${status === 'completed'
+                                              ? 'bg-emerald-50 text-emerald-700'
+                                              : status === 'failed'
+                                                ? 'bg-red-50 text-red-700'
+                                                : 'bg-amber-50 text-amber-700'
+                                            }`}
+                                        >
+                                          {status}
+                                        </span>
+                                      )}
+                                    </p>
+                                  )}
+
+                                  <p className="text-[11px] text-muted-foreground mt-1">
+                                    {date.toLocaleDateString(undefined, {
+                                      day: 'numeric',
+                                      month: 'short',
+                                      year: 'numeric',
+                                    })}{' '}
+                                    at{' '}
+                                    {date.toLocaleTimeString(undefined, {
+                                      hour: '2-digit',
+                                      minute: '2-digit',
+                                    })}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Right: points consumed */}
+                              <div className="text-right shrink-0">
+                                <p className="text-lg font-bold text-red-600">
+                                  {entry.points}
+                                </p>
+                                <p className="text-[11px] text-muted-foreground">
+                                  pts (-${(Math.abs(entry.points) * pointValue).toFixed(2)})
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      })}
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           )}
         </CardContent>
       </Card>

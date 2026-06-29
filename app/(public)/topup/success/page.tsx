@@ -84,8 +84,7 @@ export default function TopupSuccessPage() {
                 value={selectedPlan.planName || `${planValueLabel} • ${selectedPlan.validity}`}
               />
               <Row label="Original Plan Price" value={planValueLabel} />
-              <Row label="Service Fee" value={`${serviceFee.toFixed(2)} ${paidCurrency}`} />
-              <Row label="Tax" value={`${tax.toFixed(2)} ${paidCurrency}`} />
+              <Row label="Service Fee" value={`${(serviceFee + tax).toFixed(2)} ${paidCurrency}`} />
               <Row label="Total Cost" value={`${totalAmount.toFixed(2)} ${paidCurrency}`} />
               {/* {providerRef ? <Row label="Provider Reference" value={providerRef} mono /> : null}
               {providerName ? <Row label="Provider" value={providerName} /> : null} */}

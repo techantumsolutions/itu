@@ -19,6 +19,7 @@ export async function POST(request: Request) {
     const usedWalletBalance = typeof body.usedWalletBalance === 'number' ? body.usedWalletBalance : 0
     const walletCurrency = typeof body.walletCurrency === 'string' ? body.walletCurrency.trim().toUpperCase() : ''
     const checkoutSessionId = typeof body.checkoutSessionId === 'string' ? body.checkoutSessionId.trim() : ''
+    const usedRewardPoints = typeof body.usedRewardPoints === 'number' ? body.usedRewardPoints : 0
 
     if (!planId || !amount || !mobileNumber) {
       return NextResponse.json({ error: 'Missing required fields: planId, amount, mobileNumber' }, { status: 400 })
@@ -90,6 +91,7 @@ export async function POST(request: Request) {
             used_wallet_balance: usedWalletBalance,
             wallet_currency: walletCurrency,
             system_plan_id: systemPlanId || null,
+            used_reward_points: usedRewardPoints,
           },
         },
       ]),

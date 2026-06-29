@@ -5,6 +5,7 @@ import { supabaseRest } from '@/lib/db/supabase-rest'
 import { executeCheckout } from '@/lib/topup/checkout-service'
 import { getUserIdFromRequest } from '@/lib/auth/get-user-id-from-request'
 import { attachUserIdToCheckoutRecords } from '@/lib/topup/attach-checkout-user'
+import { redeemPoints } from '@/lib/rewards/reward-service'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -133,6 +134,7 @@ export async function POST(request: Request) {
         (typeof po.pending_transaction_id === 'string' && po.pending_transaction_id) ||
         ''
       const usedWalletBalance = Number(metadata.used_wallet_balance ?? 0)
+      const usedRewardPoints = Number(metadata.used_reward_points ?? 0)
       const razorpayAmount = Number(po.amount ?? 0)
       const fullAmount = razorpayAmount + usedWalletBalance
 
@@ -251,6 +253,18 @@ export async function POST(request: Request) {
         checkoutSessionId: checkoutSessionId || undefined,
         pendingTransactionId: checkoutSessionId || undefined,
       })
+
+      if (result.ok && effectiveUserId && usedRewardPoints > 0) {
+        const pointsResult = await redeemPoints(
+          effectiveUserId,
+          result.transactionId || checkoutSessionId || null,
+          usedRewardPoints,
+          `Redeemed on recharge ${po.mobile_number}`
+        )
+        if (!pointsResult) {
+          console.error('[REWARDS] Failed to deduct user points after successful Razorpay verification')
+        }
+      }
 
       return NextResponse.json({
         ok: result.ok,

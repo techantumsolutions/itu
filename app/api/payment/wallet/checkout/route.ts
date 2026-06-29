@@ -3,6 +3,7 @@ import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { executeCheckout } from '@/lib/topup/checkout-service'
 import { linkPaymentOrderToCheckoutSession } from '@/lib/topup/prepare-checkout-service'
+import { redeemPoints } from '@/lib/rewards/reward-service'
 
 export async function POST(request: Request) {
   const user = getRequestUser(request)
@@ -78,13 +79,72 @@ export async function POST(request: Request) {
       }
     }
 
-    // Enforce max consumption limit based on available wallet balance
+    // 3.5. Retrieve and validate reward points settings if points are being used
+    const usedRewardPoints = Number(body.usedRewardPoints) || 0
+    let pointsWorthInPayCurrency = 0
+
+    if (usedRewardPoints > 0) {
+      let pointsBalance = 0
+      const balRes = await supabaseRest(`reward_accounts?user_id=eq.${encodeURIComponent(user.id)}&select=points_balance&limit=1`, { cache: 'no-store' })
+      if (balRes.ok) {
+        const rows = await balRes.json()
+        if (rows.length > 0) {
+          pointsBalance = Number(rows[0].points_balance) || 0
+        }
+      }
+
+      if (pointsBalance < usedRewardPoints) {
+        return NextResponse.json({ error: 'Insufficient reward points balance' }, { status: 400 })
+      }
+
+      let pointUSDValue = 0.01
+      const usdValRes = await supabaseRest('app_settings?key=eq.reward_point_usd_value&select=value&limit=1', { cache: 'no-store' })
+      if (usdValRes.ok) {
+        const rows = await usdValRes.json()
+        if (rows[0]?.value != null) {
+          pointUSDValue = Number(rows[0].value) || 0.01
+        }
+      }
+
+      let maxRedemptionPct = 50
+      const maxPctRes = await supabaseRest('app_settings?key=eq.reward_max_redemption_percentage&select=value&limit=1', { cache: 'no-store' })
+      if (maxPctRes.ok) {
+        const rows = await maxPctRes.json()
+        if (rows[0]?.value != null) {
+          maxRedemptionPct = Number(rows[0].value) ?? 50
+        }
+      }
+
+      const pointsUSDWorth = usedRewardPoints * pointUSDValue
+      pointsWorthInPayCurrency = pointsUSDWorth
+      if (currency !== 'USD') {
+        const rateRes = await fetch('https://open.er-api.com/v6/latest/EUR', { cache: 'no-store' })
+        if (rateRes.ok) {
+          const data = await rateRes.json()
+          const rates = data?.rates
+          if (rates && rates['USD'] && rates[currency]) {
+            const rateToEUR = 1 / rates['USD']
+            const rateFromEUR = rates[currency]
+            pointsWorthInPayCurrency = pointsUSDWorth * rateToEUR * rateFromEUR
+          }
+        }
+      }
+
+      const maxPointsAllowed = Math.floor(pointsBalance * (maxRedemptionPct / 100))
+      if (usedRewardPoints > maxPointsAllowed) {
+        return NextResponse.json({ error: 'Exceeds maximum reward points redemption percentage limit' }, { status: 400 })
+      }
+    }
+
+    const adjustedAmount = Math.max(0, amount - pointsWorthInPayCurrency)
+
+    // Enforce max consumption limit based on available wallet balance (using the adjusted wallet deduction)
     const maxAllowed = convertedWalletBalance * (maxConsumptionPercentage / 100)
-    if (amount > maxAllowed + 0.01) {
+    if (adjustedAmount > maxAllowed + 0.01) {
       return NextResponse.json({ error: 'Exceeds maximum wallet consumption limit' }, { status: 400 })
     }
 
-    if (convertedWalletBalance < amount - 0.01) {
+    if (convertedWalletBalance < adjustedAmount - 0.01) {
       return NextResponse.json({ error: 'Insufficient wallet balance' }, { status: 400 })
     }
 
@@ -106,8 +166,10 @@ export async function POST(request: Request) {
           user_id: user.id,
           metadata: {
             is_wallet_only: true,
-            wallet_deduction: amount,
+            wallet_deduction: adjustedAmount,
             wallet_currency: walletCurrency,
+            used_reward_points: usedRewardPoints,
+            reward_points_deduction_amount: pointsWorthInPayCurrency,
           },
         },
       ]),
@@ -150,80 +212,82 @@ export async function POST(request: Request) {
           : undefined,
     })
 
-    console.log('[PAYMENT LOG] wallet payment initiated', { paymentOrderId, checkoutSessionId, amount, currency })
+    console.log('[PAYMENT LOG] wallet payment initiated', { paymentOrderId, checkoutSessionId, amount, currency, adjustedAmount })
 
-    // 5. Create the wallet deduction transaction
-    if (walletCurrency !== currency) {
-      const rateRes = await fetch('https://open.er-api.com/v6/latest/EUR', { cache: 'no-store' }).catch(() => null)
-      let walletDeductionAmt = amount
-      if (rateRes?.ok) {
-        const data = await rateRes.json()
-        const rates = data?.rates
-        if (rates && rates[walletCurrency] && rates[currency]) {
-          const rateToEUR = 1 / rates[currency]
-          const rateFromEUR = rates[walletCurrency]
-          walletDeductionAmt = amount * rateToEUR * rateFromEUR
+    // 5. Create the wallet deduction transaction if there is any wallet balance used
+    if (adjustedAmount > 0) {
+      if (walletCurrency !== currency) {
+        const rateRes = await fetch('https://open.er-api.com/v6/latest/EUR', { cache: 'no-store' }).catch(() => null)
+        let walletDeductionAmt = adjustedAmount
+        if (rateRes?.ok) {
+          const data = await rateRes.json()
+          const rates = data?.rates
+          if (rates && rates[walletCurrency] && rates[currency]) {
+            const rateToEUR = 1 / rates[currency]
+            const rateFromEUR = rates[walletCurrency]
+            walletDeductionAmt = adjustedAmount * rateToEUR * rateFromEUR
+          }
         }
+
+        // Debit from the walletCurrency wallet
+        await supabaseRest('transactions', {
+          method: 'POST',
+          body: JSON.stringify([{
+            user_id: user.id,
+            type: 'payment',
+            amount: walletDeductionAmt,
+            currency: walletCurrency,
+            status: 'completed',
+            description: `Recharge ${mobileNumber}`,
+            metadata: {
+              plan_id: planId,
+              mobile_number: mobileNumber,
+              operator_id: operatorId,
+              country_id: countryId,
+              payment_order_id: paymentOrderId,
+              razorpay_payment_id: 'wallet',
+            }
+          }])
+        }).catch((err) => console.error('Failed to insert wallet-only exchange debit:', err))
+
+        // Credit to the payment currency wallet
+        await supabaseRest('transactions', {
+          method: 'POST',
+          body: JSON.stringify([{
+            user_id: user.id,
+            type: 'topup',
+            amount: adjustedAmount,
+            currency: currency,
+            status: 'completed',
+            description: `Exchange credit from ${walletCurrency} wallet for order ${dummyOrderId}`,
+            metadata: {
+              hide_from_user: true,
+            }
+          }])
+        }).catch((err) => console.error('Failed to insert wallet-only exchange credit:', err))
+      } else {
+        // Debit from the walletCurrency wallet immediately for same currency
+        await supabaseRest('transactions', {
+          method: 'POST',
+          body: JSON.stringify([{
+            user_id: user.id,
+            type: 'payment',
+            amount: adjustedAmount,
+            currency: walletCurrency,
+            status: 'completed',
+            description: `Recharge ${mobileNumber}`,
+            metadata: {
+              plan_id: planId,
+              mobile_number: mobileNumber,
+              operator_id: operatorId,
+              country_id: countryId,
+              payment_order_id: paymentOrderId,
+              razorpay_payment_id: 'wallet',
+              hide_from_user: true,
+            }
+          }])
+        }).catch((err) => console.error('Failed to insert wallet-only same-currency debit:', err))
       }
-
-      // Debit from the walletCurrency wallet
-      await supabaseRest('transactions', {
-        method: 'POST',
-        body: JSON.stringify([{
-          user_id: user.id,
-          type: 'payment',
-          amount: walletDeductionAmt,
-          currency: walletCurrency,
-          status: 'completed',
-          description: `Recharge ${mobileNumber}`,
-          metadata: {
-            plan_id: planId,
-            mobile_number: mobileNumber,
-            operator_id: operatorId,
-            country_id: countryId,
-            payment_order_id: paymentOrderId,
-            razorpay_payment_id: 'wallet',
-          }
-        }])
-      }).catch((err) => console.error('Failed to insert wallet-only exchange debit:', err))
-
-      // Credit to the payment currency wallet
-      await supabaseRest('transactions', {
-        method: 'POST',
-        body: JSON.stringify([{
-          user_id: user.id,
-          type: 'topup',
-          amount: amount,
-          currency: currency,
-          status: 'completed',
-          description: `Exchange credit from ${walletCurrency} wallet for order ${dummyOrderId}`,
-          metadata: {
-            hide_from_user: true,
-          }
-        }])
-      }).catch((err) => console.error('Failed to insert wallet-only exchange credit:', err))
-    } else {
-      // Debit from the walletCurrency wallet immediately for same currency
-      await supabaseRest('transactions', {
-        method: 'POST',
-        body: JSON.stringify([{
-          user_id: user.id,
-          type: 'payment',
-          amount: amount,
-          currency: walletCurrency,
-          status: 'completed',
-          description: `Recharge ${mobileNumber}`,
-          metadata: {
-            plan_id: planId,
-            mobile_number: mobileNumber,
-            operator_id: operatorId,
-            country_id: countryId,
-            payment_order_id: paymentOrderId,
-            razorpay_payment_id: 'wallet',
-            hide_from_user: true,
-          }
-        }])
-      }).catch((err) => console.error('Failed to insert wallet-only same-currency debit:', err))
     }
 
     // 6. Execute checkout directly
@@ -239,11 +303,23 @@ export async function POST(request: Request) {
       razorpayPaymentId: `wallet-${paymentOrderId}`,
       userId: user.id,
       hideTransactionFromUser: walletCurrency !== currency,
-      usedWalletBalance: amount,
+      usedWalletBalance: adjustedAmount,
       walletCurrency: walletCurrency,
       checkoutSessionId,
       pendingTransactionId: checkoutSessionId,
     })
+
+    if (result.ok && usedRewardPoints > 0) {
+      const pointsResult = await redeemPoints(
+        user.id,
+        result.transactionId || checkoutSessionId || null,
+        usedRewardPoints,
+        `Redeemed on recharge ${mobileNumber}`
+      )
+      if (!pointsResult) {
+        console.error('[REWARDS] Failed to deduct user points after successful wallet checkout')
+      }
+    }
 
     return NextResponse.json({
       ok: result.ok,

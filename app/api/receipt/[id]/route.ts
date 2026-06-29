@@ -28,8 +28,7 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       color: rgb(0.15, 0.15, 0.15),
     })
 
-    const serviceFee = order.service_fee ?? order.fee
-    const tax = order.tax ?? 0
+    const serviceFee = (order.service_fee ?? order.fee) + (order.tax ?? 0)
 
     y -= 32
     const rows: Array<[string, string]> = [
@@ -38,7 +37,6 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       ['Operator', order.operator],
       ['Original Plan Price', `${order.amount.toFixed(2)} ${order.currency}`],
       ['Service Fee', `${serviceFee.toFixed(2)} ${order.currency}`],
-      ['Tax', `${tax.toFixed(2)} ${order.currency}`],
       ['Total Cost', `${order.total.toFixed(2)} ${order.currency}`],
       ['Status', order.status],
       ['Gateway', order.payment_gateway ?? '—'],

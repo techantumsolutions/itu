@@ -63,6 +63,7 @@ export default function RewardsManagementPage() {
   const [accounts, setAccounts] = useState<UserAccount[]>([])
   const [ledger, setLedger] = useState<LedgerLog[]>([])
   const [usdValue, setUsdValue] = useState(0.01)
+  const [maxRedemptionPercentage, setMaxRedemptionPercentage] = useState(50)
   const [isSuperAdmin, setIsSuperAdmin] = useState(true) // will check via profile check or default
 
   // Loading States
@@ -141,6 +142,7 @@ export default function RewardsManagementPage() {
       if (res.ok) {
         const body = await res.json()
         setUsdValue(body.usdValue ?? 0.01)
+        setMaxRedemptionPercentage(body.maxRedemptionPercentage ?? 50)
       }
     } catch {
       // ignore
@@ -181,7 +183,7 @@ export default function RewardsManagementPage() {
   // Save Settings
   const handleSaveSettings = async () => {
     if (!isSuperAdmin) {
-      toast.error('Only super administrators can modify rewards point valuation.')
+      toast.error('Only super administrators can modify rewards settings.')
       return
     }
     setSavingSettings(true)
@@ -189,10 +191,10 @@ export default function RewardsManagementPage() {
       const res = await fetch('/api/admin/rewards/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ usdValue }),
+        body: JSON.stringify({ usdValue, maxRedemptionPercentage }),
       })
       if (res.ok) {
-        toast.success('Point valuation updated successfully')
+        toast.success('Point settings updated successfully')
       } else {
         const body = await res.json()
         toast.error(body.error || 'Failed to update settings')
@@ -665,6 +667,40 @@ export default function RewardsManagementPage() {
                       />
                     </div>
                     <p className="text-xs text-muted-foreground">By default, 1 point is valued at $0.01 USD (1 cent). Changing this updates value conversion displays.</p>
+                  </div>
+
+                  <Separator />
+
+                  <div className="space-y-2">
+                    <Label htmlFor="percentage">Maximum Reward Points Redemption Percentage</Label>
+                    <div className="flex items-center gap-4">
+                      <input
+                        id="percentage-range"
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={maxRedemptionPercentage}
+                        onChange={(e) => setMaxRedemptionPercentage(Number(e.target.value))}
+                        disabled={!isSuperAdmin}
+                        className="w-full h-2 bg-neutral-200 rounded-lg appearance-none cursor-pointer accent-primary"
+                      />
+                      <div className="relative w-24 flex items-center">
+                        <Input
+                          id="percentage"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={maxRedemptionPercentage}
+                          onChange={(e) => setMaxRedemptionPercentage(Math.min(100, Math.max(0, Number(e.target.value))))}
+                          disabled={!isSuperAdmin}
+                          className="pr-6 font-semibold"
+                        />
+                        <span className="absolute right-3 font-semibold text-neutral-500">%</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Specifies the maximum percentage of the user's total reward points balance that can be redeemed in a single transaction.
+                    </p>
                   </div>
 
                   <Separator />

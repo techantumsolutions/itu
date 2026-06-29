@@ -528,6 +528,13 @@ export default function TopupSummaryPage() {
     DEFAULT_RECHARGE_PROCESSING_FEES,
   )
 
+  // Rewards states
+  const [rewardBalance, setRewardBalance] = useState<number>(0)
+  const [rewardPointValue, setRewardPointValue] = useState<number>(0.01)
+  const [maxRedemptionPercentage, setMaxRedemptionPercentage] = useState<number>(50)
+  const [useRewards, setUseRewards] = useState<boolean>(false)
+  const [isLoadingRewards, setIsLoadingRewards] = useState<boolean>(false)
+
   const rechargeCurrency = useMemo(() => {
     return normalizeCurrencyCode(
       selectedPlan?.recharge_currency || pricing?.localCurrency || 'INR',
@@ -614,7 +621,38 @@ export default function TopupSummaryPage() {
     void getBalance()
   }, [isAuthenticated, user])
 
-  // Fetch exchange rates for payable-currency conversion and wallet balances
+  // Fetch reward points balance and settings
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setRewardBalance(0)
+      setRewardPointValue(0.01)
+      setMaxRedemptionPercentage(50)
+      setUseRewards(false)
+      return
+    }
+    const getRewards = async () => {
+      setIsLoadingRewards(true)
+      try {
+        const res = await fetch('/api/account/rewards/history', { 
+          credentials: 'include', 
+          cache: 'no-store',
+        })
+        if (res.ok) {
+          const data = await res.json()
+          if (data && typeof data.balance === 'number') {
+            setRewardBalance(data.balance)
+            setRewardPointValue(data.pointValue ?? 0.01)
+            setMaxRedemptionPercentage(data.maxRedemptionPercentage ?? 50)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load reward balance:', err)
+      } finally {
+        setIsLoadingRewards(false)
+      }
+    }
+    void getRewards()
+  }, [isAuthenticated])
   useEffect(() => {
     const getRates = async () => {
       try {
@@ -709,7 +747,51 @@ export default function TopupSummaryPage() {
       }
     }
 
-    const grand = Math.max(0, totalPayable - usedWalletAmount)
+    let rewardPointsInPayCurrency = 0
+    let maxAllowedPointsDeduction = 0
+    let usedPointsAmount = 0
+    let pointsUsed = 0
+
+    if (isAuthenticated && rewardBalance > 0) {
+      const usdWorth = rewardBalance * rewardPointValue
+      if (payableCurrency === 'USD') {
+        rewardPointsInPayCurrency = usdWorth
+      } else if (ratesData) {
+        const converted = convertUsingEurBaseRates(
+          usdWorth,
+          'USD',
+          payableCurrency,
+          ratesData,
+        )
+        rewardPointsInPayCurrency = converted ?? 0
+      }
+
+      maxAllowedPointsDeduction = totalPayable * (maxRedemptionPercentage / 100)
+
+      if (useRewards) {
+        let onePointInPayCurrency = rewardPointValue
+        if (payableCurrency !== 'USD' && ratesData) {
+          const converted = convertUsingEurBaseRates(
+            rewardPointValue,
+            'USD',
+            payableCurrency,
+            ratesData,
+          )
+          onePointInPayCurrency = converted ?? 0
+        }
+
+        if (onePointInPayCurrency > 0) {
+          const maxPointsAllowedByPct = Math.floor(rewardBalance * (maxRedemptionPercentage / 100))
+          const remainingAfterWallet = Math.max(0, totalPayable - usedWalletAmount)
+          const maxPointsAllowedByRemaining = Math.floor(remainingAfterWallet / onePointInPayCurrency)
+
+          pointsUsed = Math.min(maxPointsAllowedByPct, maxPointsAllowedByRemaining)
+          usedPointsAmount = pointsUsed * onePointInPayCurrency
+        }
+      }
+    }
+
+    const grand = Math.max(0, totalPayable - usedWalletAmount - usedPointsAmount)
 
     return {
       subtotal,
@@ -721,6 +803,10 @@ export default function TopupSummaryPage() {
       walletBalInPayCurrency,
       maxAllowedDeduction,
       usedWalletAmount,
+      rewardPointsInPayCurrency,
+      maxAllowedPointsDeduction,
+      usedPointsAmount,
+      pointsUsed,
       grand,
       rechargeCurrency,
       payableCurrency,
@@ -741,6 +827,10 @@ export default function TopupSummaryPage() {
     useWallet,
     rechargeCurrency,
     payableCurrency,
+    rewardBalance,
+    rewardPointValue,
+    maxRedemptionPercentage,
+    useRewards,
   ])
 
   const currency = amounts.payableCurrency
@@ -789,6 +879,7 @@ export default function TopupSummaryPage() {
             currency: amounts.payableCurrency,
             walletCurrency: activeWalletCurrency,
             checkoutSessionId,
+            usedRewardPoints: amounts.pointsUsed,
           }),
         })
         const data = await res.json()
@@ -837,6 +928,7 @@ export default function TopupSummaryPage() {
           usedWalletBalance: amounts.usedWalletAmount,
           walletCurrency: activeWalletCurrency,
           checkoutSessionId,
+          usedRewardPoints: amounts.pointsUsed,
         }),
       })
       const createData = await createRes.json()
@@ -1134,6 +1226,59 @@ export default function TopupSummaryPage() {
                       </div>
                     </div>
 
+                    {/* Use Reward Points container */}
+                    <div
+                      onClick={() => {
+                        if (!isAuthenticated) {
+                          setLoginOpen(true)
+                        }
+                      }}
+                      className="flex items-center gap-3 cursor-pointer rounded-xl border border-neutral-200 bg-neutral-50/50 p-2.5 hover:bg-neutral-50 transition-all select-none"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={useRewards}
+                        disabled={isAuthenticated && rewardBalance <= 0}
+                        onChange={(e) => {
+                          if (isAuthenticated) {
+                            setUseRewards(e.target.checked)
+                          }
+                        }}
+                        className="size-4 rounded border-neutral-300 text-[var(--hero-cta-orange)] focus:ring-[var(--hero-cta-orange)] accent-[var(--hero-cta-orange)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold text-neutral-800 flex justify-between gap-2">
+                          <span className="truncate">Use Reward Points</span>
+                          {isAuthenticated ? (
+                            isLoadingRewards ? (
+                              <span className="shrink-0 text-[10px] font-semibold text-neutral-400 animate-pulse">
+                                Loading points...
+                              </span>
+                            ) : (
+                              <span className="shrink-0 font-extrabold text-neutral-900">
+                                {rewardBalance} pts ({formatMoney(amounts.rewardPointsInPayCurrency, amounts.payableCurrency)})
+                              </span>
+                            )
+                          ) : (
+                            <span className="shrink-0 text-[10px] font-semibold text-neutral-400">
+                              Login to check points
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[9px] text-neutral-400 mt-0.5 leading-tight">
+                          {isAuthenticated ? (
+                            maxRedemptionPercentage < 100 ? (
+                              `Max ${maxRedemptionPercentage}% points consumption allowed`
+                            ) : (
+                              `Pay up to 100% using points`
+                            )
+                          ) : (
+                            'Apply your reward points balance to this order'
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
                     {/* Details of available wallets when useWallet is checked */}
                     {isAuthenticated && useWallet && (
                       <div className="space-y-2.5 pl-7 mt-2">
@@ -1199,6 +1344,15 @@ export default function TopupSummaryPage() {
                       <span className="text-xs">Wallet Deduction</span>
                       <span className="text-xs">
                         -{formatMoney(amounts.usedWalletAmount, amounts.payableCurrency)}
+                      </span>
+                    </div>
+                  )}
+
+                  {isAuthenticated && useRewards && amounts.usedPointsAmount > 0 && (
+                    <div className="flex items-center justify-between text-emerald-600 font-semibold mt-1">
+                      <span className="text-xs">Reward Points Discount ({amounts.pointsUsed} pts)</span>
+                      <span className="text-xs">
+                        -{formatMoney(amounts.usedPointsAmount, amounts.payableCurrency)}
                       </span>
                     </div>
                   )}

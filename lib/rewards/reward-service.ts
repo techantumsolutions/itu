@@ -203,3 +203,69 @@ export async function processRewardsForTransaction(transactionId: string): Promi
     console.error(`[REWARDS] Error processing rewards for transaction ${transactionId}:`, err)
   }
 }
+
+export async function redeemPoints(
+  userId: string,
+  transactionId: string | null,
+  pointsToRedeem: number,
+  reason: string,
+): Promise<boolean> {
+  console.log(`[REWARDS] Redeeming ${pointsToRedeem} points for user: ${userId}`)
+  try {
+    const ledgerRes = await supabaseRest('reward_ledger', {
+      method: 'POST',
+      body: JSON.stringify({
+        user_id: userId,
+        transaction_id: transactionId || null,
+        points: -pointsToRedeem,
+        reason: reason,
+        metadata: {
+          is_redemption: true,
+        },
+      }),
+    })
+    if (!ledgerRes.ok) {
+      console.error(`[REWARDS] Failed to write ledger redemption entry:`, await ledgerRes.text())
+      return false
+    }
+
+    const accountRes = await supabaseRest(
+      `reward_accounts?user_id=eq.${encodeURIComponent(userId)}&select=points_balance&limit=1`,
+      { cache: 'no-store' }
+    )
+    let existingPoints = 0
+    let hasAccount = false
+    if (accountRes.ok) {
+      const accRows = await accountRes.json()
+      if (accRows.length > 0) {
+        existingPoints = accRows[0].points_balance
+        hasAccount = true
+      }
+    }
+
+    const newBalance = Math.max(0, existingPoints - pointsToRedeem)
+
+    let updateAccountRes
+    if (hasAccount) {
+      updateAccountRes = await supabaseRest(`reward_accounts?user_id=eq.${encodeURIComponent(userId)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          points_balance: newBalance,
+          updated_at: new Date().toISOString(),
+        }),
+      })
+    } else {
+      updateAccountRes = await supabaseRest('reward_accounts', {
+        method: 'POST',
+        body: JSON.stringify({
+          user_id: userId,
+          points_balance: newBalance,
+        }),
+      })
+    }
+    return updateAccountRes.ok
+  } catch (err) {
+    console.error(`[REWARDS] Error redeeming points for user ${userId}:`, err)
+    return false
+  }
+}
