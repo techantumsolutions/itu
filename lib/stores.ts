@@ -120,6 +120,7 @@ interface WalletState {
   getTransactions: () => Transaction[]
   fetchTransactions: () => Promise<void>
   fetchBalance: () => Promise<void>
+  wallets?: Array<{ currency: string; balance: number }>
 }
 
 export const useWalletStore = create<WalletState>()(
@@ -128,6 +129,7 @@ export const useWalletStore = create<WalletState>()(
       balance: 0,
       currency: 'USD',
       transactions: [],
+      wallets: [],
       isLoading: false,
       topUp: async (amount: number) => {
         set({ isLoading: true })
@@ -223,7 +225,11 @@ export const useWalletStore = create<WalletState>()(
           if (res.ok) {
             const data = await res.json()
             if (data && typeof data.balance === 'number') {
-              set({ balance: data.balance, currency: data.currency || 'USD' })
+              set({
+                balance: data.balance,
+                currency: data.currency || 'USD',
+                wallets: data.wallets || [],
+              })
             }
           }
         } catch {

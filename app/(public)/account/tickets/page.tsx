@@ -2,22 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { format } from 'date-fns'
-import { MessageSquarePlus, Loader2, Tag, MessageSquare, Clock, ShieldAlert, ArrowRight, Eye } from 'lucide-react'
+import { MessageSquarePlus, Loader2, Eye } from 'lucide-react'
 import { useAuthStore } from '@/lib/stores'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Table,
   TableBody,
@@ -26,17 +13,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { TicketStatusBadge } from '@/components/ticket-status-badge'
-import { apiCreateTicket, apiListTickets } from '@/lib/tickets/client-api'
+import { apiListTickets } from '@/lib/tickets/client-api'
 import type { Ticket } from '@/lib/tickets/types'
 import { toast } from 'sonner'
+import { CreateTicketDialog } from '@/components/create-ticket-dialog'
 
 export default function AccountTicketsPage() {
   const user = useAuthStore((s) => s.user)
@@ -51,16 +32,8 @@ export default function AccountTicketsPage() {
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
   const [open, setOpen] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [subject, setSubject] = useState('')
-  const [description, setDescription] = useState('')
-  const [attachmentUrl, setAttachmentUrl] = useState('')
-  const [attachmentName, setAttachmentName] = useState('')
-  const [uploading, setUploading] = useState(false)
-
-  const [transactions, setTransactions] = useState<any[]>([])
-  const [loadingTransactions, setLoadingTransactions] = useState(false)
-  const [selectedTxId, setSelectedTxId] = useState('')
+  const [urlTxId, setUrlTxId] = useState<string | null>(null)
+  const [isLockedTxn, setIsLockedTxn] = useState(false)
 
   const load = useCallback(async () => {
     if (!headers) return
@@ -79,97 +52,29 @@ export default function AccountTicketsPage() {
     void load()
   }, [load])
 
+  // Parse transaction parameter on mount
   useEffect(() => {
-    if (open) {
-      setSubject('')
-      setDescription('')
-      setAttachmentUrl('')
-      setAttachmentName('')
-      setSelectedTxId('')
-      setTransactions([])
-
-      const loadTransactions = async () => {
-        setLoadingTransactions(true)
-        try {
-          const res = await fetch('/api/profile/transactions', { cache: 'no-store' })
-          if (res.ok) {
-            const data = await res.json()
-            if (data && Array.isArray(data.transactions)) {
-              const sevenDaysAgo = new Date()
-              sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-              const recent = data.transactions.filter((tx: any) => {
-                const txDate = new Date(tx.createdAt)
-                return txDate >= sevenDaysAgo
-              })
-              setTransactions(recent)
-            }
-          }
-        } catch (err) {
-          console.error('Failed to load transactions for ticket:', err)
-        } finally {
-          setLoadingTransactions(false)
-        }
-      }
-      void loadTransactions()
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const txnId = params.get('txnId')
+    if (txnId) {
+      setUrlTxId(txnId)
+      setIsLockedTxn(true)
+      setOpen(true)
     }
-  }, [open])
+  }, [])
 
-  async function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-
-    setUploading(true)
-    setAttachmentUrl('')
-    setAttachmentName('')
-
-    const formData = new FormData()
-    formData.append('file', file)
-
-    try {
-      const res = await fetch('/api/tickets/upload', {
-        method: 'POST',
-        body: formData,
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Upload failed')
+  // Clear URL query parameter and unlock selection when dialog is closed
+  const handleOpenChange = (isOpen: boolean) => {
+    setOpen(isOpen)
+    if (!isOpen) {
+      setUrlTxId(null)
+      setIsLockedTxn(false)
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href)
+        url.searchParams.delete('txnId')
+        window.history.replaceState({}, '', url.toString())
       }
-      setAttachmentUrl(data.url)
-      setAttachmentName(file.name)
-      toast.success('File uploaded successfully')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to upload file')
-      e.target.value = ''
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  async function onCreate(e: React.FormEvent) {
-    e.preventDefault()
-    if (!headers) return
-    setSubmitting(true)
-    try {
-      const tx = selectedTxId && selectedTxId !== 'none' ? transactions.find((t) => t.id === selectedTxId) : null
-      await apiCreateTicket(headers, {
-        subject,
-        description,
-        attachmentUrl,
-        transactionId: tx?.id || undefined,
-        transactionCreatedAt: tx?.createdAt || undefined,
-      })
-      toast.success('Ticket created')
-      setOpen(false)
-      setSubject('')
-      setDescription('')
-      setAttachmentUrl('')
-      setAttachmentName('')
-      setSelectedTxId('')
-      await load()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to create ticket')
-    } finally {
-      setSubmitting(false)
     }
   }
 
@@ -182,104 +87,20 @@ export default function AccountTicketsPage() {
           <h1 className="text-2xl font-bold tracking-tight">My Support Tickets</h1>
           <p className="text-muted-foreground">Raise a complaint and track replies from our team.</p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2 self-start sm:self-auto rounded-xl bg-neutral-900 text-white hover:bg-neutral-800 h-10 px-4 shadow-sm">
-              <MessageSquarePlus className="size-4" />
-              Create New Ticket
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-lg">
-            <form onSubmit={onCreate}>
-              <DialogHeader>
-                <DialogTitle>New support ticket</DialogTitle>
-                <DialogDescription>
-                  Describe your issue. Our team usually responds within one business day.
-                </DialogDescription>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="ticket-subject">Subject</Label>
-                  <Input
-                    id="ticket-subject"
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value)}
-                    placeholder="Short summary"
-                    required
-                    maxLength={200}
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="ticket-desc">Description</Label>
-                  <Textarea
-                    id="ticket-desc"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="What happened? Include order or phone numbers if relevant."
-                    required
-                    rows={6}
-                    className="resize-y min-h-[120px]"
-                  />
-                </div>
-                 <div className="grid gap-2">
-                  <Label htmlFor="ticket-file">Attachment (Optional)</Label>
-                  <Input
-                    id="ticket-file"
-                    type="file"
-                    accept="image/*,.pdf"
-                    onChange={onFileChange}
-                    disabled={uploading || submitting}
-                    className="cursor-pointer"
-                  />
-                  {uploading && (
-                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 animate-pulse">
-                      <Loader2 className="size-3 animate-spin" /> Uploading file...
-                    </p>
-                  )}
-                  {attachmentName && !uploading && (
-                    <p className="text-xs text-emerald-600 font-medium flex items-center gap-1">
-                      ✓ Ready: {attachmentName}
-                    </p>
-                  )}
-                  <p className="text-[11px] text-muted-foreground">Images (PNG, JPG, GIF, WEBP) and PDFs are supported.</p>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="ticket-tx">Attach Recent Transaction (Optional)</Label>
-                  {loadingTransactions ? (
-                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 animate-pulse">
-                      <Loader2 className="size-3 animate-spin" /> Loading transactions...
-                    </p>
-                  ) : transactions.length === 0 ? (
-                    <p className="text-xs text-muted-foreground italic">No transactions found in the last 7 days.</p>
-                  ) : (
-                    <Select value={selectedTxId} onValueChange={setSelectedTxId}>
-                      <SelectTrigger id="ticket-tx">
-                        <SelectValue placeholder="Select a transaction" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">None</SelectItem>
-                        {transactions.map((tx) => (
-                          <SelectItem key={tx.id} value={tx.id}>
-                            {tx.metadata?.carrierName || tx.description || tx.type} • {tx.amount.toFixed(2)} {tx.currency} ({format(new Date(tx.createdAt), 'MMM d')})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  <p className="text-[11px] text-muted-foreground">Only transactions made within the last 7 days can be attached.</p>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setOpen(false)}>
-                  Cancel
-                </Button>
-                 <Button type="submit" disabled={submitting || uploading}>
-                  {submitting ? <Loader2 className="size-4 animate-spin" /> : 'Submit ticket'}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+        <Button 
+          onClick={() => setOpen(true)}
+          className="gap-2 self-start sm:self-auto rounded-xl bg-neutral-900 text-white hover:bg-neutral-800 h-10 px-4 shadow-sm"
+        >
+          <MessageSquarePlus className="size-4" />
+          Create New Ticket
+        </Button>
+        <CreateTicketDialog
+          open={open}
+          onOpenChange={handleOpenChange}
+          preselectedTxId={urlTxId}
+          lockTransaction={isLockedTxn}
+          onSuccess={load}
+        />
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-neutral-200/80 bg-white shadow-elevated-sm">
