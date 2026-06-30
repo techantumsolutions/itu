@@ -43,6 +43,7 @@ export async function GET(request: Request) {
       offset: Number.isFinite(offset) ? offset : 0,
       country: country || undefined,
       providerId: providerId || undefined,
+      q: q || undefined,
     }),
     aggListSystemOperators(listParams),
     aggListProviders().catch(() => []),

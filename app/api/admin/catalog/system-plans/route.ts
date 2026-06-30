@@ -17,6 +17,8 @@ export async function GET(request: Request) {
       offset: Number(url.searchParams.get('offset') ?? '0'),
       countryIso3: url.searchParams.get('countryIso3') ?? '',
       operatorName: url.searchParams.get('operatorName') ?? '',
+      systemOperatorId: url.searchParams.get('systemOperatorId') ?? '',
+      operatorRawId: url.searchParams.get('operatorRawId') ?? '',
       category: url.searchParams.get('category') ?? '',
       status: url.searchParams.get('status') ?? 'all',
       q: url.searchParams.get('q') ?? '',

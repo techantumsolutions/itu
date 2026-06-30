@@ -65,11 +65,25 @@ async function resolveOperatorIdsByName(operatorName: string): Promise<string[]>
   return rows.map((row) => row.id).filter((id): id is string => Boolean(id))
 }
 
+async function resolveSystemOperatorIdsFromRawId(operatorRawId: string): Promise<string[]> {
+  const id = operatorRawId.trim()
+  if (!id) return []
+  const res = await supabaseRest(
+    `operator_mappings?provider_operator_raw_id=eq.${enc(id)}&select=system_operator_id&limit=50`,
+    { cache: 'no-store' },
+  )
+  if (!res.ok) return []
+  const rows = (await res.json()) as Array<{ system_operator_id?: string }>
+  return rows.map((row) => row.system_operator_id).filter((sid): sid is string => Boolean(sid))
+}
+
 export async function loadAdminSystemPlans(input: {
   limit?: number
   offset?: number
   countryIso3?: string
   operatorName?: string
+  systemOperatorId?: string
+  operatorRawId?: string
   category?: string
   status?: string
   q?: string
@@ -88,6 +102,8 @@ export async function loadAdminSystemPlans(input: {
   const offset = Math.max(input.offset ?? 0, 0)
   const countryIso3 = normalizeCountryIso3(input.countryIso3 ?? '')
   const operatorName = (input.operatorName ?? '').trim()
+  const systemOperatorId = (input.systemOperatorId ?? '').trim()
+  const operatorRawId = (input.operatorRawId ?? '').trim()
   const category = (input.category ?? '').trim().toLowerCase()
   const status = (input.status ?? 'all').trim().toLowerCase()
   const q = (input.q ?? '').trim()
@@ -103,8 +119,16 @@ export async function loadAdminSystemPlans(input: {
   if (status === 'inactive') filters.unshift('status=eq.INACTIVE')
   if (q) filters.unshift(`or=(system_plan_name.ilike.*${enc(q)}*,description.ilike.*${enc(q)}*)`)
 
-  if (operatorName) {
-    const operatorIds = await resolveOperatorIdsByName(operatorName)
+  let operatorIds: string[] = []
+  if (systemOperatorId) {
+    operatorIds = [systemOperatorId]
+  } else if (operatorRawId) {
+    operatorIds = await resolveSystemOperatorIdsFromRawId(operatorRawId)
+  } else if (operatorName) {
+    operatorIds = await resolveOperatorIdsByName(operatorName)
+  }
+
+  if (systemOperatorId || operatorRawId || operatorName) {
     if (!operatorIds.length) {
       return {
         systemPlans: [],

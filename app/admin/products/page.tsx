@@ -168,15 +168,24 @@ export default function AdminProductsPage() {
   const canEdit = user && clientHasAdminPermission(user, 'plans.edit')
   const showSelection = !!canEdit
   const showStatusToggle = !!canEdit
+
+  const fromOperators = searchParams.get('from') === 'operators'
+  const operatorsTab = searchParams.get('tab')
+  const urlOperatorName = searchParams.get('operatorName')?.trim() ?? ''
+  const urlSystemOperatorId = searchParams.get('systemOperatorId')?.trim() ?? ''
+  const urlOperatorRawId = searchParams.get('operatorRawId')?.trim() ?? ''
+
   const [plans, setPlans] = useState<ProductPlan[]>([])
   const [countryOptions, setCountryOptions] = useState<CountryOption[]>([])
   const [planNameFilter, setPlanNameFilter] = useState('')
   const [debouncedPlanName, setDebouncedPlanName] = useState('')
   const [countryFilter, setCountryFilter] = useState('all')
-  const [operatorFilter, setOperatorFilter] = useState('')
-  const [debouncedOperator, setDebouncedOperator] = useState('')
+  const [operatorFilter, setOperatorFilter] = useState(urlOperatorName)
+  const [debouncedOperator, setDebouncedOperator] = useState(urlOperatorName)
+  const [systemOperatorIdFilter, setSystemOperatorIdFilter] = useState(urlSystemOperatorId)
+  const [operatorRawIdFilter, setOperatorRawIdFilter] = useState(urlOperatorRawId)
   const [categoryFilter, setCategoryFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('active')
+  const [statusFilter, setStatusFilter] = useState(fromOperators ? 'all' : 'active')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -194,21 +203,22 @@ export default function AdminProductsPage() {
   const [costError, setCostError] = useState<string | null>(null)
   const [costBreakdown, setCostBreakdown] = useState<SystemPlanProviderCostBreakdown | null>(null)
 
-  const fromOperators = searchParams.get('from') === 'operators'
-  const operatorsTab = searchParams.get('tab')
   const returnOperatorsHref =
     operatorsTab === 'provider' || operatorsTab === 'system'
       ? `/admin/integrations/operators?tab=${operatorsTab}`
       : '/admin/integrations/operators'
 
-  const initializedOperatorFromUrl = useRef(false)
   useEffect(() => {
-    if (initializedOperatorFromUrl.current) return
-    const operatorName = searchParams.get('operatorName')?.trim()
-    if (!operatorName) return
+    const operatorName = searchParams.get('operatorName')?.trim() ?? ''
+    const systemOperatorId = searchParams.get('systemOperatorId')?.trim() ?? ''
+    const operatorRawId = searchParams.get('operatorRawId')?.trim() ?? ''
+    const fromOps = searchParams.get('from') === 'operators'
+
     setOperatorFilter(operatorName)
     setDebouncedOperator(operatorName)
-    initializedOperatorFromUrl.current = true
+    setSystemOperatorIdFilter(systemOperatorId)
+    setOperatorRawIdFilter(operatorRawId)
+    if (fromOps) setStatusFilter('all')
   }, [searchParams])
 
   const countryNameMap = useMemo(() => {
@@ -363,6 +373,8 @@ export default function AdminProductsPage() {
         q: debouncedPlanName || undefined,
         countryIso3: appliedCountry || undefined,
         operatorName: debouncedOperator || undefined,
+        systemOperatorId: systemOperatorIdFilter || undefined,
+        operatorRawId: operatorRawIdFilter || undefined,
         category: categoryFilter,
         status: statusFilter,
       })
@@ -378,7 +390,7 @@ export default function AdminProductsPage() {
     } finally {
       setLoading(false)
     }
-  }, [appliedCountry, categoryFilter, debouncedOperator, debouncedPlanName, statusFilter])
+  }, [appliedCountry, categoryFilter, debouncedOperator, debouncedPlanName, operatorRawIdFilter, statusFilter, systemOperatorIdFilter])
 
   useEffect(() => {
     void loadCountries()
@@ -562,7 +574,11 @@ export default function AdminProductsPage() {
                   <Input
                     placeholder="Operator name…"
                     value={operatorFilter}
-                    onChange={(e) => setOperatorFilter(e.target.value)}
+                    onChange={(e) => {
+                      setOperatorFilter(e.target.value)
+                      setSystemOperatorIdFilter('')
+                      setOperatorRawIdFilter('')
+                    }}
                     className="h-8 text-xs font-normal"
                   />
                 </TableHead>

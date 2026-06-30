@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "test": "jest",
     "lcr:worker": "tsx --tsconfig tsconfig.json scripts/lcr-sync-worker.ts",
+    "cron:provider-sync": "tsx --tsconfig tsconfig.json scripts/provider-sync-cron.ts",
     "system-plans:availability": "tsx --tsconfig tsconfig.json scripts/system-plans-availability-worker.ts",
     "system-plans:merge-duplicates": "tsx --tsconfig tsconfig.json scripts/system-plans-duplicate-merge-worker.ts",
     "bootstrap:admin": "tsx --tsconfig tsconfig.json scripts/bootstrap-super-admin.ts",

@@ -180,12 +180,17 @@ function ComboFilter({
   )
 }
 
-function productsHrefForOperator(operatorName: string, tab: 'system' | 'provider') {
+function productsHrefForOperator(row: { id: string; mainName: string }, tab: 'system' | 'provider') {
   const q = new URLSearchParams({
-    operatorName: operatorName.trim(),
+    operatorName: row.mainName.trim(),
     from: 'operators',
     tab,
   })
+  if (tab === 'system') {
+    q.set('systemOperatorId', row.id)
+  } else {
+    q.set('operatorRawId', row.id)
+  }
   return `/admin/products?${q.toString()}`
 }
 
@@ -1073,7 +1078,7 @@ export default function OperatorsPage() {
                               </>
                             )}
                             <Button size="sm" variant="outline" className="h-8 text-xs font-medium" asChild>
-                              <Link href={productsHrefForOperator(row.mainName, dataType)}>
+                              <Link href={productsHrefForOperator({ id: row.id, mainName: row.mainName }, dataType)}>
                                 Plans
                               </Link>
                             </Button>
@@ -1082,7 +1087,7 @@ export default function OperatorsPage() {
                         ) : (
                         <TableCell className="text-right">
                           <Button size="sm" variant="outline" className="h-8 text-xs font-medium" asChild>
-                            <Link href={productsHrefForOperator(row.mainName, dataType)}>
+                            <Link href={productsHrefForOperator({ id: row.id, mainName: row.mainName }, dataType)}>
                               Plans
                             </Link>
                           </Button>

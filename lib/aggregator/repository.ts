@@ -661,7 +661,13 @@ export async function aggAudit(input: {
   }).catch(() => {})
 }
 
-export async function aggListRawOperators(params: { limit?: number; offset?: number; country?: string; providerId?: string }) {
+export async function aggListRawOperators(params: {
+  limit?: number
+  offset?: number
+  country?: string
+  providerId?: string
+  q?: string
+}) {
   const targetLimit = params.limit ?? 50
   const startOffset = params.offset ?? 0
 
@@ -679,6 +685,11 @@ export async function aggListRawOperators(params: { limit?: number; offset?: num
     ]
     if (params.country) q.push(`iso_code=eq.${enc(params.country)}`)
     if (params.providerId) q.push(`service_provider_id=eq.${enc(params.providerId)}`)
+    const needle = params.q?.trim()
+    if (needle) {
+      const encoded = enc(needle)
+      q.push(`or=(provider_operator_name.ilike.*${encoded}*,provider_operator_id.ilike.*${encoded}*)`)
+    }
     const res = await supabaseRest(`provider_operator_raw?${q.join('&')}`, { cache: 'no-store' })
     const rows = await jsonRowsOrEmpty(res)
 
