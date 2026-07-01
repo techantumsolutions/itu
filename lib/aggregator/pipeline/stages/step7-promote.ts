@@ -43,6 +43,10 @@ import {
   resolvePlanCountryCode,
   toCanonicalPlanCountryCode,
 } from '@/lib/aggregator/plan-country-resolver'
+import {
+  logStep7Promotion,
+  validateSystemOperatorPromotionInput,
+} from '@/lib/aggregator/pipeline/step7-promotion-log'
 
 async function deactivateMappedSystemOperator(providerId: string, operatorName: string) {
   const rawOpRes = await supabaseRest(
@@ -90,6 +94,7 @@ async function promoteOperatorPlans(input: {
     repaired: number
     created: number
     synced: number
+    skipped: number
   }
   rawIndex: Map<string, ProviderRawPlanSnapshot>
   providerActive: boolean
@@ -203,17 +208,28 @@ async function promoteOperatorPlans(input: {
         providerPriority: input.config.priority ?? 100,
         providerActive: input.providerActive,
         rawIndex: input.rawIndex,
+        providerName: input.config.name ?? null,
+        providerCode: input.config.code ?? null,
       }).catch((err) => {
-        console.error(
-          `[Step7] Failed plan_mappings repair for provider_plan_id=${providerPlanId}:`,
-          err,
-        )
+        logStep7Promotion({
+          entity: 'plan_mapping',
+          operation: 'SKIP',
+          providerId: input.providerId,
+          providerName: input.config.name,
+          providerCode: input.config.code,
+          providerPlanId,
+          systemPlanId: systemPlan.id,
+          countryCode: planCountry,
+          reason: 'plan_mapping_repair_failed',
+          error: err instanceof Error ? err.message : String(err),
+        })
         return null
       })
 
       if (mappingResult?.action === 'repaired') input.mappingStats.repaired++
       else if (mappingResult?.action === 'created') input.mappingStats.created++
       else if (mappingResult?.action === 'synced') input.mappingStats.synced++
+      else if (mappingResult?.action === 'skipped') input.mappingStats.skipped++
     } else if (!rawPlanId) {
       console.warn(
         `[Step7] No provider_plans_raw row for aggregator_plan_id=${plan.aggregator_plan_id} (provider=${input.config.code})`,
@@ -268,9 +284,12 @@ export async function runStep7Promote(
   let skippedCrossCountryPlans = 0
   let registryPromotedOps = 0
   let skippedNonMobile = 0
-  const mappingStats = { repaired: 0, created: 0, synced: 0 }
+  let skippedInvalidOperators = 0
+  const mappingStats = { repaired: 0, created: 0, synced: 0, skipped: 0 }
+  const providerLabel = config.name || config.code || providerId
 
   for (const op of aggOps) {
+    try {
     const operatorName = op.name || op.operator_name
     const countryIso3 = String(op.country_iso3 ?? '').toUpperCase()
     const registryVerified = isRegistryVerifiedOperator(op)
@@ -386,7 +405,37 @@ export async function runStep7Promote(
     } as any
 
     const systemOperatorInput = buildSystemOperatorInput(testPlan, displayOperatorName)
-    if (!systemOperatorInput) continue
+    if (!systemOperatorInput) {
+      skippedInvalidOperators++
+      logStep7Promotion({
+        entity: 'operator',
+        operation: 'SKIP',
+        providerId,
+        providerName: providerLabel,
+        providerCode: config.code,
+        providerOperatorName: operatorName,
+        country: countryIso3,
+        reason: 'build_system_operator_input_failed',
+      })
+      continue
+    }
+
+    const operatorValidation = validateSystemOperatorPromotionInput(systemOperatorInput)
+    if (!operatorValidation.ok) {
+      skippedInvalidOperators++
+      logStep7Promotion({
+        entity: 'operator',
+        operation: 'SKIP',
+        providerId,
+        providerName: providerLabel,
+        providerCode: config.code,
+        providerOperatorName: operatorName,
+        country: countryIso3,
+        systemOperatorName: systemOperatorInput.systemOperatorName,
+        reason: operatorValidation.reason,
+      })
+      continue
+    }
 
     systemOperatorInput.operatorDomain = domain
     systemOperatorInput.operatorDomainConfidence = domainConfidence
@@ -414,14 +463,48 @@ export async function runStep7Promote(
     })
 
     let systemOperator: { id?: string } | null = null
-    if (!systemOperatorId) {
-      systemOperator = await aggUpsertSystemOperator(systemOperatorInput)
-      systemOperatorId = systemOperator?.id ?? null
-    } else {
-      systemOperator = { id: systemOperatorId }
-      await aggUpsertSystemOperator(systemOperatorInput)
+    try {
+      if (!systemOperatorId) {
+        systemOperator = await aggUpsertSystemOperator(systemOperatorInput)
+        systemOperatorId = systemOperator?.id ?? null
+      } else {
+        systemOperator = { id: systemOperatorId }
+        await aggUpsertSystemOperator(systemOperatorInput)
+      }
+    } catch (operatorErr) {
+      skippedInvalidOperators++
+      logStep7Promotion({
+        entity: 'operator',
+        operation: 'SKIP',
+        providerId,
+        providerName: providerLabel,
+        providerCode: config.code,
+        providerOperatorId: providerOperatorId ? String(providerOperatorId) : null,
+        providerOperatorName: operatorName,
+        country: countryIso3,
+        systemOperatorId,
+        systemOperatorName: systemOperatorInput.systemOperatorName,
+        reason: 'operator_upsert_failed',
+        error: operatorErr instanceof Error ? operatorErr.message : String(operatorErr),
+      })
+      continue
     }
-    if (!systemOperatorId) continue
+
+    if (!systemOperatorId) {
+      skippedInvalidOperators++
+      logStep7Promotion({
+        entity: 'operator',
+        operation: 'SKIP',
+        providerId,
+        providerName: providerLabel,
+        providerCode: config.code,
+        providerOperatorName: operatorName,
+        country: countryIso3,
+        systemOperatorName: systemOperatorInput.systemOperatorName,
+        reason: 'operator_upsert_returned_no_id',
+      })
+      continue
+    }
 
     promotedOps++
     if (registryVerified) registryPromotedOps++
@@ -464,12 +547,25 @@ export async function runStep7Promote(
         console.error('[SyncStep] Failed OperatorTrustEngine learning:', err)
       })
     }
+    } catch (operatorLoopErr) {
+      skippedInvalidOperators++
+      logStep7Promotion({
+        entity: 'operator',
+        operation: 'SKIP',
+        providerId,
+        providerName: providerLabel,
+        providerCode: config.code,
+        providerOperatorName: op?.name || op?.operator_name,
+        country: String(op?.country_iso3 ?? '').toUpperCase() || null,
+        reason: 'operator_promotion_loop_failed',
+        error: operatorLoopErr instanceof Error ? operatorLoopErr.message : String(operatorLoopErr),
+      })
+    }
   }
 
   const activePlanReconciliation = await reconcileAllActiveSystemPlanMappings()
   const allProviderReconciliation = await aggRepairStalePlanMappingsForAllActiveProviders()
   const syncHealth = await calculateStep7SyncHealth()
-  const providerLabel = config.name || config.code || providerId
 
   console.log(
     [
@@ -479,6 +575,8 @@ export async function runStep7Promote(
       `Promotion repaired=${mappingStats.repaired}`,
       `Promotion created=${mappingStats.created}`,
       `Promotion pricing synced=${mappingStats.synced}`,
+      `Promotion skipped=${mappingStats.skipped}`,
+      `Skipped invalid operators=${skippedInvalidOperators}`,
       `Active-plan reconciliation raw fixed=${activePlanReconciliation.staleRawIdsFixed}`,
       `Active-plan pricing synced=${activePlanReconciliation.pricingSynced}`,
       `All-provider raw fixed=${allProviderReconciliation.totals.staleRawIdsFixed}`,
@@ -508,17 +606,19 @@ export async function runStep7Promote(
 
   return {
     success: true,
-    message: `Promotion complete. Promoted ${promotedOps} operators (${registryPromotedOps} registry fast path) and ${promotedPlans} system plans. Skipped ${skippedNonMobile} non-mobile operators and ${skippedCrossCountryPlans} cross-country plans.${syncHealth.status === 'WARNING' ? ' Sync health WARNING (<95% mapped plans have live raw links).' : ''}`,
+    message: `Promotion complete. Promoted ${promotedOps} operators (${registryPromotedOps} registry fast path) and ${promotedPlans} system plans. Skipped ${skippedNonMobile} non-mobile operators, ${skippedInvalidOperators} invalid/failed operators, and ${skippedCrossCountryPlans} cross-country plans.${syncHealth.status === 'WARNING' ? ' Sync health WARNING (<95% mapped plans have live raw links).' : ''}`,
     data: {
       promotedOps,
       promotedPlans,
       registryPromotedOps,
       skippedNonMobile,
+      skippedInvalidOperators,
       skippedCrossCountryPlans,
       mappingValidation: {
         existingMappingsRepaired: mappingStats.repaired,
         newMappingsCreated: mappingStats.created,
         promotionPricingSynced: mappingStats.synced,
+        promotionMappingsSkipped: mappingStats.skipped,
         activePlanReconciliation,
         allProviderReconciliation: allProviderReconciliation.totals,
         staleRawIdsFixed: allProviderReconciliation.totals.staleRawIdsFixed,

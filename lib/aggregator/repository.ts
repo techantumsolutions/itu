@@ -23,6 +23,10 @@ import {
   pickCanonicalMergeTargetPlan,
   type SystemPlanMergeRow,
 } from '@/lib/aggregator/plan-display-merge'
+import {
+  logStep7Promotion,
+  validateSystemOperatorPromotionInput,
+} from '@/lib/aggregator/pipeline/step7-promotion-log'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -177,22 +181,40 @@ export async function aggUpsertRawPlan(input: RawPlanInput) {
 }
 
 export async function aggUpsertSystemOperator(input: SystemOperatorInput) {
+  const validated = validateSystemOperatorPromotionInput(input)
+  if (!validated.ok) {
+    logStep7Promotion({
+      entity: 'operator',
+      operation: 'SKIP',
+      systemOperatorName: input.systemOperatorName,
+      countryCode: input.countryId,
+      reason: validated.reason,
+    })
+    return null
+  }
+
+  const { name: systemOperatorName, slug, countryId } = validated
+
   const existingRes = await supabaseRest(
-    `system_operators?slug=eq.${enc(input.slug)}&country_id=eq.${enc(input.countryId)}&select=id,name_manually_edited&limit=1`,
+    `system_operators?slug=eq.${enc(slug)}&country_id=eq.${enc(countryId)}&select=id,name_manually_edited,system_operator_name&limit=1`,
     { cache: 'no-store' },
   ).catch(() => null)
 
+  let existingId: string | null = null
   let preserveName = false
   if (existingRes?.ok) {
     const rows = (await existingRes.json().catch(() => [])) as Array<{
+      id?: string
       name_manually_edited?: boolean | null
+      system_operator_name?: string | null
     }>
-    preserveName = rows[0]?.name_manually_edited === true
+    if (rows[0]?.id) {
+      existingId = String(rows[0].id)
+      preserveName = rows[0].name_manually_edited === true
+    }
   }
 
-  const body: Record<string, unknown> = {
-    slug: input.slug,
-    country_id: input.countryId,
+  const sharedFields: Record<string, unknown> = {
     logo: input.logo ?? null,
     operator_type: input.operatorType ?? null,
     status: input.status ?? 'ACTIVE',
@@ -204,16 +226,105 @@ export async function aggUpsertSystemOperator(input: SystemOperatorInput) {
     service_domain_source: input.serviceDomainSource ?? input.domainClassificationSource ?? null,
   }
 
-  if (!preserveName) {
-    body.system_operator_name = input.systemOperatorName
+  if (existingId) {
+    const patchBody: Record<string, unknown> = { ...sharedFields }
+    if (!preserveName) {
+      patchBody.system_operator_name = systemOperatorName
+    }
+
+    const patchRes = await supabaseRest(`system_operators?id=eq.${enc(existingId)}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify(patchBody),
+    })
+
+    if (!patchRes.ok) {
+      const detail = await patchRes.text().catch(() => '')
+      logStep7Promotion({
+        entity: 'operator',
+        operation: 'SKIP',
+        systemOperatorId: existingId,
+        systemOperatorName,
+        countryCode: countryId,
+        reason: 'operator_patch_failed',
+        error: detail,
+      })
+      throw new Error(detail || 'Failed to update system operator')
+    }
+
+    const rows = await jsonRows(patchRes)
+    logStep7Promotion({
+      entity: 'operator',
+      operation: preserveName ? 'SKIP' : 'UPDATE',
+      systemOperatorId: existingId,
+      systemOperatorName: preserveName ? rows[0]?.system_operator_name : systemOperatorName,
+      countryCode: countryId,
+      reason: preserveName ? 'name_manually_edited_preserved' : 'operator_updated',
+    })
+    return rows[0] ?? { id: existingId, system_operator_name: systemOperatorName }
   }
 
-  const res = await supabaseRest('system_operators?on_conflict=slug,country_id', {
+  const insertBody: Record<string, unknown> = {
+    ...sharedFields,
+    slug,
+    country_id: countryId,
+    system_operator_name: systemOperatorName,
+  }
+
+  const insertRes = await supabaseRest('system_operators', {
     method: 'POST',
-    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
-    body: JSON.stringify(body),
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(insertBody),
   })
-  const rows = await jsonRows(res)
+
+  if (!insertRes.ok) {
+    const detail = await insertRes.text().catch(() => '')
+    if (detail.includes('23505') || detail.toLowerCase().includes('duplicate')) {
+      const retryRes = await supabaseRest(
+        `system_operators?slug=eq.${enc(slug)}&country_id=eq.${enc(countryId)}&select=id,name_manually_edited&limit=1`,
+        { cache: 'no-store' },
+      ).catch(() => null)
+      if (retryRes?.ok) {
+        const retryRows = (await retryRes.json().catch(() => [])) as Array<{
+          id?: string
+          name_manually_edited?: boolean | null
+        }>
+        if (retryRows[0]?.id) {
+          const racePreserveName = retryRows[0].name_manually_edited === true
+          const racePatch: Record<string, unknown> = { ...sharedFields }
+          if (!racePreserveName) racePatch.system_operator_name = systemOperatorName
+          const racePatchRes = await supabaseRest(`system_operators?id=eq.${enc(String(retryRows[0].id))}`, {
+            method: 'PATCH',
+            headers: { Prefer: 'return=representation' },
+            body: JSON.stringify(racePatch),
+          })
+          if (racePatchRes.ok) {
+            const raceRows = await jsonRows(racePatchRes)
+            return raceRows[0] ?? { id: retryRows[0].id }
+          }
+        }
+      }
+    }
+    logStep7Promotion({
+      entity: 'operator',
+      operation: 'SKIP',
+      systemOperatorName,
+      countryCode: countryId,
+      reason: 'operator_insert_failed',
+      error: detail,
+    })
+    throw new Error(detail || 'Failed to insert system operator')
+  }
+
+  const rows = await jsonRows(insertRes)
+  logStep7Promotion({
+    entity: 'operator',
+    operation: 'INSERT',
+    systemOperatorId: rows[0]?.id ? String(rows[0].id) : null,
+    systemOperatorName,
+    countryCode: countryId,
+    reason: 'operator_created',
+  })
   return rows[0] ?? null
 }
 
@@ -327,11 +438,47 @@ export async function aggUpsertPlanMapping(input: {
   return rows[0] ?? null
 }
 
-export type PlanMappingRepairAction = 'repaired' | 'created' | 'unchanged' | 'synced'
+export type PlanMappingRepairAction = 'repaired' | 'created' | 'unchanged' | 'synced' | 'skipped'
+
+type PlanMappingRow = Record<string, unknown> & {
+  id?: string
+  system_plan_id?: string
+  service_provider_id?: string
+  provider_plan_id?: string | null
+  provider_plan_raw_id?: string | null
+  is_verified?: boolean | null
+}
+
+async function findPlanMappingByProviderPlanId(
+  serviceProviderId: string,
+  providerPlanId: string,
+): Promise<PlanMappingRow | null> {
+  const res = await supabaseRest(
+    `plan_mappings?service_provider_id=eq.${enc(serviceProviderId)}&provider_plan_id=eq.${enc(providerPlanId)}&limit=1`,
+    { cache: 'no-store' },
+  )
+  if (!res.ok) return null
+  const rows = (await res.json().catch(() => [])) as PlanMappingRow[]
+  return rows[0] ?? null
+}
+
+async function findPlanMappingByTriple(
+  serviceProviderId: string,
+  providerPlanId: string,
+  systemPlanId: string,
+): Promise<PlanMappingRow | null> {
+  const res = await supabaseRest(
+    `plan_mappings?system_plan_id=eq.${enc(systemPlanId)}&service_provider_id=eq.${enc(serviceProviderId)}&provider_plan_id=eq.${enc(providerPlanId)}&limit=1`,
+    { cache: 'no-store' },
+  )
+  if (!res.ok) return null
+  const rows = (await res.json().catch(() => [])) as PlanMappingRow[]
+  return rows[0] ?? null
+}
 
 /**
- * Self-healing plan_mappings keyed by stable identity:
- * system_plan_id + service_provider_id + provider_plan_id.
+ * Self-healing plan_mappings keyed by stable business identity:
+ * (service_provider_id, provider_plan_id).
  * Refreshes provider_plan_raw_id and syncs pricing every call.
  */
 export async function aggRepairOrUpsertPlanMapping(input: {
@@ -347,6 +494,8 @@ export async function aggRepairOrUpsertPlanMapping(input: {
   providerPriority?: number
   providerActive?: boolean
   rawIndex?: Map<string, import('@/lib/aggregator/plan-mapping-reconciliation').ProviderRawPlanSnapshot>
+  providerName?: string | null
+  providerCode?: string | null
 }): Promise<{ mapping: Record<string, unknown> | null; action: PlanMappingRepairAction }> {
   const {
     buildProviderRawPlanIndex,
@@ -364,67 +513,170 @@ export async function aggRepairOrUpsertPlanMapping(input: {
   const resolvedRaw = resolveLatestRawPlan(input.serviceProviderId, providerPlanId, rawIndex)
   const nextRawId = resolvedRaw?.id ?? input.providerPlanRawId ?? null
 
-  const findRes = await supabaseRest(
-    `plan_mappings?system_plan_id=eq.${enc(input.systemPlanId)}&service_provider_id=eq.${enc(input.serviceProviderId)}&provider_plan_id=eq.${enc(providerPlanId)}&limit=1`,
-    { cache: 'no-store' },
-  )
-  if (!findRes.ok) throw new Error(await findRes.text())
-  const existing = ((await findRes.json()) as Array<Record<string, unknown>>)[0]
+  const logCtx = {
+    providerId: input.serviceProviderId,
+    providerName: input.providerName ?? undefined,
+    providerCode: input.providerCode ?? undefined,
+    providerPlanId,
+    systemPlanId: input.systemPlanId,
+    countryCode: input.countryCode ?? undefined,
+    entity: 'plan_mapping' as const,
+  }
 
-  let mapping = existing ?? null
+  let existing =
+    (await findPlanMappingByProviderPlanId(input.serviceProviderId, providerPlanId)) ??
+    (await findPlanMappingByTriple(input.serviceProviderId, providerPlanId, input.systemPlanId))
+
+  let mapping: PlanMappingRow | null = existing ?? null
   let action: PlanMappingRepairAction = 'unchanged'
 
-  if (existing?.id) {
-    const currentRawId = existing.provider_plan_raw_id as string | null | undefined
-    const needsRawRepair =
-      nextRawId != null && (currentRawId == null || currentRawId !== nextRawId)
+  const patchExistingMapping = async (
+    row: PlanMappingRow,
+    patch: Record<string, unknown>,
+    repairAction: PlanMappingRepairAction,
+  ): Promise<void> => {
+    if (!row.id || Object.keys(patch).length === 0) return
+    const patchRes = await supabaseRest(`plan_mappings?id=eq.${enc(String(row.id))}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify(patch),
+    })
+    if (!patchRes.ok) throw new Error(await patchRes.text())
+    mapping = ((await patchRes.json()) as PlanMappingRow[])[0] ?? row
+    action = repairAction
+    logStep7Promotion({
+      ...logCtx,
+      operation: 'PATCH',
+      reason: `mapping_${repairAction}`,
+    })
+  }
 
-    if (needsRawRepair) {
-      const patchRes = await supabaseRest(`plan_mappings?id=eq.${enc(String(existing.id))}`, {
-        method: 'PATCH',
-        headers: { Prefer: 'return=representation' },
-        body: JSON.stringify({
-          provider_plan_raw_id: nextRawId,
-          updated_at: new Date().toISOString(),
-        }),
+  if (existing?.id) {
+    const verified = existing.is_verified === true
+    const currentRawId = existing.provider_plan_raw_id as string | null | undefined
+    const needsRawRepair = nextRawId != null && (currentRawId == null || currentRawId !== nextRawId)
+    const systemPlanChanged = String(existing.system_plan_id ?? '') !== String(input.systemPlanId)
+
+    if (systemPlanChanged && verified) {
+      logStep7Promotion({
+        ...logCtx,
+        operation: 'SKIP',
+        reason: 'verified_mapping_system_plan_preserved',
       })
-      if (!patchRes.ok) throw new Error(await patchRes.text())
-      mapping = ((await patchRes.json()) as Array<Record<string, unknown>>)[0] ?? existing
-      action = 'repaired'
+      action = 'skipped'
+    } else {
+      const patch: Record<string, unknown> = {}
+      if (needsRawRepair) patch.provider_plan_raw_id = nextRawId
+      if (systemPlanChanged) patch.system_plan_id = input.systemPlanId
+      if (!verified) {
+        patch.matching_score = input.matchingScore
+        patch.matching_reason = input.matchingReason ?? null
+        patch.is_verified = input.isVerified ?? false
+        patch.verified_by = input.verifiedBy ?? null
+        if (input.countryCode) patch.country_code = input.countryCode
+      }
+
+      if (Object.keys(patch).length === 0) {
+        action = 'unchanged'
+      } else {
+        patch.updated_at = new Date().toISOString()
+        const repairAction: PlanMappingRepairAction =
+          needsRawRepair || systemPlanChanged ? 'repaired' : 'unchanged'
+        await patchExistingMapping(existing, patch, repairAction)
+      }
     }
   } else {
+    const insertBody = {
+      service_provider_id: input.serviceProviderId,
+      system_plan_id: input.systemPlanId,
+      provider_plan_id: providerPlanId,
+      provider_plan_raw_id: nextRawId,
+      matching_score: input.matchingScore,
+      matching_reason: input.matchingReason ?? null,
+      is_verified: input.isVerified ?? false,
+      verified_by: input.verifiedBy ?? null,
+      country_code: input.countryCode ?? 'UNK',
+      updated_at: new Date().toISOString(),
+    }
+
     const res = await supabaseRest('plan_mappings', {
       method: 'POST',
       headers: { Prefer: 'return=representation' },
-      body: JSON.stringify({
-        service_provider_id: input.serviceProviderId,
-        system_plan_id: input.systemPlanId,
-        provider_plan_id: providerPlanId,
-        provider_plan_raw_id: nextRawId,
-        matching_score: input.matchingScore,
-        matching_reason: input.matchingReason ?? null,
-        is_verified: input.isVerified ?? false,
-        verified_by: input.verifiedBy ?? null,
-        country_code: input.countryCode ?? 'UNK',
-        updated_at: new Date().toISOString(),
-      }),
+      body: JSON.stringify(insertBody),
     })
-    if (!res.ok) throw new Error(await res.text())
-    const rows = (await res.json()) as Array<Record<string, unknown>>
-    mapping = rows[0] ?? null
-    action = 'created'
+
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      if (detail.includes('23505') || detail.toLowerCase().includes('duplicate')) {
+        existing = await findPlanMappingByProviderPlanId(input.serviceProviderId, providerPlanId)
+        if (existing?.id) {
+          const verified = existing.is_verified === true
+          const systemPlanChanged = String(existing.system_plan_id ?? '') !== String(input.systemPlanId)
+          if (systemPlanChanged && verified) {
+            mapping = existing
+            action = 'skipped'
+            logStep7Promotion({
+              ...logCtx,
+              operation: 'SKIP',
+              reason: 'duplicate_race_verified_mapping_preserved',
+            })
+          } else {
+            const patch: Record<string, unknown> = {
+              updated_at: new Date().toISOString(),
+            }
+            if (nextRawId != null) patch.provider_plan_raw_id = nextRawId
+            if (systemPlanChanged) patch.system_plan_id = input.systemPlanId
+            if (!verified) {
+              patch.matching_score = input.matchingScore
+              patch.matching_reason = input.matchingReason ?? null
+              if (input.countryCode) patch.country_code = input.countryCode
+            }
+            await patchExistingMapping(existing, patch, 'repaired')
+          }
+        } else {
+          logStep7Promotion({
+            ...logCtx,
+            operation: 'SKIP',
+            reason: 'duplicate_insert_unresolved',
+            error: detail,
+          })
+          return { mapping: null, action: 'skipped' }
+        }
+      } else {
+        logStep7Promotion({
+          ...logCtx,
+          operation: 'SKIP',
+          reason: 'mapping_insert_failed',
+          error: detail,
+        })
+        throw new Error(detail)
+      }
+    } else {
+      const rows = (await res.json()) as PlanMappingRow[]
+      mapping = rows[0] ?? null
+      action = 'created'
+      logStep7Promotion({
+        ...logCtx,
+        operation: 'INSERT',
+        reason: 'mapping_created',
+      })
+    }
   }
+
+  const pricingSystemPlanId = String(
+    (mapping?.system_plan_id as string | undefined) ?? input.systemPlanId,
+  )
 
   if (resolvedRaw) {
     await syncPlanMappingPricingAndAvailability({
       serviceProviderId: input.serviceProviderId,
-      systemPlanId: input.systemPlanId,
+      systemPlanId: pricingSystemPlanId,
       providerPlanId,
       rawPlan: resolvedRaw,
       providerPriority: input.providerPriority,
       providerActive: input.providerActive,
     })
-    if (action === 'unchanged') action = 'synced'
+    if (action === 'unchanged' || action === 'skipped') action = 'synced'
   }
 
   return { mapping, action }
