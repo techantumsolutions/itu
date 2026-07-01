@@ -520,11 +520,16 @@ export async function aggCountProvidersBySystemPlanIds(
   return counts
 }
 
-export async function aggProviderNamesBySystemPlanIds(
+export type SystemPlanProviderLabels = {
+  names: string[]
+  codes: string[]
+}
+
+export async function aggProviderLabelsBySystemPlanIds(
   systemPlanIds: string[],
-): Promise<Map<string, string[]>> {
-  const namesByPlan = new Map<string, string[]>()
-  if (!systemPlanIds.length) return namesByPlan
+): Promise<Map<string, SystemPlanProviderLabels>> {
+  const labelsByPlan = new Map<string, SystemPlanProviderLabels>()
+  if (!systemPlanIds.length) return labelsByPlan
 
   const uniqueIds = [...new Set(systemPlanIds)]
   const providerSets = new Map<string, Set<string>>()
@@ -550,22 +555,41 @@ export async function aggProviderNamesBySystemPlanIds(
     }
   }
 
-  if (!providerSets.size) return namesByPlan
+  if (!providerSets.size) return labelsByPlan
 
   const providers = await aggListProviders().catch(() => [])
-  const providerNameById = new Map(
-    providers.map((p) => [p.id, (p.name || p.code || 'Unknown Provider').trim()]),
+  const providerMetaById = new Map(
+    providers.map((p) => [
+      p.id,
+      {
+        name: (p.name || p.code || 'Unknown Provider').trim(),
+        code: (p.code || '').trim(),
+      },
+    ]),
   )
 
   for (const [planId, providerIds] of providerSets.entries()) {
-    const names = [...providerIds]
-      .map((id) => providerNameById.get(id))
-      .filter((name): name is string => Boolean(name))
-      .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
-    namesByPlan.set(planId, names)
+    const names: string[] = []
+    const codes: string[] = []
+    for (const id of providerIds) {
+      const meta = providerMetaById.get(id)
+      if (!meta) continue
+      if (meta.name) names.push(meta.name)
+      if (meta.code) codes.push(meta.code)
+    }
+    names.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    codes.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+    labelsByPlan.set(planId, { names, codes })
   }
 
-  return namesByPlan
+  return labelsByPlan
+}
+
+export async function aggProviderNamesBySystemPlanIds(
+  systemPlanIds: string[],
+): Promise<Map<string, string[]>> {
+  const labels = await aggProviderLabelsBySystemPlanIds(systemPlanIds)
+  return new Map([...labels.entries()].map(([planId, value]) => [planId, value.names]))
 }
 
 export async function aggUpsertDuplicateSuggestion(input: {

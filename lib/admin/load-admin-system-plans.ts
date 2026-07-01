@@ -1,8 +1,9 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import {
   aggCountProvidersBySystemPlanIds,
-  aggProviderNamesBySystemPlanIds,
+  aggProviderLabelsBySystemPlanIds,
 } from '@/lib/aggregator/repository'
+import { matchesPlanListSearch } from '@/lib/admin/operator-list-search'
 import { normalizeCountryIso3 } from '@/lib/lcr/countries'
 
 function enc(v: string): string {
@@ -19,6 +20,7 @@ export type AdminSystemPlanRow = {
   active: boolean
   provider_count: number
   provider_names: string[]
+  provider_codes: string[]
 }
 
 async function loadSystemOperatorsInfo(
@@ -98,7 +100,8 @@ export async function loadAdminSystemPlans(input: {
     q: string | null
   }
 }> {
-  const limit = Math.min(Math.max(input.limit ?? 500, 1), 500)
+  const q = (input.q ?? '').trim()
+  const limit = Math.min(Math.max(input.limit ?? (q ? 2000 : 500), 1), q ? 2000 : 500)
   const offset = Math.max(input.offset ?? 0, 0)
   const countryIso3 = normalizeCountryIso3(input.countryIso3 ?? '')
   const operatorName = (input.operatorName ?? '').trim()
@@ -106,7 +109,6 @@ export async function loadAdminSystemPlans(input: {
   const operatorRawId = (input.operatorRawId ?? '').trim()
   const category = (input.category ?? '').trim().toLowerCase()
   const status = (input.status ?? 'all').trim().toLowerCase()
-  const q = (input.q ?? '').trim()
 
   const filters = [
     'select=id,system_operator_id,system_plan_name,description,plan_type,status,amount,currency,country_code',
@@ -117,7 +119,6 @@ export async function loadAdminSystemPlans(input: {
   if (category) filters.unshift(`plan_type=eq.${enc(category)}`)
   if (status === 'active') filters.unshift('status=eq.ACTIVE')
   if (status === 'inactive') filters.unshift('status=eq.INACTIVE')
-  if (q) filters.unshift(`or=(system_plan_name.ilike.*${enc(q)}*,description.ilike.*${enc(q)}*)`)
 
   let operatorIds: string[] = []
   if (systemOperatorId) {
@@ -162,13 +163,13 @@ export async function loadAdminSystemPlans(input: {
 
   const systemIds = rows.map((row) => row.system_operator_id).filter(Boolean) as string[]
   const planIds = rows.map((row) => row.id).filter(Boolean)
-  const [systemOperatorInfo, providerCounts, providerNamesByPlan] = await Promise.all([
+  const [systemOperatorInfo, providerCounts, providerLabelsByPlan] = await Promise.all([
     loadSystemOperatorsInfo(systemIds),
     aggCountProvidersBySystemPlanIds(planIds),
-    aggProviderNamesBySystemPlanIds(planIds),
+    aggProviderLabelsBySystemPlanIds(planIds),
   ])
 
-  const systemPlans = rows.map((row) => {
+  let systemPlans = rows.map((row) => {
     const opId = row.system_operator_id || ''
     const opInfo = opId ? systemOperatorInfo.get(opId) : null
     const opStatus = opInfo?.status || 'ACTIVE'
@@ -184,9 +185,21 @@ export async function loadAdminSystemPlans(input: {
       category: row.plan_type || 'Unknown',
       active,
       provider_count: providerCounts.get(row.id) ?? 0,
-      provider_names: providerNamesByPlan.get(row.id) ?? [],
+      provider_names: providerLabelsByPlan.get(row.id)?.names ?? [],
+      provider_codes: providerLabelsByPlan.get(row.id)?.codes ?? [],
     }
   })
+
+  if (q) {
+    systemPlans = systemPlans.filter((plan) =>
+      matchesPlanListSearch(q, {
+        planName: plan.plan_name,
+        operatorName: plan.operator_name,
+        providerNames: plan.provider_names,
+        providerCodes: plan.provider_codes,
+      }),
+    )
+  }
 
   return {
     systemPlans,
