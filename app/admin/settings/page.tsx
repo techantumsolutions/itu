@@ -87,9 +87,7 @@ const MANAGEABLE_PATHS = [
   { path: '/admin/support-tickets', label: 'Support Tickets (/admin/support-tickets)' },
   { path: '/admin/ads', label: 'Ads Manager (/admin/ads)' },
   { path: '/admin/reconciliation', label: 'Reconciliation (/admin/reconciliation)' },
-  { path: '/admin/reports', label: 'Reports & Analytics (/admin/reports)' },
-  { path: '/admin/analytics', label: 'Analytics (/admin/analytics)' },
-  { path: '/admin/statistics', label: 'Statistics (/admin/statistics)' },
+  { path: '/admin/reports', label: 'Reports (/admin/reports)' },
   { path: '/admin/settings', label: 'Settings (/admin/settings)' },
   { path: '/admin/staff', label: 'Staff Management (/admin/staff)' },
 ]

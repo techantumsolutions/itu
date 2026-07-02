@@ -179,10 +179,7 @@ export const ADMIN_PERMISSION_GROUPS: { module: string; keys: AdminPermissionKey
   { module: 'Reconciliation', keys: ['reconciliation.view', 'reconciliation.edit'] },
   { module: 'Transactions', keys: ['transactions.view'] },
   { module: 'Reports', keys: ['reports.view'] },
-  { module: 'Analytics', keys: ['analytics.view'] },
-  { module: 'Statistics', keys: ['statistics.view'] },
   { module: 'Settings', keys: ['settings.view', 'settings.edit'] },
-  { module: 'Help', keys: ['help.view'] },
 ]
 
 const LEGACY_KEYS = new Set([
@@ -220,6 +217,16 @@ function grant(out: Record<AdminPermissionKey, boolean>, ...keys: AdminPermissio
   for (const k of keys) out[k] = true
 }
 
+/** Map deprecated menu permissions onto consolidated modules. */
+function consolidateDeprecatedPermissions(out: Record<AdminPermissionKey, boolean>): void {
+  if (out['analytics.view'] || out['statistics.view']) {
+    out['reports.view'] = true
+  }
+  if (out['help.view']) {
+    out['settings.view'] = true
+  }
+}
+
 /** Map legacy single-flag permissions to action-based keys. */
 export function migrateLegacyPermissions(raw: unknown): Record<AdminPermissionKey, boolean> {
   const out = emptyPermissions()
@@ -231,6 +238,7 @@ export function migrateLegacyPermissions(raw: unknown): Record<AdminPermissionKe
     for (const k of ADMIN_PERMISSION_KEYS) {
       if (k in obj) out[k] = Boolean(obj[k])
     }
+    consolidateDeprecatedPermissions(out)
     return out
   }
 
@@ -280,19 +288,20 @@ export function migrateLegacyPermissions(raw: unknown): Record<AdminPermissionKe
   if (on('reconciliation')) grant(out, 'reconciliation.view', 'reconciliation.edit')
   if (on('transactions')) grant(out, 'transactions.view')
   if (on('reports')) grant(out, 'reports.view')
-  if (on('analytics')) grant(out, 'analytics.view')
-  if (on('statistics')) grant(out, 'statistics.view')
+  if (on('analytics')) grant(out, 'reports.view')
+  if (on('statistics')) grant(out, 'reports.view')
   if (on('wallet')) grant(out, 'wallet.view', 'wallet.manage')
   if (on('settings')) grant(out, 'settings.view', 'settings.edit')
-  if (on('help')) grant(out, 'help.view')
+  if (on('help')) grant(out, 'settings.view')
 
+  consolidateDeprecatedPermissions(out)
   return out
 }
 
 /** Default ON for a new limited admin. */
 export function defaultLimitedAdminPermissions(): Record<AdminPermissionKey, boolean> {
   const out = emptyPermissions()
-  grant(out, 'dashboard.view', 'providers.view', 'settings.view', 'help.view')
+  grant(out, 'dashboard.view', 'providers.view', 'settings.view')
   return out
 }
 
@@ -369,12 +378,11 @@ export function getRequiredViewPermissionForPath(pathname: string): AdminPermiss
   if (pathname.startsWith('/admin/ads')) return 'ads.view'
   if (pathname.startsWith('/admin/reconciliation')) return 'reconciliation.view'
   if (pathname.startsWith('/admin/reports')) return 'reports.view'
-  if (pathname.startsWith('/admin/analytics')) return 'analytics.view'
-  if (pathname.startsWith('/admin/statistics')) return 'statistics.view'
+  if (pathname.startsWith('/admin/analytics')) return 'reports.view'
+  if (pathname.startsWith('/admin/statistics')) return 'reports.view'
   if (pathname.startsWith('/admin/transactions')) return 'transactions.view'
   if (pathname.startsWith('/admin/wallet')) return 'wallet.view'
   if (pathname.startsWith('/admin/settings')) return 'settings.view'
-  if (pathname.startsWith('/admin/help')) return 'help.view'
   if (pathname === '/admin' || pathname === '/admin/') return 'dashboard.view'
   return null
 }

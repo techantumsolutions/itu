@@ -51,12 +51,12 @@ const LEGACY_MODULE: Record<LegacyFeature, string> = {
   ads: 'ads',
   reconciliation: 'reconciliation',
   reports: 'reports',
-  analytics: 'analytics',
-  statistics: 'statistics',
+  analytics: 'reports',
+  statistics: 'reports',
   transactions: 'transactions',
   wallet: 'wallet',
   settings: 'settings',
-  help: 'help',
+  help: 'settings',
 }
 
 /** Modules with only a view action — mutations require view permission. */
