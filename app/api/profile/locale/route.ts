@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server'
+import { getUserIdFromRequest } from '@/lib/auth/get-user-id-from-request'
 import { runtimeEnv } from '@/lib/env/runtime'
 
 /**
- * Production note:
- * - This endpoint is designed to be called after login to persist locale into Supabase `profiles`.
- * - It uses Supabase REST if `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` are configured.
- * - If Supabase is not configured, it no-ops (returns 200) so existing functionality is not broken.
+ * Persists locale preferences into Supabase `profiles` for the authenticated user only.
  */
 export async function POST(req: Request) {
+  const authenticatedUserId = await getUserIdFromRequest(req)
+  if (!authenticatedUserId) {
+    return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  }
+
   const body = (await req.json().catch(() => null)) as
     | { userId?: string; country?: string; language?: string; currency?: string }
     | null
@@ -21,16 +24,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: 'Missing fields' }, { status: 400 })
   }
 
+  if (userId !== authenticatedUserId) {
+    return NextResponse.json({ ok: false, error: 'Forbidden' }, { status: 403 })
+  }
+
   const url = runtimeEnv('SUPABASE_URL')
   const serviceKey = runtimeEnv('SUPABASE_SERVICE_ROLE_KEY')
 
   if (!url || !serviceKey) {
-    // Keep app working in non-Supabase setups.
     return NextResponse.json({ ok: true, persisted: false })
   }
 
-  // Update `profiles` row by id using PostgREST.
-  // Assumes table: profiles(id uuid primary key, country text, language text, currency text, updated_at timestamptz)
   const res = await fetch(`${url}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
     method: 'PATCH',
     headers: {
@@ -54,4 +58,3 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ ok: true, persisted: true })
 }
-

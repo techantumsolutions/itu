@@ -1,7 +1,7 @@
 import { StatCards } from "@/components/dashboard/stat-cards"
 import { TransactionsTable } from "@/components/dashboard/transactions-table"
-import { SalesReport } from "@/components/dashboard/sales-report"
 import { TopProducts } from "@/components/dashboard/top-products"
+import { DashboardSalesReport } from "@/components/dashboard/dashboard-sales-report"
 
 export default function DashboardPage() {
   return (
@@ -19,7 +19,7 @@ export default function DashboardPage() {
         
         {/* Right column - sidebar widgets */}
         <div className="flex flex-col gap-6">
-          <SalesReport />
+          <DashboardSalesReport />
           <TopProducts />
         </div>
       </div>

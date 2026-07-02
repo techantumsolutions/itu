@@ -1,7 +1,14 @@
 import { NextResponse } from 'next/server'
+import { requireBearerSecret } from '@/lib/security/require-secret'
 import { updateOrderDb } from '@/lib/topup/orders-db'
 
 export async function POST(request: Request) {
+  const denied = requireBearerSecret(request, 'PAYMENT_WEBHOOK_SECRET', {
+    missingMessage: 'PAYMENT_WEBHOOK_SECRET is not configured',
+    unauthorizedMessage: 'Unauthorized webhook request',
+  })
+  if (denied) return denied
+
   try {
     const body = await request.json().catch(() => ({}))
     const orderId = typeof body.orderId === 'string' ? body.orderId.trim() : ''
@@ -16,4 +23,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Webhook error' }, { status: 500 })
   }
 }
-

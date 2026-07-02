@@ -2,7 +2,6 @@
  * Lightweight provider pre-validation before LCR recharge attempts.
  * Uses ProviderExecutionContext — does not use customer payment for provider payloads.
  */
-import { getBalance, isApiConfigured } from '@/lib/api/ding-connect'
 import { loadProviderRawPlan } from '@/lib/lcr-v2/provider-recharge-validation'
 import type { ProviderRawPlanRow } from '@/lib/lcr-v2/provider-recharge-amount'
 import { isAmountWithinProviderRange } from '@/lib/lcr-v2/provider-recharge-amount'
@@ -12,11 +11,11 @@ import {
   validateProviderExecutionContext,
 } from '@/lib/lcr-v2/provider-execution-context'
 import type { ProviderPayloadStrategy } from '@/lib/routing/provider-payload-strategy'
-import { checkProviderWalletBalance, DING_INSUFFICIENT_BALANCE_LOG } from '@/lib/lcr-v2/provider-balance-check'
+import { DING_INSUFFICIENT_BALANCE_LOG } from '@/lib/lcr-v2/provider-balance-check'
 
 export type ProviderPreValidationInput = {
   executionContext: ProviderExecutionContext
-  /** Optional `lcr_providers` row for per-provider wallet balance checks. */
+  /** Optional `lcr_providers` row (reserved for adapter-specific checks). */
   providerRow?: Record<string, unknown> | null
 }
 
@@ -108,27 +107,6 @@ async function validateWholesaleStrategy(ctx: ProviderExecutionContext): Promise
     customer_payment_amount: ctx.customer_payment_amount,
     customer_payment_currency: ctx.customer_payment_currency,
     validation: true,
-  }
-
-  if (!isApiConfigured()) {
-    logValidation(debug)
-    return { eligible: true, debug }
-  }
-
-  try {
-    const balance = await getBalance()
-    if (balance.ResultCode === 1 && balance.Balance < ctx.provider_wholesale_amount) {
-      debug.validation = false
-      logValidation(debug)
-      return {
-        eligible: false,
-        logMessage: DING_INSUFFICIENT_BALANCE_LOG,
-        reason: 'insufficient_balance',
-        debug,
-      }
-    }
-  } catch {
-    // proceed — detailed check in checkProviderWalletBalance
   }
 
   logValidation(debug)
@@ -272,22 +250,6 @@ export async function providerPreValidation(
       eligible: false,
       logMessage: `[LCR] Provider skipped: missing fields ${structural.missing.join(', ')}`,
       reason: 'execution_context_invalid',
-    }
-  }
-
-  const balanceCheck = await checkProviderWalletBalance({
-    ctx,
-    providerRow: input.providerRow,
-  })
-  if (balanceCheck.checked && !balanceCheck.sufficient) {
-    const logMessage =
-      balanceCheck.logMessage ??
-      `[LCR] Provider skipped: insufficient provider balance (need ${balanceCheck.requiredAmount}, have ${balanceCheck.availableBalance})`
-    console.log(logMessage)
-    return {
-      eligible: false,
-      logMessage,
-      reason: balanceCheck.reason ?? 'insufficient_balance',
     }
   }
 

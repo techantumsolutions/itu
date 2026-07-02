@@ -3,8 +3,11 @@ import {
   aggStartSyncRun,
   aggUpdateSyncRun,
   aggInsertSyncLog,
+  aggPatchSyncLog,
   aggPatchProvider,
   isAggregatorSchemaReady,
+  aggCloseStaleSyncRuns,
+  aggCloseRunningSyncLogsForProvider,
 } from '@/lib/aggregator/repository'
 import { rowToProviderConfig } from '@/lib/lcr-v2/provider-credentials'
 import { cacheDelByPrefix } from '@/lib/cache/redis'
@@ -98,17 +101,23 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
 
   const syncRunId = await aggStartSyncRun(config.code)
 
+  await Promise.all([
+    aggCloseStaleSyncRuns(config.code, syncRunId).catch(() => {}),
+    aggCloseRunningSyncLogsForProvider(providerId, syncRunId).catch(() => {}),
+  ])
+
   await validateCountriesTable()
   await loadCountryRegistry()
 
-  await aggInsertSyncLog({
+  const fullSyncLog = await aggInsertSyncLog({
     serviceProviderId: providerId,
     syncType: 'provider',
     stage: 'full-sync',
     status: 'RUNNING',
     startedAt: fullSyncStartedAt,
     metadata: { providerCode: config.code, syncRunId },
-  }).catch(() => {})
+  }).catch(() => null)
+  const fullSyncLogId = (fullSyncLog as { id?: string } | null)?.id ?? null
 
   const stages: PipelineStage[] = [
     'step1_check',
@@ -253,31 +262,53 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
       }).catch(() => {})
     }
 
+    const finalizeFullSyncLog = async (
+      status: 'SUCCESS' | 'FAILED',
+      errorMessage?: string | null,
+    ) => {
+      const finishedAt = new Date().toISOString()
+      const payload = {
+        status,
+        finishedAt,
+        durationMs,
+        fetchedCount: finalResult?.fetchedRaw,
+        normalizedCount: finalResult?.normalized,
+        createdCount: finalResult?.systemPlans,
+        mappedCount: finalResult?.systemOperators,
+        duplicateCount: finalResult?.duplicateSuggestions,
+        errorMessage: errorMessage ?? null,
+        metadata:
+          status === 'SUCCESS'
+            ? {
+                ...finalResult,
+                verificationDashboard,
+                duplicatePlansMerged: step75Data.mergedPlans ?? step75Data.mergedCount ?? 0,
+                syncRunId,
+              }
+            : { syncRunId },
+      }
+
+      if (fullSyncLogId) {
+        await aggPatchSyncLog(fullSyncLogId, payload).catch(() => {})
+      } else {
+        await aggInsertSyncLog({
+          serviceProviderId: providerId,
+          syncType: 'provider',
+          stage: 'full-sync',
+          status,
+          startedAt: fullSyncStartedAt,
+          ...payload,
+        }).catch(() => {})
+      }
+    }
+
     await Promise.all([
       aggPatchProvider(providerId, {
         last_sync_at: new Date().toISOString(),
         last_success_sync_at: new Date().toISOString(),
         status: 'online',
       }).catch(() => {}),
-      aggInsertSyncLog({
-        serviceProviderId: providerId,
-        syncType: 'provider',
-        stage: 'full-sync',
-        status: 'SUCCESS',
-        startedAt: fullSyncStartedAt,
-        finishedAt: new Date().toISOString(),
-        durationMs,
-        fetchedCount: finalResult.fetchedRaw,
-        normalizedCount: finalResult.normalized,
-        createdCount: finalResult.systemPlans,
-        mappedCount: finalResult.systemOperators,
-        duplicateCount: finalResult.duplicateSuggestions,
-        metadata: {
-          ...finalResult,
-          verificationDashboard,
-          duplicatePlansMerged: step75Data.mergedPlans ?? step75Data.mergedCount ?? 0,
-        },
-      }).catch(() => {}),
+      finalizeFullSyncLog('SUCCESS'),
       cacheDelByPrefix('catalog:').catch(() => 0),
       cacheDelByPrefix('aggregator:').catch(() => 0),
     ])
@@ -299,17 +330,25 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
         last_sync_at: new Date().toISOString(),
         status: 'degraded',
       }).catch(() => {}),
-      aggInsertSyncLog({
-        serviceProviderId: providerId,
-        syncType: 'provider',
-        stage: 'full-sync',
-        status: 'FAILED',
-        startedAt: fullSyncStartedAt,
-        finishedAt: new Date().toISOString(),
-        durationMs,
-        errorMessage: error.message || String(error),
-        metadata: { syncRunId },
-      }).catch(() => {}),
+      fullSyncLogId
+        ? aggPatchSyncLog(fullSyncLogId, {
+            status: 'FAILED',
+            finishedAt: new Date().toISOString(),
+            durationMs,
+            errorMessage: error.message || String(error),
+            metadata: { syncRunId },
+          }).catch(() => {})
+        : aggInsertSyncLog({
+            serviceProviderId: providerId,
+            syncType: 'provider',
+            stage: 'full-sync',
+            status: 'FAILED',
+            startedAt: fullSyncStartedAt,
+            finishedAt: new Date().toISOString(),
+            durationMs,
+            errorMessage: error.message || String(error),
+            metadata: { syncRunId },
+          }).catch(() => {}),
     ])
 
     throw error

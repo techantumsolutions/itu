@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server'
 import { bootstrapSuperAdmin } from '@/lib/auth/bootstrap-super-admin'
 import { runtimeEnv } from '@/lib/env/runtime'
 
-/** Dev-only: reset super-admin password + profile. Disabled in production. */
-export async function POST() {
+/** Dev-only: ensure super-admin exists; optional explicit password reset. Disabled in production. */
+export async function POST(req: Request) {
   if (process.env.NODE_ENV === 'production') {
     return NextResponse.json({ ok: false, error: 'Not available' }, { status: 404 })
   }
@@ -21,15 +21,32 @@ export async function POST() {
     )
   }
 
+  const body = (await req.json().catch(() => ({}))) as { resetPassword?: boolean }
+  const resetPassword = body.resetPassword === true
+
   try {
-    const result = await bootstrapSuperAdmin()
+    const result = await bootstrapSuperAdmin({ resetPassword })
+    let message: string
+    if (result.created) {
+      message =
+        result.passwordSource === 'env'
+          ? 'Super admin created. Sign in with ADMIN_BOOTSTRAP_PASSWORD from .env.'
+          : 'Super admin created. Sign in with email above and password 1234567890 (dev default).'
+    } else if (result.passwordReset) {
+      message =
+        result.passwordSource === 'env'
+          ? 'Super admin password reset. Sign in with ADMIN_BOOTSTRAP_PASSWORD from .env.'
+          : 'Super admin password reset. Sign in with email above and password 1234567890 (dev default).'
+    } else {
+      message = 'Super admin profile ensured. Existing password was not changed.'
+    }
+
     return NextResponse.json({
       ok: true,
       email: result.email,
-      message:
-        result.passwordSource === 'env'
-          ? 'Super admin updated. Sign in with ADMIN_BOOTSTRAP_PASSWORD from .env.'
-          : 'Super admin updated. Sign in with email above and password 1234567890 (dev default).',
+      created: result.created,
+      passwordReset: result.passwordReset,
+      message,
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'bootstrap_failed'

@@ -62,7 +62,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   const updatedItem = (await updateRes.json())[0]
 
   // 4. Log audit event
-  const actor = getRequestUser(request)
+  const actor = await getRequestUser(request)
   await aggAudit({
     actor: actor?.email ?? 'admin',
     action: `review_queue.${action.toLowerCase()}`,

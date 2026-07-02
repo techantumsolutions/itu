@@ -6,7 +6,18 @@ export type BootstrapSuperAdminResult = {
   email: string
   userId: string
   created: boolean
-  passwordSource: 'env' | 'default'
+  /** True only when an existing user's password was explicitly reset. */
+  passwordReset: boolean
+  /** Set when a password was assigned (create or explicit reset); null when preserved. */
+  passwordSource: 'env' | 'default' | null
+}
+
+export type BootstrapSuperAdminOptions = {
+  email?: string
+  password?: string
+  name?: string
+  /** When true, reset password for an existing admin. Ignored when creating a new user. */
+  resetPassword?: boolean
 }
 
 async function listUsersByEmail(email: string): Promise<{ id: string; email?: string }[]> {
@@ -79,16 +90,18 @@ async function upsertSuperAdminProfile(userId: string, email: string, name: stri
   })
 }
 
-/** Create or update canonical super-admin Auth user + profiles row. */
-export async function bootstrapSuperAdmin(options?: {
-  email?: string
-  password?: string
-  name?: string
-}): Promise<BootstrapSuperAdminResult> {
+/**
+ * Ensure canonical super-admin Auth user + profiles row exist.
+ * Creates missing admin with bootstrap password; never overwrites an existing password unless resetPassword=true.
+ */
+export async function bootstrapSuperAdmin(
+  options?: BootstrapSuperAdminOptions,
+): Promise<BootstrapSuperAdminResult> {
   const email = (options?.email ?? process.env.ADMIN_BOOTSTRAP_EMAIL ?? 'admin@itu.com').trim().toLowerCase()
   const password = options?.password ?? process.env.ADMIN_BOOTSTRAP_PASSWORD ?? '1234567890'
   const name = options?.name ?? process.env.ADMIN_BOOTSTRAP_NAME ?? 'ITU Admin'
-  const passwordSource = options?.password || process.env.ADMIN_BOOTSTRAP_PASSWORD ? 'env' : 'default'
+  const resetPassword = options?.resetPassword === true
+  const passwordFromEnv = Boolean(options?.password || process.env.ADMIN_BOOTSTRAP_PASSWORD)
 
   if (!runtimeEnv('SUPABASE_URL') || !runtimeEnv('SUPABASE_SERVICE_ROLE_KEY')) {
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set')
@@ -96,17 +109,25 @@ export async function bootstrapSuperAdmin(options?: {
 
   let userId: string
   let created = false
+  let passwordReset = false
+  let passwordSource: BootstrapSuperAdminResult['passwordSource'] = null
+
   const existing = await listUsersByEmail(email)
   if (existing.length > 0) {
     userId = existing[0]!.id
-    await updateUserPassword(userId, password)
+    if (resetPassword) {
+      await updateUserPassword(userId, password)
+      passwordReset = true
+      passwordSource = passwordFromEnv ? 'env' : 'default'
+    }
   } else {
     const row = await supabaseAdminCreateUser({ email, password, name })
     userId = row.id
     created = true
+    passwordSource = passwordFromEnv ? 'env' : 'default'
   }
 
   await upsertSuperAdminProfile(userId, email, name)
 
-  return { email, userId, created, passwordSource }
+  return { email, userId, created, passwordReset, passwordSource }
 }

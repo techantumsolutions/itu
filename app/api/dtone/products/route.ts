@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server'
 import { fetchDtoneProducts } from '@/lib/dtone'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
   return 'Unknown error'
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const denied = await requireAdminPermission(request, 'providers.view')
+  if (denied) return denied
+
   try {
     const data = await fetchDtoneProducts()
 
@@ -20,8 +24,7 @@ export async function GET() {
         success: false,
         message: getErrorMessage(error),
       },
-      { status: 500 }
+      { status: 500 },
     )
   }
 }
-

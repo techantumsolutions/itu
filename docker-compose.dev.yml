@@ -1,0 +1,208 @@
+# Full local development stack with hot reload.
+# Prerequisite: Supabase on host — npm run supabase:start
+# Usage: docker compose -f docker-compose.dev.yml up --build
+
+name: itu-dev
+
+x-dev-build: &dev-build
+  context: .
+  dockerfile: Dockerfile.dev
+
+x-dev-volumes: &dev-volumes
+  - .:/app
+  - dev_node_modules:/app/node_modules
+
+x-dev-extra-hosts: &dev-extra-hosts
+  - host.docker.internal:host-gateway
+
+x-dev-common-env: &dev-common-env
+  NODE_ENV: development
+  NODE_OPTIONS: --dns-result-order=ipv4first
+  REDIS_URL: redis://redis:6379
+  WATCHPACK_POLLING: "true"
+  CHOKIDAR_USEPOLLING: "true"
+  SOCKET_SERVER_URL: http://socket:3001
+  SOCKET_HOST: socket
+  SOCKET_PORT: "3001"
+  NEXT_PUBLIC_SOCKET_SERVER_URL: http://localhost:3001
+  NEXT_PUBLIC_APP_URL: http://localhost:3010
+  CRON_PROVIDER_SYNC_BASE_URL: http://web:3000
+  DATABASE_URL: postgresql://postgres:postgres@host.docker.internal:54422/postgres
+  DIRECT_URL: postgresql://postgres:postgres@host.docker.internal:54422/postgres
+  SUPABASE_URL: http://host.docker.internal:54421
+  NEXT_PUBLIC_SUPABASE_URL: http://host.docker.internal:54421
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: itu-dev-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    networks:
+      - itu
+
+  socket:
+    build: *dev-build
+    container_name: itu-dev-socket
+    command: npm run socket:server
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
+    environment:
+      <<: *dev-common-env
+      SOCKET_BIND_HOST: 0.0.0.0
+    volumes: *dev-volumes
+    extra_hosts: *dev-extra-hosts
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - itu
+
+  web:
+    build: *dev-build
+    container_name: itu-dev-web
+    ports:
+      - "3010:3000"
+    env_file:
+      - .env
+    environment:
+      <<: *dev-common-env
+    volumes:
+      - .:/app
+      - dev_node_modules:/app/node_modules
+      - dev_next_cache:/app/.next
+      - file_storage:/app/storage/uploads
+    extra_hosts: *dev-extra-hosts
+    depends_on:
+      redis:
+        condition: service_healthy
+      socket:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    networks:
+      - itu
+
+  worker:
+    build: *dev-build
+    container_name: itu-dev-worker
+    command: npm run lcr:worker
+    env_file:
+      - .env
+    environment:
+      <<: *dev-common-env
+    volumes: *dev-volumes
+    extra_hosts: *dev-extra-hosts
+    depends_on:
+      redis:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f lcr-sync-worker >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
+    networks:
+      - itu
+
+  cron:
+    build: *dev-build
+    container_name: itu-dev-cron
+    command: npm run cron:provider-sync
+    env_file:
+      - .env
+    environment:
+      <<: *dev-common-env
+      CRON_PROVIDER_SYNC_RUN_ON_START: "false"
+    volumes: *dev-volumes
+    extra_hosts: *dev-extra-hosts
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f provider-sync-cron >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - itu
+
+  system-plans-availability:
+    build: *dev-build
+    container_name: itu-dev-system-plans-availability
+    command: npm run system-plans:availability
+    env_file:
+      - .env
+    environment:
+      <<: *dev-common-env
+    volumes: *dev-volumes
+    extra_hosts: *dev-extra-hosts
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f system-plans-availability-worker >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - itu
+
+  system-plans-merge:
+    build: *dev-build
+    container_name: itu-dev-system-plans-merge
+    command: npm run system-plans:merge-duplicates
+    env_file:
+      - .env
+    environment:
+      <<: *dev-common-env
+    volumes: *dev-volumes
+    extra_hosts: *dev-extra-hosts
+    depends_on:
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f system-plans-duplicate-merge-worker >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - itu
+
+volumes:
+  redis_data:
+  dev_node_modules:
+  dev_next_cache:
+  file_storage:
+
+networks:
+  itu:
+    driver: bridge

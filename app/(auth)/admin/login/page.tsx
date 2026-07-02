@@ -259,7 +259,11 @@ export default function AdminLoginPage() {
                     setDevHint(null)
                     setError('')
                     try {
-                      const res = await fetch('/api/auth/dev-bootstrap-admin', { method: 'POST' })
+                      const res = await fetch('/api/auth/dev-bootstrap-admin', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ resetPassword: true }),
+                      })
                       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string }
                       if (!res.ok || !data.ok) throw new Error(data.error ?? 'Reset failed')
                       setDevHint(data.message ?? 'Super admin reset. Sign in with admin@itu.com / 1234567890')

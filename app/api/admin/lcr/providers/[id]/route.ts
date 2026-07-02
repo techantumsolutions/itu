@@ -12,7 +12,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   const denied = await requireAdminPermission(request, 'providers.edit')
   if (denied) return denied
 
-  const actor = getRequestUser(request)
+  const actor = await getRequestUser(request)
   const { id } = await ctx.params
   const body = await request.json().catch(() => ({}))
 
@@ -64,7 +64,7 @@ export async function DELETE(request: Request, ctx: { params: Promise<{ id: stri
   const denied = await requireAdminPermission(request, 'providers.delete')
   if (denied) return denied
 
-  const actor = getRequestUser(request)
+  const actor = await getRequestUser(request)
   const { id } = await ctx.params
 
   const res = await supabaseRest(`lcr_providers?id=eq.${encodeURIComponent(id)}`, { method: 'DELETE' })

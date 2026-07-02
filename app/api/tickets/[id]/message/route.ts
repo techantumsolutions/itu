@@ -6,7 +6,7 @@ import { notifyNewMessage } from '@/lib/tickets/socket-notifier'
 type Ctx = { params: Promise<{ id: string }> }
 
 export async function POST(request: Request, context: Ctx) {
-  const user = getRequestUser(request)
+  const user = await getRequestUser(request)
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

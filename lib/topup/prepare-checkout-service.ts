@@ -263,9 +263,7 @@ async function selectValidatedProviderFromChain(input: {
     remainingFallbacks: [],
     insufficientBalance,
     failureReason:
-      insufficientBalance.length > 0
-        ? 'No provider with sufficient wallet balance available for this transaction'
-        : 'No active provider available for this transaction',
+      'No active provider available for this transaction',
   }
 }
 

@@ -71,7 +71,7 @@ export async function POST(request: Request) {
   if (!res.ok) return NextResponse.json({ error: await res.text() }, { status: 500 })
   const rows = (await res.json()) as any[]
   const provider = rows[0] ?? null
-  const actor = getRequestUser(request)
+  const actor = await getRequestUser(request)
   await aggAudit({ actor: actor?.email, action: 'provider.create', entityType: 'lcr_provider', entityId: provider?.id, after: provider })
   if (provider) delete provider.credentials_encrypted
 

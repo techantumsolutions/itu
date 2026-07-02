@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server'
+import { requireBearerSecret } from '@/lib/security/require-secret'
 import { sweepDuplicateSystemPlans } from '@/lib/aggregator/system-plan-duplicate-sweep'
 
 export async function POST(request: Request) {
-  const authHeader = request.headers.get('authorization') || ''
-  const configuredSecret = process.env.CRON_SECRET
-  if (configuredSecret && authHeader !== `Bearer ${configuredSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized cron request' }, { status: 401 })
-  }
+  const denied = requireBearerSecret(request, 'CRON_SECRET', {
+    missingMessage: 'CRON_SECRET is not configured',
+    unauthorizedMessage: 'Unauthorized cron request',
+  })
+  if (denied) return denied
 
   try {
     const result = await sweepDuplicateSystemPlans()

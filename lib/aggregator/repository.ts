@@ -586,6 +586,15 @@ export async function aggRepairOrUpsertPlanMapping(input: {
       }
     }
   } else {
+    if (!nextRawId) {
+      logStep7Promotion({
+        ...logCtx,
+        operation: 'SKIP',
+        reason: 'missing_provider_plan_raw_id',
+      })
+      return { mapping: null, action: 'skipped' }
+    }
+
     const insertBody = {
       service_provider_id: input.serviceProviderId,
       system_plan_id: input.systemPlanId,
@@ -912,6 +921,39 @@ export async function aggInsertSyncLog(input: {
   })
   const rows = await jsonRows(res)
   return rows[0] ?? null
+}
+
+export async function aggPatchSyncLog(
+  logId: string,
+  input: {
+    status?: string
+    finishedAt?: string
+    durationMs?: number
+    fetchedCount?: number
+    normalizedCount?: number
+    createdCount?: number
+    mappedCount?: number
+    duplicateCount?: number
+    errorMessage?: string | null
+    metadata?: unknown
+  },
+) {
+  const body: Record<string, unknown> = {}
+  if (input.status != null) body.status = input.status
+  if (input.finishedAt != null) body.finished_at = input.finishedAt
+  if (input.durationMs != null) body.duration_ms = input.durationMs
+  if (input.fetchedCount != null) body.fetched_count = input.fetchedCount
+  if (input.normalizedCount != null) body.normalized_count = input.normalizedCount
+  if (input.createdCount != null) body.created_count = input.createdCount
+  if (input.mappedCount != null) body.mapped_count = input.mappedCount
+  if (input.duplicateCount != null) body.duplicate_count = input.duplicateCount
+  if (input.errorMessage !== undefined) body.error_message = input.errorMessage
+  if (input.metadata !== undefined) body.metadata = input.metadata
+
+  await supabaseRest(`sync_logs?id=eq.${enc(logId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  }).catch(() => {})
 }
 
 export async function aggAudit(input: {
@@ -1363,6 +1405,56 @@ export async function aggUpdateSyncRun(runId: string, updates: Record<string, an
     method: 'PATCH',
     body: JSON.stringify(updates),
   }).catch(() => {})
+}
+
+/** Mark orphaned RUNNING sync_runs failed when a new sync starts for the same provider. */
+export async function aggCloseStaleSyncRuns(providerCode: string, exceptRunId?: string | null) {
+  const res = await supabaseRest(
+    `sync_runs?provider_code=eq.${enc(providerCode)}&status=eq.running&select=id`,
+    { cache: 'no-store' },
+  )
+  if (!res.ok) return
+  const rows = (await res.json().catch(() => [])) as Array<{ id: string }>
+  const finishedAt = new Date().toISOString()
+  for (const row of rows) {
+    if (exceptRunId && row.id === exceptRunId) continue
+    await supabaseRest(`sync_runs?id=eq.${enc(row.id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        status: 'failed',
+        finished_at: finishedAt,
+        error_message: 'Superseded by new sync run (orphaned RUNNING state)',
+      }),
+    }).catch(() => {})
+  }
+}
+
+/** Mark orphaned RUNNING sync_logs failed when a new sync starts for the same provider. */
+export async function aggCloseRunningSyncLogsForProvider(
+  serviceProviderId: string,
+  exceptSyncRunId?: string | null,
+) {
+  const res = await supabaseRest(
+    `sync_logs?service_provider_id=eq.${enc(serviceProviderId)}&status=eq.RUNNING&select=id,metadata`,
+    { cache: 'no-store' },
+  )
+  if (!res.ok) return
+  const rows = (await res.json().catch(() => [])) as Array<{
+    id: string
+    metadata?: { syncRunId?: string }
+  }>
+  const finishedAt = new Date().toISOString()
+  for (const row of rows) {
+    if (exceptSyncRunId && row.metadata?.syncRunId === exceptSyncRunId) continue
+    await supabaseRest(`sync_logs?id=eq.${enc(row.id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        status: 'FAILED',
+        finished_at: finishedAt,
+        error_message: 'Superseded by new sync run (orphaned RUNNING log)',
+      }),
+    }).catch(() => {})
+  }
 }
 
 export async function aggInsertClassificationAudit(input: {

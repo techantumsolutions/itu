@@ -1,4 +1,5 @@
 import { supabaseGetUser } from '@/lib/supabase/auth-rest'
+import { runtimeEnv } from '@/lib/env/runtime'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -8,7 +9,9 @@ function readCookie(cookieHeader: string, name: string): string {
   return m?.[1] ? decodeURIComponent(m[1]) : ''
 }
 
-function readHeaderUserId(request: Request): string | null {
+function readInsecureHeaderUserId(request: Request): string | null {
+  if (process.env.NODE_ENV === 'production') return null
+  if (runtimeEnv('ALLOW_INSECURE_USER_HEADERS') !== 'true') return null
   const headerId = request.headers.get('x-user-id')?.trim() ?? ''
   if (!headerId || !UUID_RE.test(headerId)) return null
   return headerId
@@ -16,7 +19,7 @@ function readHeaderUserId(request: Request): string | null {
 
 /**
  * Resolve the authenticated user id for payment/checkout APIs.
- * Order: sb-access-token cookie → itu-user-id cookie → x-user-id header.
+ * Order: sb-access-token cookie → itu-user-id cookie → (dev only) x-user-id header when ALLOW_INSECURE_USER_HEADERS=true.
  */
 export async function getUserIdFromRequest(request: Request): Promise<string | null> {
   const cookie = request.headers.get('cookie') ?? ''
@@ -34,7 +37,7 @@ export async function getUserIdFromRequest(request: Request): Promise<string | n
   const otpUserId = readCookie(cookie, 'itu-user-id')
   if (otpUserId && UUID_RE.test(otpUserId)) return otpUserId
 
-  return readHeaderUserId(request)
+  return readInsecureHeaderUserId(request)
 }
 
 export type ClientAuthUser = {

@@ -29,7 +29,12 @@
     "supabase:reset": "supabase db reset",
     "supabase:sync-env": "tsx --tsconfig tsconfig.json scripts/sync-supabase-env.ts",
     "db:local": "npm run supabase:start && npm run db:bootstrap && npm run db:migrate && npm run supabase:sync-env",
-    "dev:stack": "docker compose up -d redis && supabase start"
+    "dev:stack": "docker compose up -d redis && supabase start",
+    "docker:dev": "docker compose -f docker-compose.dev.yml up --build",
+    "docker:dev:detach": "docker compose -f docker-compose.dev.yml up -d --build",
+    "docker:prod": "docker compose -f docker-compose.prod.yml up -d --build",
+    "docker:down": "docker compose -f docker-compose.dev.yml down",
+    "docker:smoke": "tsx --tsconfig tsconfig.json scripts/docker-smoke-test.ts"
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "^5.2.0",

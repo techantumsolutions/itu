@@ -13,6 +13,12 @@ const server = createServer((req, res) => {
     return
   }
 
+  if (req.method === 'GET' && req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true, service: 'socket' }))
+    return
+  }
+
   // Handle HTTP POST request to broadcast events
   if (req.method === 'POST' && req.url === '/api/broadcast') {
     let body = ''

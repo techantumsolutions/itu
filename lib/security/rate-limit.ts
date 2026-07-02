@@ -1,18 +1,44 @@
 import { redisExec } from '@/lib/cache/redis'
 
+const RATE_LIMIT_SCRIPT = `
+  local current = redis.call("INCR", KEYS[1])
+  if current == 1 then redis.call("EXPIRE", KEYS[1], ARGV[1]) end
+  local remaining = tonumber(ARGV[2]) - current
+  local ttl = redis.call("TTL", KEYS[1])
+  return { current, remaining, ttl }
+`
+
+let rateLimitSha: string | null = null
+
+async function evalRateLimit(key: string, windowSeconds: number, limit: number): Promise<[number, number, number]> {
+  return redisExec(async (redis) => {
+    if (!rateLimitSha) {
+      rateLimitSha = (await redis.script('LOAD', RATE_LIMIT_SCRIPT)) as string
+    }
+    try {
+      return (await redis.evalsha(
+        rateLimitSha,
+        1,
+        key,
+        String(windowSeconds),
+        String(limit),
+      )) as [number, number, number]
+    } catch {
+      rateLimitSha = null
+      return (await redis.eval(
+        RATE_LIMIT_SCRIPT,
+        1,
+        key,
+        String(windowSeconds),
+        String(limit),
+      )) as [number, number, number]
+    }
+  })
+}
+
 export async function rateLimit(opts: { key: string; limit: number; windowSeconds: number }) {
   try {
-    const script = `
-      local current = redis.call("INCR", KEYS[1])
-      if current == 1 then redis.call("EXPIRE", KEYS[1], ARGV[1]) end
-      local remaining = tonumber(ARGV[2]) - current
-      local ttl = redis.call("TTL", KEYS[1])
-      return { current, remaining, ttl }
-    `
-
-    const [current, remaining, ttl] = (await redisExec((redis) =>
-      redis.eval(script, 1, opts.key, String(opts.windowSeconds), String(opts.limit)),
-    )) as [number, number, number]
+    const [current, remaining, ttl] = await evalRateLimit(opts.key, opts.windowSeconds, opts.limit)
 
     return {
       ok: current <= opts.limit,
@@ -20,8 +46,6 @@ export async function rateLimit(opts: { key: string; limit: number; windowSecond
       resetSeconds: Math.max(0, ttl),
     }
   } catch {
-    // If Redis is down/unconfigured, don't accidentally lock users out.
     return { ok: true as const, remaining: opts.limit, resetSeconds: opts.windowSeconds }
   }
 }
-

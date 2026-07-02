@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   const parsed = mapSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: 'Invalid mapping payload', issues: parsed.error.flatten() }, { status: 400 })
 
-  const actor = getRequestUser(request)
+  const actor = await getRequestUser(request)
   const mapping = await aggUpsertOperatorMapping({
     serviceProviderId: parsed.data.serviceProviderId,
     providerOperatorRawId: parsed.data.providerOperatorRawId,

@@ -1,5 +1,6 @@
 'use client'
 
+import dynamic from 'next/dynamic'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
@@ -37,8 +38,15 @@ import { ItuLogoMark } from '@/components/itu-logo-mark'
 import { FooterPaymentLogos } from '@/components/footer-payment-logos'
 import { TargetedAdBanner } from '@/components/targeted-ad-banner'
 import { CMSTypographyScope } from '@/components/cms-typography-scope'
-import { AdManager } from '@/components/ui/ads/ad-manager'
 import { SessionIdleGuard } from '@/components/session-idle-guard'
+
+const AdManager = dynamic(
+  () => import('@/components/ui/ads/ad-manager').then((m) => ({ default: m.AdManager })),
+  { ssr: false },
+)
+
+const CMS_CLIENT_TTL_MS = 60_000
+const COUNTRIES_CLIENT_TTL_MS = 300_000
 
 const navLinks = [
   { href: '/', label: 'Home', match: (p: string) => p === '/' },
@@ -89,13 +97,16 @@ export default function PublicLayout({
     // Important: wait for zustand-persist hydration first so localStorage doesn't overwrite DB content after we set it.
     if (!hasHydrated) return
 
-    // If CMS fetch fails temporarily (network/restart), keep showing the last known good content.
     try {
       const raw = window.localStorage.getItem('itu-cms-last-good')
+      const fetchedAt = Number(window.localStorage.getItem('itu-cms-last-good-at') ?? '0')
       if (raw) {
         const parsed = JSON.parse(raw) as unknown
         if (parsed && typeof parsed === 'object') {
           setContent(parsed as any, { markDirty: false })
+          if (fetchedAt > 0 && Date.now() - fetchedAt < CMS_CLIENT_TTL_MS) {
+            return
+          }
         }
       }
     } catch {
@@ -103,7 +114,7 @@ export default function PublicLayout({
     }
 
     let cancelled = false
-    void fetch('/api/cms', { cache: 'no-store', credentials: 'include' })
+    void fetch('/api/cms', { credentials: 'include' })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('cms'))))
       .then((data: { content?: unknown; ok?: boolean }) => {
         if (cancelled) return
@@ -111,6 +122,7 @@ export default function PublicLayout({
           setContent(data.content as any, { markDirty: false })
           try {
             window.localStorage.setItem('itu-cms-last-good', JSON.stringify(data.content))
+            window.localStorage.setItem('itu-cms-last-good-at', String(Date.now()))
           } catch {
             // ignore
           }
@@ -200,9 +212,32 @@ export default function PublicLayout({
   ])
 
   useEffect(() => {
-    void fetch('/api/countries', { cache: 'no-store' })
+    try {
+      const cachedAt = Number(sessionStorage.getItem('itu-countries-at') ?? '0')
+      const cached = sessionStorage.getItem('itu-countries')
+      if (cached && cachedAt > 0 && Date.now() - cachedAt < COUNTRIES_CLIENT_TTL_MS) {
+        const parsed = JSON.parse(cached) as Country[]
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setCountries(parsed)
+          return
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    void fetch('/api/countries')
       .then((r) => r.json())
-      .then((data) => setCountries(Array.isArray(data?.countries) ? data.countries : []))
+      .then((data) => {
+        const list = Array.isArray(data?.countries) ? (data.countries as Country[]) : []
+        setCountries(list)
+        try {
+          sessionStorage.setItem('itu-countries', JSON.stringify(list))
+          sessionStorage.setItem('itu-countries-at', String(Date.now()))
+        } catch {
+          // ignore
+        }
+      })
       .catch(() => setCountries([]))
   }, [])
 

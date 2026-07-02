@@ -1,10 +1,17 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import {
-  getLcrEngineSettings,
+  getCachedActiveRoutingRules,
+  getCachedAuthoritativeBundle,
+  getCachedCountryIso3,
+  getCachedLcrEngineSettings,
+  getCachedOperator,
+  getCachedProviderPriorities,
+  setCachedCountryIso3,
+  setCachedOperator,
+} from '@/lib/routing/lcr-routing-cache'
+import {
   insertRoutingLog,
   isRoutingEngineSchemaReady,
-  listActiveRoutingRules,
-  listProviderPriorities,
   insertDetailedRoutingLog,
 } from '@/lib/routing/repository'
 import { dbGetInternalPlan } from '@/lib/lcr-v2/recharge-db'
@@ -15,13 +22,11 @@ import {
 } from '@/lib/catalog/resolve-provider-pricing-for-system-plan'
 import { logAuthoritativeMappingMissing } from '@/lib/catalog/system-plan-pricing-consistency'
 import {
-  loadAuthoritativeCandidateBundle,
   shouldUseAuthoritativeDiscovery,
   type CandidateMappingRow,
 } from '@/lib/recharge-orchestration/authoritative-candidate-loader'
-import { normalizeProviderCost } from '@/lib/routing/normalize-provider-cost'
 import { resolveProviderPayloadStrategy } from '@/lib/routing/provider-payload-strategy'
-import { LCR_BASE_CURRENCY } from '@/lib/routing/exchange-rates'
+import { convertWithRateMap, getFallbackExchangeRates, LCR_BASE_CURRENCY, loadCatalogExchangeRates } from '@/lib/routing/exchange-rates'
 import {
   pricingFieldsFromCandidate,
   detailedRoutingLogPricingInput,
@@ -40,6 +45,9 @@ function enc(v: string): string {
 
 export async function normalizeCountryToIso3(countryId: string): Promise<string> {
   const code = (countryId || '').trim().toUpperCase()
+  const cached = getCachedCountryIso3(code)
+  if (cached) return cached
+
   if (code.length === 2) {
     try {
       const res = await supabaseRest(
@@ -49,13 +57,16 @@ export async function normalizeCountryToIso3(countryId: string): Promise<string>
       if (res.ok) {
         const rows = await res.json() as Array<{ id: string }>
         if (rows?.[0]?.id) {
-          return rows[0].id.toUpperCase()
+          const iso3 = rows[0].id.toUpperCase()
+          setCachedCountryIso3(code, iso3)
+          return iso3
         }
       }
     } catch {
       // fallback
     }
   }
+  setCachedCountryIso3(code, code)
   return code
 }
 
@@ -72,6 +83,9 @@ export async function resolveSystemOperator(
   if (!op || op.toLowerCase() === 'unknown') {
     return { id: op, name: op || 'Unknown' }
   }
+
+  const cached = getCachedOperator(countryIso3, op)
+  if (cached) return cached
 
   let lookupId = op
   if (op.startsWith('system:')) {
@@ -92,17 +106,21 @@ export async function resolveSystemOperator(
     if (res.ok) {
       const rows = await res.json() as Array<{ id: string; system_operator_name: string }>
       if (rows?.[0]) {
-        return {
+        const info = {
           id: `system:${rows[0].id}`,
           name: rows[0].system_operator_name,
         }
+        setCachedOperator(countryIso3, op, info)
+        return info
       }
     }
   } catch {
     // ignore
   }
 
-  return { id: op, name: op }
+  const fallback = { id: op, name: op }
+  setCachedOperator(countryIso3, op, fallback)
+  return fallback
 }
 
 export async function normalizeOperatorId(operatorId: string, countryIso3: string): Promise<string> {
@@ -241,9 +259,7 @@ async function loadCandidates(
   systemPlanId: string | null
   discoverySource: 'plan_mappings' | 'legacy_internal_cache'
 }> {
-  const authoritativeBundle = await loadAuthoritativeCandidateBundle(productId, {
-    systemPlanId: systemPlanId ?? undefined,
-  })
+  const authoritativeBundle = await getCachedAuthoritativeBundle(productId, systemPlanId)
   const authoritativeCount = authoritativeBundle?.mappings.length ?? 0
   const useAuthoritative = shouldUseAuthoritativeDiscovery(
     authoritativeBundle?.parity ?? null,
@@ -462,49 +478,54 @@ function evaluateCandidates(
 async function enrichCandidatesWithNormalizedCosts(
   candidates: RoutingProviderCandidate[],
 ): Promise<RoutingProviderCandidate[]> {
-  const enriched: RoutingProviderCandidate[] = []
-  for (const candidate of candidates) {
-    if (!candidate.eligible) {
-      enriched.push(candidate)
-      continue
-    }
+  const base = LCR_BASE_CURRENCY
+  const rateMap = await loadCatalogExchangeRates(base)
+  const fallbackRates = getFallbackExchangeRates()
+
+  return candidates.map((candidate) => {
+    if (!candidate.eligible) return candidate
+
     const wholesaleAmount = candidate.provider_wholesale_amount ?? candidate.price
     const wholesaleCurrency = candidate.provider_wholesale_currency ?? candidate.currency
     if (wholesaleAmount == null || !wholesaleCurrency) {
-      enriched.push({
+      return {
         ...candidate,
         eligible: false,
         filterReason: 'CURRENCY_MISSING',
         reason: 'CURRENCY_MISSING',
-      })
-      continue
+      }
     }
-    const normalized = await normalizeProviderCost({
-      provider_price: wholesaleAmount,
-      provider_currency: wholesaleCurrency,
-      base_currency: LCR_BASE_CURRENCY,
-    })
-    if (!normalized.success) {
-      enriched.push({
+
+    const { converted, rate, source } = convertWithRateMap(
+      wholesaleAmount,
+      wholesaleCurrency.trim().toUpperCase(),
+      base,
+      rateMap,
+      fallbackRates,
+    )
+    const success = Number.isFinite(converted) && converted > 0
+    if (!success) {
+      return {
         ...candidate,
         eligible: false,
         filterReason: 'CURRENCY_NORMALIZATION_FAILED',
         reason: 'CURRENCY_NORMALIZATION_FAILED',
-      })
-      continue
+      }
     }
-    enriched.push({
+
+    return {
       ...candidate,
-      normalized_provider_price: normalized.normalized_provider_price,
-      normalized_provider_currency: normalized.normalized_provider_currency,
+      normalized_provider_price: converted,
+      normalized_provider_currency: base,
+      exchange_rate_used: rate,
+      exchange_rate_source: source,
       score: weightedScore({
-        normalizedPrice: normalized.normalized_provider_price,
+        normalizedPrice: converted,
         providerPriority: candidate.providerPriority,
         margin: candidate.margin,
       }),
-    })
-  }
-  return enriched
+    }
+  })
 }
 
 function sortByStrategy(
@@ -550,7 +571,7 @@ export class RoutingEngineService {
     console.log(`[ROUTING] Starting routing for internal_plan_id: ${normalizedInput.productId}`)
 
     const schemaReady = await isRoutingEngineSchemaReady()
-    const settings = schemaReady ? await getLcrEngineSettings() : null
+    const settings = schemaReady ? await getCachedLcrEngineSettings() : null
     const effectiveSettings: LcrEngineSettings = settings ?? {
       id: 'default',
       enabled: true,
@@ -634,7 +655,7 @@ export class RoutingEngineService {
       }
     }
 
-    const priorityRows = schemaReady ? await listProviderPriorities() : []
+    const priorityRows = schemaReady ? await getCachedProviderPriorities() : []
     const priorityMap = new Map(priorityRows.map((p) => [p.providerId, p.priority]))
 
     // Evaluate candidates
@@ -724,7 +745,7 @@ export class RoutingEngineService {
     let applicableRulesWithoutViableProvider = 0
 
     if (schemaReady && effectiveSettings.enabled) {
-      const rules = await listActiveRoutingRules()
+      const rules = await getCachedActiveRoutingRules()
       const matchingRules = listMatchingRoutingRules(rules, normalizedInput)
       applicableRulesWithoutViableProvider = matchingRules.length
 

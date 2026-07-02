@@ -12,9 +12,30 @@ jest.mock('./repository', () => ({
     retryAttempts: 2,
   })),
   listProviderPriorities: jest.fn(async () => []),
+  listRoutingRules: jest.fn(async () => []),
   listActiveRoutingRules: jest.fn(async () => []),
   insertRoutingLog: jest.fn(async () => 'log-1'),
   insertDetailedRoutingLog: jest.fn(async () => 'log-detail-1'),
+}))
+
+jest.mock('./lcr-routing-cache', () => ({
+  getCachedLcrEngineSettings: jest.fn(async () => ({
+    id: '1',
+    enabled: true,
+    routingStrategy: 'LEAST_COST',
+    fallbackStrategy: 'NEXT_PROVIDER',
+    autoFailover: true,
+    retryEnabled: true,
+    retryAttempts: 2,
+  })),
+  getCachedProviderPriorities: jest.fn(async () => []),
+  getCachedActiveRoutingRules: jest.fn(async () => []),
+  getCachedAuthoritativeBundle: jest.fn(async () => null),
+  getCachedCountryIso3: jest.fn(() => undefined),
+  setCachedCountryIso3: jest.fn(),
+  getCachedOperator: jest.fn(() => undefined),
+  setCachedOperator: jest.fn(),
+  clearLcrRoutingCaches: jest.fn(),
 }))
 
 jest.mock('@/lib/db/supabase-rest', () => ({
@@ -76,10 +97,10 @@ jest.mock('@/lib/catalog/resolve-provider-pricing-for-system-plan', () => ({
 }))
 
 import { supabaseRest } from '@/lib/db/supabase-rest'
-import { listActiveRoutingRules } from './repository'
+import { getCachedActiveRoutingRules } from './lcr-routing-cache'
 
 const mockedSupabase = supabaseRest as jest.MockedFunction<typeof supabaseRest>
-const mockedRules = listActiveRoutingRules as jest.MockedFunction<typeof listActiveRoutingRules>
+const mockedRules = getCachedActiveRoutingRules as jest.MockedFunction<typeof getCachedActiveRoutingRules>
 
 function mockMappings(
   rows: Array<{
