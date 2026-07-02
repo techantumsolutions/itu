@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Check, ChevronDown, Eye, EyeOff, Loader2 } from 'lucide-react'
@@ -25,8 +25,10 @@ import {
 import { countriesList, getFlagEmoji, isValidPhoneNumber } from '@/lib/country-codes'
 import { useFingerprint } from '@/hooks/use-fingerprint'
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirectVal = searchParams.get('redirect')
   const { login, setSession, logout, isLoading } = useAuthStore()
   const { content, hasHydrated } = useCMSStore()
   const fingerprint = useFingerprint()
@@ -105,7 +107,7 @@ export default function LoginPage() {
         logout()
         setError('These credentials are not registered as user. Use the dedicated portal.')
       } else {
-        router.push('/account')
+        router.push(redirectVal || '/account')
       }
     } else {
       setError(result.error ?? 'Invalid email or password.')
@@ -440,7 +442,7 @@ export default function LoginPage() {
 
                 <p className="text-center text-sm text-neutral-500">
                   Don&apos;t have an Account?{' '}
-                  <Link href="/register" className="font-semibold text-[var(--hero-cta-orange)] hover:underline">
+                  <Link href={redirectVal ? `/register?redirect=${encodeURIComponent(redirectVal)}` : "/register"} className="font-semibold text-[var(--hero-cta-orange)] hover:underline">
                     Sign up here
                   </Link>
                 </p>
@@ -532,7 +534,7 @@ export default function LoginPage() {
                         const data = await res.json()
                         if (!res.ok || !data.ok) throw new Error(data.error || '2FA verification failed')
                         setSession(data.user)
-                        router.push('/account')
+                        router.push(redirectVal || '/account')
                       } catch (e) {
                         setError(e instanceof Error ? e.message : 'Invalid 2FA code')
                       }
@@ -573,7 +575,7 @@ export default function LoginPage() {
                         }).catch(() => { })
                       }
                       if (u) {
-                        router.push('/account')
+                        router.push(redirectVal || '/account')
                       }
                     } catch (e) {
                       setError(e instanceof Error ? e.message : 'OTP verification failed.')
@@ -615,5 +617,17 @@ export default function LoginPage() {
         </Card>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-neutral-400" />
+      </div>
+    }>
+      <LoginForm />
+    </Suspense>
   )
 }

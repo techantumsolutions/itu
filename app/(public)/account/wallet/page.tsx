@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Wallet, Plus, ArrowUpRight, ArrowDownLeft, History, CreditCard, RefreshCw, Loader2 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -11,17 +11,36 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useWalletStore, useAuthStore } from '@/lib/stores'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 
 const quickAmounts = [10, 25, 50, 100, 250, 500]
 
 export default function AccountWalletPage() {
-  const { balance, currency, transactions, topUp, fetchBalance, fetchTransactions, isLoading } = useWalletStore()
+  const { balance, currency, transactions, wallets, topUp, fetchBalance, fetchTransactions, isLoading } = useWalletStore()
   const { user } = useAuthStore()
   const [topUpAmount, setTopUpAmount] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [rewardPoints, setRewardPoints] = useState(user?.rewardPoints || 0)
   const [pointsWorth, setPointsWorth] = useState(0)
+  const [selectedCurrency, setSelectedCurrency] = useState<string>('')
+
+  const currentCurrency = selectedCurrency || currency
+  const walletList = wallets || []
+
+  const displayedBalance = useMemo(() => {
+    if (walletList.length > 0) {
+      const match = walletList.find((w) => w.currency === currentCurrency)
+      if (match) return match.balance
+    }
+    return balance
+  }, [walletList, currentCurrency, balance])
 
   useEffect(() => {
     void fetchBalance()
@@ -140,10 +159,31 @@ export default function AccountWalletPage() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-neutral-400 text-sm font-medium">Available Balance</p>
-                <p className="text-5xl font-black mt-2 tracking-tight">{formatCurrency(balance, currency)}</p>
+                <p className="text-5xl font-black mt-2 tracking-tight">{formatCurrency(displayedBalance, currentCurrency)}</p>
               </div>
-              <div className="h-12 w-12 rounded-2xl bg-white/10 flex items-center justify-center text-amber-400 shadow-inner">
-                <Wallet className="h-6 w-6" />
+              
+              <div className="flex items-center gap-3">
+                {walletList.length > 1 && (
+                  <div className="flex flex-col items-end gap-1.5">
+                    <Label className="text-xs text-neutral-400 font-normal">Select Currency</Label>
+                    <Select value={currentCurrency} onValueChange={setSelectedCurrency}>
+                      <SelectTrigger className="w-[110px] h-9 bg-white/10 border-white/20 text-white rounded-xl focus:ring-amber-500">
+                        <SelectValue placeholder={currentCurrency} />
+                      </SelectTrigger>
+                      <SelectContent className="bg-neutral-900 border-neutral-800 text-white">
+                        {walletList.map((w) => (
+                          <SelectItem key={w.currency} value={w.currency} className="hover:bg-neutral-800 focus:bg-neutral-800 focus:text-white">
+                            {w.currency}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                
+                <div className="h-12 w-12 rounded-2xl bg-white/10 flex items-center justify-center text-amber-400 shadow-inner">
+                  <Wallet className="h-6 w-6" />
+                </div>
               </div>
             </div>
             <div className="text-neutral-400 text-xs mt-4">

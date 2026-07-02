@@ -1,23 +1,19 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Loader2, MessageSquarePlus } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { TicketStatusBadge } from '@/components/ticket-status-badge'
-import { apiAdminListTickets, apiCreateTicket, apiListTickets, type TicketUserHeaders } from '@/lib/tickets/client-api'
+import { apiAdminListTickets, apiListTickets, type TicketUserHeaders } from '@/lib/tickets/client-api'
 import type { Ticket } from '@/lib/tickets/types'
 import { toast } from 'sonner'
 
@@ -76,28 +72,25 @@ function prettyMoney(amount: number, currency: string) {
 export function TransactionDetailDialog({ open, onOpenChange, transaction, viewer, isAdmin }: Props) {
   const [relatedTickets, setRelatedTickets] = useState<Ticket[]>([])
   const [loadingTickets, setLoadingTickets] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [description, setDescription] = useState('')
 
-  const subject = useMemo(
-    () => (transaction ? `Issue with Transaction #${transaction.id}` : ''),
-    [transaction],
-  )
   const normalizedStatus = (transaction?.status || '').toLowerCase()
-  const canRaiseComplaint = useMemo(() => {
-    if (!transaction) return false
-    const createdAt = new Date(transaction.createdAt)
-    if (Number.isNaN(createdAt.getTime())) return false
-    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
-    return Date.now() - createdAt.getTime() <= sevenDaysMs
-  }, [transaction])
+
+  const viewerId = viewer?.id
+  const viewerEmail = viewer?.email
+  const viewerName = viewer?.name
+  const viewerRole = viewer?.role
 
   useEffect(() => {
-    if (!open || !transaction || !viewer) return
+    if (!open || !transaction || !viewerId) return
 
     let isMounted = true
     const currentTransaction = transaction
-    const currentViewer = viewer
+    const currentViewer = {
+      id: viewerId,
+      email: viewerEmail || '',
+      name: viewerName || '',
+      role: viewerRole || '',
+    }
     async function loadRelatedTickets() {
       setLoadingTickets(true)
       try {
@@ -123,41 +116,7 @@ export function TransactionDetailDialog({ open, onOpenChange, transaction, viewe
     return () => {
       isMounted = false
     }
-  }, [open, transaction, viewer, isAdmin])
-
-  async function onRaiseTicket() {
-    if (!viewer || !transaction) return
-    const finalDescription = description.trim()
-    if (!finalDescription) {
-      toast.error('Please describe the issue before submitting')
-      return
-    }
-    setSubmitting(true)
-    try {
-      await apiCreateTicket(viewer, {
-        transactionId: transaction.id,
-        transactionCreatedAt: transaction.createdAt,
-        subject,
-        description: finalDescription,
-      })
-      toast.success('Support ticket created')
-      setDescription('')
-      const list = isAdmin
-        ? await apiAdminListTickets(viewer, { status: 'all', q: transaction.id })
-        : await apiListTickets(viewer)
-      setRelatedTickets(
-        list.filter(
-          (ticket) =>
-            ticket.transactionId === transaction.id ||
-            ticket.subject.toLowerCase().includes(transaction.id.toLowerCase()),
-        ),
-      )
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Failed to create ticket')
-    } finally {
-      setSubmitting(false)
-    }
-  }
+  }, [open, transaction, viewerId, viewerEmail, viewerName, viewerRole, isAdmin])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -209,14 +168,16 @@ export function TransactionDetailDialog({ open, onOpenChange, transaction, viewe
                 </div>
               </section>
 
-              <section className="rounded-lg border p-3">
-                <h3 className="mb-2 text-sm font-semibold">Routing Info</h3>
-                <div className="grid gap-2 text-sm sm:grid-cols-2">
-                  <p><span className="text-muted-foreground">Provider Used:</span> {transaction.providerUsed || '—'}</p>
-                  <p><span className="text-muted-foreground">Routing Type:</span> {transaction.routingType || '—'}</p>
-                  <p><span className="text-muted-foreground">API Response Status:</span> {transaction.apiResponseStatus || '—'}</p>
-                </div>
-              </section>
+              {isAdmin && (
+                <section className="rounded-lg border p-3">
+                  <h3 className="mb-2 text-sm font-semibold">Routing Info</h3>
+                  <div className="grid gap-2 text-sm sm:grid-cols-2">
+                    <p><span className="text-muted-foreground">Provider Used:</span> {transaction.providerUsed || '—'}</p>
+                    <p><span className="text-muted-foreground">Routing Type:</span> {transaction.routingType || '—'}</p>
+                    <p><span className="text-muted-foreground">API Response Status:</span> {transaction.apiResponseStatus || '—'}</p>
+                  </div>
+                </section>
+              )}
 
               {(normalizedStatus.includes('failed') || transaction.failureReason || transaction.errorMessage) && (
                 <section className="rounded-lg border border-red-200 bg-red-50 p-3">
@@ -241,66 +202,28 @@ export function TransactionDetailDialog({ open, onOpenChange, transaction, viewe
                 ) : (
                   <div className="space-y-2">
                     {relatedTickets.map((ticket) => (
-                      <div key={ticket.id} className="flex items-center justify-between rounded border p-2 text-sm">
+                      <Link
+                        key={ticket.id}
+                        href={isAdmin ? `/admin/support-tickets/${ticket.id}` : `/account/tickets/${ticket.id}`}
+                        onClick={() => onOpenChange(false)}
+                        className="flex items-center justify-between rounded-lg border p-3 text-sm hover:bg-neutral-50 transition-colors cursor-pointer"
+                      >
                         <div className="space-y-1">
-                          <p className="font-medium">{ticket.subject}</p>
+                          <p className="font-medium text-neutral-900">{ticket.subject}</p>
                           <p className="font-mono text-xs text-muted-foreground">{ticket.id}</p>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2.5" onClick={(e) => e.stopPropagation()}>
                           <TicketStatusBadge status={ticket.status} />
                           <Button variant="outline" size="sm" asChild>
-                            <Link href={isAdmin ? `/admin/support-tickets/${ticket.id}` : `/account/tickets/${ticket.id}`}>
-                              View
-                            </Link>
+                            <span>View</span>
                           </Button>
                         </div>
-                      </div>
+                      </Link>
                     ))}
                   </div>
                 )}
               </section>
-
-              {!isAdmin && (
-                <section className="rounded-lg border p-3">
-                  <h3 className="mb-2 text-sm font-semibold">Raise Support Ticket (Refund flow)</h3>
-                  {!canRaiseComplaint && (
-                    <p className="mb-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
-                      Complaints are allowed only within 1 week of transaction date. For this transaction, please use email or
-                      the contact form.
-                    </p>
-                  )}
-                  <div className="grid gap-3">
-                    <div className="grid gap-1.5">
-                      <Label>Transaction ID</Label>
-                      <Input value={transaction.id} disabled />
-                    </div>
-                    <div className="grid gap-1.5">
-                      <Label>Subject</Label>
-                      <Input value={subject} disabled />
-                    </div>
-                    <div className="grid gap-1.5">
-                      <Label>Description</Label>
-                      <Textarea
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        placeholder="Describe your issue and refund request."
-                        rows={4}
-                        disabled={!canRaiseComplaint}
-                      />
-                    </div>
-                  </div>
-                </section>
-              )}
             </div>
-
-            {!isAdmin && (
-              <DialogFooter>
-                <Button onClick={() => void onRaiseTicket()} disabled={submitting || !canRaiseComplaint}>
-                  {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageSquarePlus className="mr-2 h-4 w-4" />}
-                  Raise Support Ticket
-                </Button>
-              </DialogFooter>
-            )}
           </>
         )}
       </DialogContent>

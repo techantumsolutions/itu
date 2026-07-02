@@ -934,3 +934,141 @@
 {"time":"2026-06-29T12:54:54.049Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"918899007766","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
 {"time":"2026-06-29T12:54:54.299Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
 {"time":"2026-06-29T12:54:54.666Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T04:59:27.611Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T04:59:27.663Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T04:59:29.798Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"918899007766","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T04:59:29.871Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"918899007766","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T04:59:30.284Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T04:59:30.371Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T05:09:48.947Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T05:09:48.974Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T05:09:49.983Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"918899007766","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T05:09:49.990Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"918899007766","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T05:09:50.599Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T05:09:51.451Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T05:20:34.024Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T05:20:34.841Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T05:20:35.051Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-30T05:20:36.367Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T05:20:36.869Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T05:20:36.983Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"918899007766","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T05:20:37.301Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919188990077","Items":[{"ProviderCode":"BLIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T05:20:37.852Z","event":"ding_match","matchedOperator":{"id":"13f67fab-f4d2-430a-b63f-424dab8bda69","code":"13f67fab-f4d2-430a-b63f-424dab8bda69","name":"Bsnl IND","shortName":"Bsnl IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T05:20:37.879Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T05:20:38.164Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","Items":[{"ProviderCode":"AIIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T05:20:38.583Z","event":"ding_match","matchedOperator":{"id":"ff0c7aa5-7a51-4687-b7cd-90fad48e98e7","code":"ff0c7aa5-7a51-4687-b7cd-90fad48e98e7","name":"Airtel Dth IND","shortName":"Airtel Dth IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T05:20:49.115Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T05:20:49.809Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919196668976","Items":[{"ProviderCode":"RJIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T05:20:49.846Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T05:20:50.091Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T05:20:50.221Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T05:20:50.336Z","event":"ding_match","matchedOperator":{"id":"855b84bb-c191-4478-bc5c-3033534728c5","code":"855b84bb-c191-4478-bc5c-3033534728c5","name":"Jio IND","shortName":"Jio IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T05:20:50.749Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T05:20:50.794Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T05:20:50.964Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T05:27:31.461Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T05:27:31.485Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T05:27:31.988Z","event":"dtone_error","error":"fetch failed"}
+{"time":"2026-06-30T05:27:32.531Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-30T06:49:53.493Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T06:49:53.701Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T06:49:54.324Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T06:49:54.336Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T06:49:54.703Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T06:49:55.035Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T07:22:22.619Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:22:23.112Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:22:23.459Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-30T07:22:24.971Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T07:22:25.467Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T07:30:01.490Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:30:01.644Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:30:04.866Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T07:30:05.602Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T07:30:05.806Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T07:30:06.044Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T07:30:10.739Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:30:10.801Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:30:11.294Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T07:30:11.523Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T07:30:11.629Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T07:30:12.246Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T07:36:05.667Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:36:05.686Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:36:06.348Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T07:36:06.491Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T07:36:06.825Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T07:36:06.845Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T07:36:27.683Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:36:27.771Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:36:27.989Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T07:36:28.027Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T07:36:28.237Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T07:36:28.339Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T07:41:01.415Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:41:01.427Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:41:01.753Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T07:41:01.796Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T07:41:01.983Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T07:41:02.040Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T07:41:14.008Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:41:14.669Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-30T07:41:20.725Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:41:20.994Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:41:21.152Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","Items":[{"ProviderCode":"AIIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T07:41:21.363Z","event":"ding_match","matchedOperator":{"id":"ff0c7aa5-7a51-4687-b7cd-90fad48e98e7","code":"ff0c7aa5-7a51-4687-b7cd-90fad48e98e7","name":"Airtel Dth IND","shortName":"Airtel Dth IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T07:41:21.376Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"918899457490","Items":[{"ProviderCode":"RJIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T07:41:21.729Z","event":"ding_match","matchedOperator":{"id":"855b84bb-c191-4478-bc5c-3033534728c5","code":"855b84bb-c191-4478-bc5c-3033534728c5","name":"Jio IND","shortName":"Jio IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T07:46:54.384Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:46:54.400Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T07:46:55.035Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-30T07:46:55.185Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-30T07:47:22.858Z","event":"local_db_result","result":{"operator":"Unknown","country":"AT","source":"database"}}
+{"time":"2026-06-30T07:47:23.433Z","event":"ding_api_result","dingResult":{"CountryIso":"AT","Items":[],"ResultCode":2,"ErrorCodes":[{"Code":"NearestMatch"}]}}
+{"time":"2026-06-30T07:47:23.658Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-30T07:48:13.784Z","event":"local_db_result","result":{"operator":"Unknown","country":"FR","source":"database"}}
+{"time":"2026-06-30T07:48:14.612Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-30T07:48:33.217Z","event":"local_db_result","result":{"operator":"Unknown","country":"FR","source":"database"}}
+{"time":"2026-06-30T07:48:33.749Z","event":"ding_api_result","dingResult":{"CountryIso":"FR","Items":[],"ResultCode":2,"ErrorCodes":[{"Code":"NearestMatch"}]}}
+{"time":"2026-06-30T07:48:33.925Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-30T07:49:06.569Z","event":"local_db_result","result":{"operator":"Unknown","country":"FR","source":"database"}}
+{"time":"2026-06-30T07:49:07.123Z","event":"ding_api_result","dingResult":{"CountryIso":"FR","AccountNumberNormalized":"33612345678","Items":[],"ResultCode":2,"ErrorCodes":[{"Code":"NearestMatch"}]}}
+{"time":"2026-06-30T07:49:07.392Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-30T08:45:49.085Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T08:45:49.198Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T08:45:51.598Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T08:45:51.672Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T08:45:52.044Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T08:45:52.052Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T08:46:26.014Z","event":"local_db_result","result":{"operator":"Unknown","country":"FR","source":"database"}}
+{"time":"2026-06-30T08:46:26.313Z","event":"local_db_result","result":{"operator":"Unknown","country":"FR","source":"database"}}
+{"time":"2026-06-30T08:46:26.693Z","event":"ding_api_result","dingResult":{"CountryIso":"FR","AccountNumberNormalized":"33612345678","Items":[],"ResultCode":2,"ErrorCodes":[{"Code":"NearestMatch"}]}}
+{"time":"2026-06-30T08:46:26.924Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-30T08:46:27.179Z","event":"ding_api_result","dingResult":{"CountryIso":"FR","AccountNumberNormalized":"33612345678","Items":[],"ResultCode":2,"ErrorCodes":[{"Code":"NearestMatch"}]}}
+{"time":"2026-06-30T08:46:27.251Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-30T10:09:40.425Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T10:09:41.020Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T10:09:41.151Z","event":"dtone_error","error":"DTONE API Error: 401"}
+{"time":"2026-06-30T10:09:41.655Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","Items":[{"ProviderCode":"AIIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T10:09:42.239Z","event":"ding_match","matchedOperator":{"id":"ff0c7aa5-7a51-4687-b7cd-90fad48e98e7","code":"ff0c7aa5-7a51-4687-b7cd-90fad48e98e7","name":"Airtel Dth IND","shortName":"Airtel Dth IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T10:09:45.343Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T10:09:45.908Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"918179698565","Items":[{"ProviderCode":"AIIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T10:09:46.493Z","event":"ding_match","matchedOperator":{"id":"ff0c7aa5-7a51-4687-b7cd-90fad48e98e7","code":"ff0c7aa5-7a51-4687-b7cd-90fad48e98e7","name":"Airtel Dth IND","shortName":"Airtel Dth IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T10:22:11.072Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T10:22:11.120Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T10:22:11.485Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"918179698565","Items":[{"ProviderCode":"AIIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T10:22:11.491Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"918179698565","Items":[{"ProviderCode":"AIIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T10:22:11.735Z","event":"ding_match","matchedOperator":{"id":"ff0c7aa5-7a51-4687-b7cd-90fad48e98e7","code":"ff0c7aa5-7a51-4687-b7cd-90fad48e98e7","name":"Airtel Dth IND","shortName":"Airtel Dth IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T10:22:11.877Z","event":"ding_match","matchedOperator":{"id":"ff0c7aa5-7a51-4687-b7cd-90fad48e98e7","code":"ff0c7aa5-7a51-4687-b7cd-90fad48e98e7","name":"Airtel Dth IND","shortName":"Airtel Dth IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T11:30:40.477Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T11:30:40.768Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T11:30:42.665Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T11:30:42.697Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T11:30:43.081Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T11:30:43.093Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T13:02:20.800Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T13:02:20.833Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-06-30T13:02:23.081Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T13:02:23.405Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919666897654","Items":[{"ProviderCode":"VFIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-06-30T13:02:23.921Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-06-30T13:02:23.951Z","event":"ding_match","matchedOperator":{"id":"a34c500c-29cc-456a-9805-58199fb4b789","code":"a34c500c-29cc-456a-9805-58199fb4b789","name":"Idea IND","shortName":"Idea IND","countryCode":"IN","countryIso3":"IND","logo":null}}

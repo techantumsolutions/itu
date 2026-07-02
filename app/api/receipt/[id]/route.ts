@@ -39,7 +39,6 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
       ['Service Fee', `${serviceFee.toFixed(2)} ${order.currency}`],
       ['Total Cost', `${order.total.toFixed(2)} ${order.currency}`],
       ['Status', order.status],
-      ['Gateway', order.payment_gateway ?? '—'],
     ]
 
     const col1 = 170
