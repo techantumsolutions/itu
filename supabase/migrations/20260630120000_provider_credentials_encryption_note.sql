@@ -1,0 +1,4 @@
+-- Provider credentials at rest are encrypted in application code (AES-256-GCM).
+-- Existing plain JSON in lcr_providers.credentials_encrypted is migrated via:
+--   npm run db:encrypt-credentials
+-- (idempotent; requires MASTER_ENCRYPTION_KEY in environment)

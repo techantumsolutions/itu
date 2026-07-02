@@ -125,7 +125,13 @@ export async function dbGetProvider(id: string) {
   const res = await supabaseRest(`lcr_providers?id=eq.${enc(id)}&limit=1`, { cache: 'no-store' })
   if (!res.ok) throw new Error(await res.text())
   const rows = (await res.json()) as any[]
-  return rows?.[0] ?? null
+  const row = rows?.[0] ?? null
+  if (row?.credentials_encrypted) {
+    const { reencryptPlaintextCredentialsAtRest } = await import('@/lib/aggregator/credentials')
+    const updated = await reencryptPlaintextCredentialsAtRest(id, row.credentials_encrypted)
+    if (updated) row.credentials_encrypted = updated
+  }
+  return row
 }
 
 export async function dbListActiveProviders() {

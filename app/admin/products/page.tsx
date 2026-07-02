@@ -31,6 +31,7 @@ import { formatMoney } from '@/lib/admin/provider-pricing-extractor'
 import { useAuthStore } from '@/lib/stores'
 import { clientHasAdminPermission } from '@/lib/auth/client-features'
 import { useProviderDisplay } from '@/components/admin/provider-display-context'
+import { matchesProviderListSearch } from '@/lib/admin/operator-list-search'
 
 type ProductPlan = {
   id: string
@@ -41,6 +42,7 @@ type ProductPlan = {
   active: boolean
   provider_count?: number
   provider_names?: string[]
+  provider_codes?: string[]
 }
 
 type CountryOption = {
@@ -168,15 +170,26 @@ export default function AdminProductsPage() {
   const canEdit = user && clientHasAdminPermission(user, 'plans.edit')
   const showSelection = !!canEdit
   const showStatusToggle = !!canEdit
+
+  const fromOperators = searchParams.get('from') === 'operators'
+  const operatorsTab = searchParams.get('tab')
+  const urlOperatorName = searchParams.get('operatorName')?.trim() ?? ''
+  const urlSystemOperatorId = searchParams.get('systemOperatorId')?.trim() ?? ''
+  const urlOperatorRawId = searchParams.get('operatorRawId')?.trim() ?? ''
+
   const [plans, setPlans] = useState<ProductPlan[]>([])
   const [countryOptions, setCountryOptions] = useState<CountryOption[]>([])
   const [planNameFilter, setPlanNameFilter] = useState('')
   const [debouncedPlanName, setDebouncedPlanName] = useState('')
   const [countryFilter, setCountryFilter] = useState('all')
-  const [operatorFilter, setOperatorFilter] = useState('')
-  const [debouncedOperator, setDebouncedOperator] = useState('')
+  const [operatorFilter, setOperatorFilter] = useState(urlOperatorName)
+  const [debouncedOperator, setDebouncedOperator] = useState(urlOperatorName)
+  const [providerFilter, setProviderFilter] = useState('')
+  const [debouncedProviderFilter, setDebouncedProviderFilter] = useState('')
+  const [systemOperatorIdFilter, setSystemOperatorIdFilter] = useState(urlSystemOperatorId)
+  const [operatorRawIdFilter, setOperatorRawIdFilter] = useState(urlOperatorRawId)
   const [categoryFilter, setCategoryFilter] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('active')
+  const [statusFilter, setStatusFilter] = useState(fromOperators ? 'all' : 'active')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -194,21 +207,22 @@ export default function AdminProductsPage() {
   const [costError, setCostError] = useState<string | null>(null)
   const [costBreakdown, setCostBreakdown] = useState<SystemPlanProviderCostBreakdown | null>(null)
 
-  const fromOperators = searchParams.get('from') === 'operators'
-  const operatorsTab = searchParams.get('tab')
   const returnOperatorsHref =
     operatorsTab === 'provider' || operatorsTab === 'system'
       ? `/admin/integrations/operators?tab=${operatorsTab}`
       : '/admin/integrations/operators'
 
-  const initializedOperatorFromUrl = useRef(false)
   useEffect(() => {
-    if (initializedOperatorFromUrl.current) return
-    const operatorName = searchParams.get('operatorName')?.trim()
-    if (!operatorName) return
+    const operatorName = searchParams.get('operatorName')?.trim() ?? ''
+    const systemOperatorId = searchParams.get('systemOperatorId')?.trim() ?? ''
+    const operatorRawId = searchParams.get('operatorRawId')?.trim() ?? ''
+    const fromOps = searchParams.get('from') === 'operators'
+
     setOperatorFilter(operatorName)
     setDebouncedOperator(operatorName)
-    initializedOperatorFromUrl.current = true
+    setSystemOperatorIdFilter(systemOperatorId)
+    setOperatorRawIdFilter(operatorRawId)
+    if (fromOps) setStatusFilter('all')
   }, [searchParams])
 
   const countryNameMap = useMemo(() => {
@@ -251,7 +265,7 @@ export default function AdminProductsPage() {
   useEffect(() => {
     setPage(1)
     setSelectedIds([])
-  }, [countryFilter, operatorFilter, planNameFilter, categoryFilter, statusFilter, pageSize])
+  }, [countryFilter, operatorFilter, planNameFilter, providerFilter, categoryFilter, statusFilter, pageSize])
 
   const togglePlanStatus = async (id: string, currentActive: boolean) => {
     setTogglingId(id)
@@ -344,6 +358,11 @@ export default function AdminProductsPage() {
     return () => clearTimeout(t)
   }, [operatorFilter])
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedProviderFilter(providerFilter), 300)
+    return () => clearTimeout(t)
+  }, [providerFilter])
+
   const loadCountries = useCallback(async () => {
     try {
       const res = await fetch('/api/countries', { cache: 'no-store' })
@@ -363,6 +382,8 @@ export default function AdminProductsPage() {
         q: debouncedPlanName || undefined,
         countryIso3: appliedCountry || undefined,
         operatorName: debouncedOperator || undefined,
+        systemOperatorId: systemOperatorIdFilter || undefined,
+        operatorRawId: operatorRawIdFilter || undefined,
         category: categoryFilter,
         status: statusFilter,
       })
@@ -378,7 +399,7 @@ export default function AdminProductsPage() {
     } finally {
       setLoading(false)
     }
-  }, [appliedCountry, categoryFilter, debouncedOperator, debouncedPlanName, statusFilter])
+  }, [appliedCountry, categoryFilter, debouncedOperator, debouncedPlanName, operatorRawIdFilter, statusFilter, systemOperatorIdFilter])
 
   useEffect(() => {
     void loadCountries()
@@ -443,11 +464,18 @@ export default function AdminProductsPage() {
     })
   }, [plans, countryNameMap])
 
-  const totalPages = Math.max(1, Math.ceil(sortedPlans.length / pageSize))
+  const filteredPlans = useMemo(() => {
+    if (!debouncedProviderFilter.trim()) return sortedPlans
+    return sortedPlans.filter((plan) =>
+      matchesProviderListSearch(debouncedProviderFilter, plan.provider_names ?? [], plan.provider_codes ?? []),
+    )
+  }, [sortedPlans, debouncedProviderFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filteredPlans.length / pageSize))
   const paginatedPlans = useMemo(() => {
     const start = (page - 1) * pageSize
-    return sortedPlans.slice(start, start + pageSize)
-  }, [sortedPlans, page, pageSize])
+    return filteredPlans.slice(start, start + pageSize)
+  }, [filteredPlans, page, pageSize])
 
   return (
     <div className="space-y-6">
@@ -540,7 +568,7 @@ export default function AdminProductsPage() {
                 {showSelection ? <TableHead className="py-2" /> : null}
                 <TableHead className="py-2 font-normal normal-case">
                   <Input
-                    placeholder="Search plan…"
+                    placeholder="Search plan, provider…"
                     value={planNameFilter}
                     onChange={(e) => setPlanNameFilter(e.target.value)}
                     className="h-8 text-xs font-normal"
@@ -562,11 +590,22 @@ export default function AdminProductsPage() {
                   <Input
                     placeholder="Operator name…"
                     value={operatorFilter}
-                    onChange={(e) => setOperatorFilter(e.target.value)}
+                    onChange={(e) => {
+                      setOperatorFilter(e.target.value)
+                      setSystemOperatorIdFilter('')
+                      setOperatorRawIdFilter('')
+                    }}
                     className="h-8 text-xs font-normal"
                   />
                 </TableHead>
-                <TableHead className="py-2"></TableHead>
+                <TableHead className="py-2 font-normal normal-case">
+                  <Input
+                    placeholder="Search provider…"
+                    value={providerFilter}
+                    onChange={(e) => setProviderFilter(e.target.value)}
+                    className="h-8 text-xs font-normal"
+                  />
+                </TableHead>
                 <TableHead className="py-2 font-normal hidden normal-case">
                   <ComboFilter
                     value={categoryFilter}
@@ -598,7 +637,7 @@ export default function AdminProductsPage() {
                     Loading products…
                   </TableCell>
                 </TableRow>
-              ) : sortedPlans.length === 0 ? (
+              ) : filteredPlans.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={tableColSpan} className="py-8 text-center text-muted-foreground">
                     No products match your filters. Sync providers to ingest plans from more countries.

@@ -180,12 +180,17 @@ function ComboFilter({
   )
 }
 
-function productsHrefForOperator(operatorName: string, tab: 'system' | 'provider') {
+function productsHrefForOperator(row: { id: string; mainName: string }, tab: 'system' | 'provider') {
   const q = new URLSearchParams({
-    operatorName: operatorName.trim(),
+    operatorName: row.mainName.trim(),
     from: 'operators',
     tab,
   })
+  if (tab === 'system') {
+    q.set('systemOperatorId', row.id)
+  } else {
+    q.set('operatorRawId', row.id)
+  }
   return `/admin/products?${q.toString()}`
 }
 
@@ -574,6 +579,7 @@ export default function OperatorsPage() {
         mainName: op.system_operator_name,
         secondaryText: op.slug,
         providerNames: (op.mappedProviderNames ?? []).filter(Boolean) as string[],
+        providerIds: (op.mappedProviderIds ?? []) as string[],
         countryCode: op.country_id,
         operatorType: op.operator_type || '—',
         status: op.status,
@@ -587,7 +593,7 @@ export default function OperatorsPage() {
         mainName: op.provider_operator_name,
         providerOperatorId: op.provider_operator_id,
         providerRefName: op.provider_name ?? null,
-        providerId: op.provider_id ?? null,
+        providerId: op.service_provider_id ?? null,
         countryCode: op.iso_code || op.country_code,
         operatorType: op.operator_type || '—',
         status: op.status,
@@ -820,29 +826,27 @@ export default function OperatorsPage() {
 
 
 
-            {/* Provider Filter - Only show for Provider Operator */}
-            {dataType === 'provider' && (
-              <div className="flex flex-col gap-1">
-                <Select value={providerFilter} onValueChange={setProviderFilter}>
-                  <SelectTrigger className="w-[180px] bg-background border-border/80 w-full">
-                    <SelectValue placeholder="Provider" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All Providers</SelectItem>
-                    {providers.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>
-                        {displayProviderOption({
-                          id: p.id,
-                          code: p.code,
-                          name: p.name,
-                          priority: Number(p.priority) || 0,
-                        })}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            {/* Provider Filter */}
+            <div className="flex flex-col gap-1">
+              <Select value={providerFilter} onValueChange={setProviderFilter}>
+                <SelectTrigger className="w-[180px] bg-background border-border/80 w-full">
+                  <SelectValue placeholder="Provider" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All Providers</SelectItem>
+                  {providers.map((p) => (
+                    <SelectItem key={p.id} value={p.id}>
+                      {displayProviderOption({
+                        id: p.id,
+                        code: p.code,
+                        name: p.name,
+                        priority: Number(p.priority) || 0,
+                      })}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             {/* Status Filter - Only show for System Operator */}
             {dataType === 'system' && (
@@ -993,9 +997,18 @@ export default function OperatorsPage() {
                         <TableCell>
                           <span className="text-sm text-foreground">
                             {dataType === 'system'
-                              ? (row.providerNames?.length
-                                  ? displayProvidersCsv(row.providerNames)
-                                  : '—')
+                              ? (row.providerIds?.length
+                                  ? row.providerIds
+                                      .map((id: string, idx: number) =>
+                                        displayProvider({
+                                          id,
+                                          name: row.providerNames?.[idx] ?? undefined,
+                                        }),
+                                      )
+                                      .join(', ')
+                                  : row.providerNames?.length
+                                    ? displayProvidersCsv(row.providerNames)
+                                    : '—')
                               : displayProvider({
                                   id: row.providerId,
                                   name: row.providerRefName ?? undefined,
@@ -1073,7 +1086,7 @@ export default function OperatorsPage() {
                               </>
                             )}
                             <Button size="sm" variant="outline" className="h-8 text-xs font-medium" asChild>
-                              <Link href={productsHrefForOperator(row.mainName, dataType)}>
+                              <Link href={productsHrefForOperator({ id: row.id, mainName: row.mainName }, dataType)}>
                                 Plans
                               </Link>
                             </Button>
@@ -1082,7 +1095,7 @@ export default function OperatorsPage() {
                         ) : (
                         <TableCell className="text-right">
                           <Button size="sm" variant="outline" className="h-8 text-xs font-medium" asChild>
-                            <Link href={productsHrefForOperator(row.mainName, dataType)}>
+                            <Link href={productsHrefForOperator({ id: row.id, mainName: row.mainName }, dataType)}>
                               Plans
                             </Link>
                           </Button>

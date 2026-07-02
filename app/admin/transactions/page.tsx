@@ -86,6 +86,7 @@ export default function AdminTransactionsPage() {
   useEffect(() => {
     const params = new URLSearchParams()
     if (statusFilter !== 'all') params.set('status', statusFilter)
+    params.set('limit', '500')
     void fetch(`/api/admin/transactions?${params}`, { credentials: 'include', cache: 'no-store' })
       .then((r) => r.json())
       .then((data) => setTransactions(Array.isArray(data?.transactions) ? data.transactions : []))
@@ -189,18 +190,46 @@ export default function AdminTransactionsPage() {
     return String(order.metadata?.phone_number ?? order.metadata?.phoneNumber ?? order.metadata?.mobile_number ?? order.rechargeDetails?.phoneNumber ?? '—')
   }
 
+  const matchesDateRange = (createdAt: string) => {
+    if (dateFilter === 'all') return true
+    const created = new Date(createdAt)
+    if (Number.isNaN(created.getTime())) return true
+    const now = new Date()
+    if (dateFilter === 'today') {
+      return created.toDateString() === now.toDateString()
+    }
+    if (dateFilter === 'week') {
+      const weekAgo = new Date(now)
+      weekAgo.setDate(now.getDate() - 7)
+      return created >= weekAgo
+    }
+    if (dateFilter === 'month') {
+      const monthAgo = new Date(now)
+      monthAgo.setMonth(now.getMonth() - 1)
+      return created >= monthAgo
+    }
+    return true
+  }
+
   const filteredOrders = transactions.filter((order) => {
     const metadata = order.metadata ?? {}
+    const query = searchQuery.trim().toLowerCase()
     const matchesSearch =
-      order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      getCustomerName(order).toLowerCase().includes(searchQuery.toLowerCase()) ||
-      getCustomerEmail(order).toLowerCase().includes(searchQuery.toLowerCase()) ||
+      !query ||
+      order.id.toLowerCase().includes(query) ||
+      getCustomerName(order).toLowerCase().includes(query) ||
+      getCustomerEmail(order).toLowerCase().includes(query) ||
       String(order.user?.phone ?? '').includes(searchQuery) ||
       String(metadata.phone_number ?? '').includes(searchQuery) ||
-      String(metadata.operator ?? metadata.carrierName ?? '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.description.toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesStatus = statusFilter === 'all' || order.status === statusFilter
-    return matchesSearch && matchesStatus
+      String(metadata.operator ?? metadata.carrierName ?? '').toLowerCase().includes(query) ||
+      String(order.rechargeDetails?.operatorName ?? '').toLowerCase().includes(query) ||
+      getPlanName(order).toLowerCase().includes(query) ||
+      getProviderName(order).toLowerCase().includes(query) ||
+      order.description.toLowerCase().includes(query)
+    const displayStatus = getDisplayStatus(order)
+    const matchesStatus = statusFilter === 'all' || displayStatus === statusFilter
+    const matchesDate = matchesDateRange(order.createdAt)
+    return matchesSearch && matchesStatus && matchesDate
   })
 
   const getStatusBadge = (status: string) => {

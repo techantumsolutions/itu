@@ -4,6 +4,7 @@ import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-res
 import { getDtoneCredentialsFromEnv } from '@/lib/dtone'
 import { requireAdminPermission, adminHasAnyPermission } from '@/lib/auth/require-admin-feature'
 import { logAdminActivity } from '@/lib/auth/audit'
+import { encryptProviderCredentialsForStorage } from '@/lib/aggregator/credentials'
 
 function dingEnvReady(): boolean {
   const a = process.env.DING_API_KEY?.trim()
@@ -161,9 +162,10 @@ export async function POST(request: Request) {
   if (!code || !name || !adapterKey) return NextResponse.json({ error: 'code, name, adapterKey are required' }, { status: 400 })
 
   let credentialsEncrypted: string | null = null
-  if (typeof body.credentialsEncrypted === 'string') credentialsEncrypted = body.credentialsEncrypted
-  else if (body.credentials && typeof body.credentials === 'object') {
-    credentialsEncrypted = JSON.stringify(body.credentials)
+  if (typeof body.credentialsEncrypted === 'string') {
+    credentialsEncrypted = encryptProviderCredentialsForStorage(body.credentialsEncrypted)
+  } else if (body.credentials && typeof body.credentials === 'object') {
+    credentialsEncrypted = encryptProviderCredentialsForStorage(body.credentials)
   }
 
   const res = await supabaseRest('lcr_providers', {

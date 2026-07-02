@@ -5,6 +5,7 @@ import { getDtoneCredentialsFromEnv } from '@/lib/dtone'
 import { getValuetopupCredentialsFromEnv } from '@/lib/valuetopup'
 import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import { logAdminActivity } from '@/lib/auth/audit'
+import { encryptProviderCredentials } from '@/lib/aggregator/credentials'
 
 function readEnv(name: string): string | undefined {
   const v = process.env[name]
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
         base_url: dtone.baseUrl,
         refresh_interval_minutes: 120,
         supported_countries: [],
-        credentials_encrypted: JSON.stringify({ source: 'env' }),
+        credentials_encrypted: encryptProviderCredentials({ source: 'env' }),
       }),
     })
     if (res.ok) {
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
         base_url: valuetopup.baseUrl,
         refresh_interval_minutes: 60,
         supported_countries: ['MYS'],
-        credentials_encrypted: JSON.stringify({ source: 'env' }),
+        credentials_encrypted: encryptProviderCredentials({ source: 'env' }),
       }),
     })
     if (res.ok) {
@@ -94,7 +95,7 @@ export async function POST(request: Request) {
         base_url: baseUrl,
         refresh_interval_minutes: 60,
         supported_countries: [],
-        credentials_encrypted: JSON.stringify({ source: 'env' }),
+        credentials_encrypted: encryptProviderCredentials({ source: 'env' }),
       }),
     })
     if (res.ok) {

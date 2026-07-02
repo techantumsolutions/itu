@@ -1,4 +1,5 @@
 import type { ProviderAdapterKey, ProviderAuth, ProviderConfig } from '@/lib/providers/types'
+import { decryptProviderCredentials } from '@/lib/aggregator/credentials'
 
 /** Map legacy/misconfigured registry rows to the implemented connector. */
 export function resolveAdapterKey(code: string, adapterKey: string): ProviderAdapterKey {
@@ -6,25 +7,18 @@ export function resolveAdapterKey(code: string, adapterKey: string): ProviderAda
   if (key === 'custom' && code.trim().toUpperCase() === 'VALUETOPUP') return 'valuetopup'
   return key as ProviderAdapterKey
 }
-import { decryptProviderCredentials } from '@/lib/aggregator/credentials'
 
-/** Parse JSON stored in `lcr_providers.credentials_encrypted` (plain JSON for now). */
-export function parseCredentialsEncrypted(blob: string | null | undefined): ProviderAuth | undefined {
+/** Decrypt and normalize credentials from `lcr_providers.credentials_encrypted`. */
+export function parseCredentialsEncrypted(
+  blob: string | null | undefined,
+  context?: { providerId?: string },
+): ProviderAuth | undefined {
   if (!blob || typeof blob !== 'string') return undefined
   const t = blob.trim()
   if (!t) return undefined
-  
-  let authObj: any = null
-  const decrypted = decryptProviderCredentials(t)
-  if (decrypted) {
-    authObj = decrypted
-  } else {
-    try {
-      authObj = JSON.parse(t)
-    } catch {
-      return undefined
-    }
-  }
+
+  const authObj = decryptProviderCredentials(t, context) as Record<string, unknown> | undefined
+  if (!authObj) return undefined
 
   if (authObj && typeof authObj === 'object') {
     const apiKey = typeof authObj.apiKey === 'string' ? authObj.apiKey : undefined
@@ -72,6 +66,7 @@ export function rowToProviderConfig(p: Record<string, unknown>): ProviderConfig 
     baseUrl: p.base_url != null ? String(p.base_url) : undefined,
     auth: parseCredentialsEncrypted(
       typeof p.credentials_encrypted === 'string' ? p.credentials_encrypted : undefined,
+      { providerId: String(p.id) },
     ),
   }
 }

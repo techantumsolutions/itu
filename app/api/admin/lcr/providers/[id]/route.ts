@@ -3,6 +3,10 @@ import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { logAdminActivity } from '@/lib/auth/audit'
 import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
+import {
+  encryptProviderCredentialsForStorage,
+  redactProviderSecretsInAuditDetails,
+} from '@/lib/aggregator/credentials'
 
 export async function PATCH(request: Request, ctx: { params: Promise<{ id: string }> }) {
   const denied = await requireAdminPermission(request, 'providers.edit')
@@ -20,7 +24,13 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   if (typeof body.priority === 'number') patch.priority = body.priority
   if (typeof body.refreshIntervalMinutes === 'number') patch.refresh_interval_minutes = body.refreshIntervalMinutes
   if (Array.isArray(body.supportedCountries)) patch.supported_countries = body.supportedCountries
-  if (typeof body.credentialsEncrypted === 'string' || body.credentialsEncrypted === null) patch.credentials_encrypted = body.credentialsEncrypted
+  if (body.credentials && typeof body.credentials === 'object') {
+    patch.credentials_encrypted = encryptProviderCredentialsForStorage(body.credentials)
+  } else if (typeof body.credentialsEncrypted === 'string') {
+    patch.credentials_encrypted = encryptProviderCredentialsForStorage(body.credentialsEncrypted)
+  } else if (body.credentialsEncrypted === null) {
+    patch.credentials_encrypted = null
+  }
 
   const res = await supabaseRest(`lcr_providers?id=eq.${encodeURIComponent(id)}`, {
     method: 'PATCH',
@@ -36,14 +46,14 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
       action: 'provider.update',
       entity_type: 'lcr_provider',
       entity_id: id,
-      details: patch,
+      details: redactProviderSecretsInAuditDetails(patch),
     }),
   }).catch(() => {})
 
   await logAdminActivity({
     action: 'Update Provider',
     pageName: 'Providers',
-    details: { id, patch },
+    details: { id, patch: redactProviderSecretsInAuditDetails(patch) },
   })
 
   const rows = (await res.json()) as unknown[]

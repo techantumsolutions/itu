@@ -2,14 +2,20 @@ import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-rest'
 import { aggListRawOperators, aggListSystemOperators, aggListProviders } from '@/lib/aggregator/repository'
-
-// getNormalizedBaseName has been moved to lib/aggregator/repository.ts
+import {
+  buildCountryLookupByIso3,
+  resolveSystemOperatorProviderIds,
+} from '@/lib/admin/enrich-system-operator-providers'
+import { loadProviderIdsBySystemOperatorFromPlans } from '@/lib/admin/load-system-operator-plan-providers'
+import { matchesOperatorListSearch } from '@/lib/admin/operator-list-search'
 
 export async function GET(request: Request) {
   if (!(await adminCanUseFeature(request, 'integrations'))) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
-  if (!isSupabaseCatalogConfigured()) return NextResponse.json({ rawOperators: [], systemOperators: [], providers: [], configured: false })
+  if (!isSupabaseCatalogConfigured()) {
+    return NextResponse.json({ rawOperators: [], systemOperators: [], providers: [], configured: false })
+  }
 
   const { searchParams } = new URL(request.url)
   const limit = Number(searchParams.get('limit') ?? '5000')
@@ -26,7 +32,6 @@ export async function GET(request: Request) {
     limit: Number.isFinite(limit) ? limit : 5000,
     offset: Number.isFinite(offset) ? offset : 0,
     country: country || undefined,
-    q: q || undefined,
     status: status || undefined,
     confidenceLevel: confidenceLevel || undefined,
     includeAllStatus: true as const,
@@ -37,7 +42,7 @@ export async function GET(request: Request) {
         : { serviceDomain }),
   }
 
-  const [rawOperators, systemOperators, providers, mappingsRes, countriesRes] = await Promise.all([
+  const [rawOperators, systemOperators, providers, mappingsRes, countriesRes, planProviderMap] = await Promise.all([
     aggListRawOperators({
       limit: Number.isFinite(limit) ? limit : 5000,
       offset: Number.isFinite(offset) ? offset : 0,
@@ -52,25 +57,26 @@ export async function GET(request: Request) {
     supabaseRest('countries?select=id,name,iso2,iso3&limit=500', { cache: 'no-store' }).catch(
       () => null as Response | null,
     ),
+    loadProviderIdsBySystemOperatorFromPlans(),
   ])
 
   const providerMap = new Map(providers.map((p: any) => [p.id, p]))
 
-  // Enrich rawOperators with provider name
-  const enrichedRawOperators = rawOperators.map((op: any) => ({
-    ...op,
-    provider_name: providerMap.get(op.service_provider_id)?.name ?? 'Unknown Provider',
-  }))
+  const enrichedRawOperators = rawOperators.map((op: any) => {
+    const provider = providerMap.get(op.service_provider_id)
+    return {
+      ...op,
+      provider_name: provider?.name ?? 'Unknown Provider',
+      provider_code: provider?.code ?? '',
+    }
+  })
 
-  const countries = countriesRes?.ok ? (await countriesRes.json() as any[]) : []
-  const countryMap = new Map(countries.map(c => [c.id.toUpperCase(), c]))
-
-  const finalSystemOperators = systemOperators
-  const finalMappingsRes = mappingsRes
+  const countries = countriesRes?.ok ? ((await countriesRes.json()) as any[]) : []
+  const countryLookup = buildCountryLookupByIso3(countries)
 
   const systemOperatorMappings = new Map<string, Set<string>>()
-  if (finalMappingsRes?.ok) {
-    const mappings = (await finalMappingsRes.json()) as { system_operator_id: string; service_provider_id: string }[]
+  if (mappingsRes?.ok) {
+    const mappings = (await mappingsRes.json()) as { system_operator_id: string; service_provider_id: string }[]
     for (const m of mappings) {
       if (!systemOperatorMappings.has(m.system_operator_id)) {
         systemOperatorMappings.set(m.system_operator_id, new Set())
@@ -79,20 +85,66 @@ export async function GET(request: Request) {
     }
   }
 
-  // Enrich systemOperators with mapped provider IDs and names
-  const enrichedSystemOperators = finalSystemOperators.map((op: any) => {
-    const providerIds = Array.from(systemOperatorMappings.get(op.id) ?? [])
-    const providerNames = providerIds.map(pid => providerMap.get(pid)?.name ?? 'Unknown Provider')
+  let enrichedSystemOperators = systemOperators.map((op: any) => {
+    const mappedIds = Array.from(systemOperatorMappings.get(op.id) ?? [])
+    const providerIds = resolveSystemOperatorProviderIds(
+      {
+        id: String(op.id),
+        system_operator_name: String(op.system_operator_name ?? ''),
+        country_id: String(op.country_id ?? ''),
+      },
+      mappedIds,
+      rawOperators,
+      countryLookup,
+      planProviderMap.get(String(op.id)) ?? [],
+    )
+    const providerNames = providerIds.map((pid) => providerMap.get(pid)?.name ?? 'Unknown Provider')
+    const providerCodes = providerIds.map((pid) => providerMap.get(pid)?.code ?? '').filter(Boolean)
     return {
       ...op,
       mappedProviderIds: providerIds,
       mappedProviderNames: providerNames,
+      mappedProviderCodes: providerCodes,
     }
   })
 
+  if (providerId) {
+    enrichedSystemOperators = enrichedSystemOperators.filter((op) =>
+      (op.mappedProviderIds as string[]).includes(providerId),
+    )
+  }
+
+  if (q) {
+    enrichedSystemOperators = enrichedSystemOperators.filter((op) =>
+      matchesOperatorListSearch(q, {
+        operatorName: op.system_operator_name,
+        slug: op.slug,
+        operatorId: op.id,
+        providerNames: op.mappedProviderNames,
+        providerCodes: op.mappedProviderCodes,
+      }),
+    )
+  }
+
+  let filteredRawOperators = enrichedRawOperators
+  if (providerId) {
+    filteredRawOperators = filteredRawOperators.filter((op) => op.service_provider_id === providerId)
+  }
+  if (q) {
+    filteredRawOperators = filteredRawOperators.filter((op) =>
+      matchesOperatorListSearch(q, {
+        operatorName: op.provider_operator_name,
+        operatorId: op.id,
+        providerOperatorId: op.provider_operator_id,
+        providerNames: [op.provider_name],
+        providerCodes: [op.provider_code],
+      }),
+    )
+  }
+
   return NextResponse.json({
     configured: true,
-    rawOperators: enrichedRawOperators,
+    rawOperators: filteredRawOperators,
     systemOperators: enrichedSystemOperators,
     providers,
   })

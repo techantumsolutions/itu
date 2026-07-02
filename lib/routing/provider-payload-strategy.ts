@@ -43,7 +43,9 @@ export function resolveProviderPayloadStrategy(providerRow: Record<string, unkno
     typeof providerRow.credentials_encrypted === 'string'
       ? providerRow.credentials_encrypted
       : undefined
-  const auth = parseCredentialsEncrypted(credBlob)
+  const auth = parseCredentialsEncrypted(credBlob, {
+    providerId: typeof providerRow.id === 'string' ? providerRow.id : undefined,
+  })
   const fromAuth = readStrategyFromCredentials(auth)
   if (fromAuth) return fromAuth
 
