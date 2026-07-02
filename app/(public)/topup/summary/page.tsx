@@ -75,6 +75,7 @@ function InlineLoginDialog({
   defaultPhone: string
   countryIso: string
 }) {
+  const router = useRouter()
   const dialPrefix = getDialCode(countryIso)
   const { login, setSession } = useAuthStore()
   const fingerprint = useFingerprint()
@@ -485,6 +486,19 @@ function InlineLoginDialog({
             )}
           </TabsContent>
         </Tabs>
+
+        <div className="mt-4 pt-4 border-t border-neutral-100 text-center text-sm text-neutral-500">
+          Don&apos;t have an account?{' '}
+          <button
+            onClick={() => {
+              onOpenChange(false)
+              router.push(`/register?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`)
+            }}
+            className="font-semibold text-[var(--hero-cta-orange)] hover:underline"
+          >
+            Sign up
+          </button>
+        </div>
       </DialogContent>
     </Dialog>
   )
@@ -524,6 +538,7 @@ export default function TopupSummaryPage() {
   const [exchangeRates, setExchangeRates] = useState<Record<string, number> | null>(null)
   const [isLoadingBalance, setIsLoadingBalance] = useState<boolean>(false)
   const [selectedPayableCurrency, setSelectedPayableCurrency] = useState<string | null>(null)
+  const [detectedGeoCurrency, setDetectedGeoCurrency] = useState<string | null>(null)
   const [processingFeePercents, setProcessingFeePercents] = useState<RechargeProcessingFees>(
     DEFAULT_RECHARGE_PROCESSING_FEES,
   )
@@ -542,8 +557,31 @@ export default function TopupSummaryPage() {
   }, [selectedPlan, pricing])
 
   useEffect(() => {
-    setSelectedPayableCurrency(rechargeCurrency)
-  }, [rechargeCurrency])
+    const detectGeoCurrency = async () => {
+      try {
+        const res = await fetch('/api/geo', { cache: 'no-store', credentials: 'include' })
+        if (!res.ok) return
+        const data = await res.json()
+        if (data && data.currencyCode) {
+          const detected = normalizeCurrencyCode(data.currencyCode)
+          if (detected) {
+            setDetectedGeoCurrency(detected)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to detect geo currency:', err)
+      }
+    }
+    void detectGeoCurrency()
+  }, [])
+
+  useEffect(() => {
+    if (detectedGeoCurrency) {
+      setSelectedPayableCurrency(detectedGeoCurrency)
+    } else {
+      setSelectedPayableCurrency(rechargeCurrency)
+    }
+  }, [rechargeCurrency, detectedGeoCurrency])
 
   useEffect(() => {
     const loadFees = async () => {
@@ -675,9 +713,12 @@ export default function TopupSummaryPage() {
       buildPayableCurrencyOptions({
         rechargeCurrency,
         userCurrency: user?.currency,
-        walletCurrencies: allWallets.map((w) => w.currency),
+        walletCurrencies: [
+          ...allWallets.map((w) => w.currency),
+          ...(detectedGeoCurrency ? [detectedGeoCurrency] : [])
+        ],
       }),
-    [rechargeCurrency, user?.currency, allWallets],
+    [rechargeCurrency, user?.currency, allWallets, detectedGeoCurrency],
   )
 
   const payableCurrency = normalizeCurrencyCode(
@@ -1149,13 +1190,7 @@ export default function TopupSummaryPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-neutral-500">Service Fee</span>
                     <span className="font-semibold text-neutral-900">
-                      {amounts.serviceFee > 0 ? formatMoney(amounts.serviceFee, lineCurrency) : 'Free'}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-500">Tax</span>
-                    <span className="font-semibold text-neutral-900">
-                      {amounts.tax > 0 ? formatMoney(amounts.tax, lineCurrency) : 'Free'}
+                      {(amounts.serviceFee + amounts.tax) > 0 ? formatMoney(amounts.serviceFee + amounts.tax, lineCurrency) : 'Free'}
                     </span>
                   </div>
                   {payableCurrency !== lineCurrency && (
@@ -1226,59 +1261,6 @@ export default function TopupSummaryPage() {
                       </div>
                     </div>
 
-                    {/* Use Reward Points container */}
-                    <div
-                      onClick={() => {
-                        if (!isAuthenticated) {
-                          setLoginOpen(true)
-                        }
-                      }}
-                      className="flex items-center gap-3 cursor-pointer rounded-xl border border-neutral-200 bg-neutral-50/50 p-2.5 hover:bg-neutral-50 transition-all select-none"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={useRewards}
-                        disabled={isAuthenticated && rewardBalance <= 0}
-                        onChange={(e) => {
-                          if (isAuthenticated) {
-                            setUseRewards(e.target.checked)
-                          }
-                        }}
-                        className="size-4 rounded border-neutral-300 text-[var(--hero-cta-orange)] focus:ring-[var(--hero-cta-orange)] accent-[var(--hero-cta-orange)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-xs font-bold text-neutral-800 flex justify-between gap-2">
-                          <span className="truncate">Use Reward Points</span>
-                          {isAuthenticated ? (
-                            isLoadingRewards ? (
-                              <span className="shrink-0 text-[10px] font-semibold text-neutral-400 animate-pulse">
-                                Loading points...
-                              </span>
-                            ) : (
-                              <span className="shrink-0 font-extrabold text-neutral-900">
-                                {rewardBalance} pts ({formatMoney(amounts.rewardPointsInPayCurrency, amounts.payableCurrency)})
-                              </span>
-                            )
-                          ) : (
-                            <span className="shrink-0 text-[10px] font-semibold text-neutral-400">
-                              Login to check points
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-[9px] text-neutral-400 mt-0.5 leading-tight">
-                          {isAuthenticated ? (
-                            maxRedemptionPercentage < 100 ? (
-                              `Max ${maxRedemptionPercentage}% points consumption allowed`
-                            ) : (
-                              `Pay up to 100% using points`
-                            )
-                          ) : (
-                            'Apply your reward points balance to this order'
-                          )}
-                        </p>
-                      </div>
-                    </div>
-
                     {/* Details of available wallets when useWallet is checked */}
                     {isAuthenticated && useWallet && (
                       <div className="space-y-2.5 pl-7 mt-2">
@@ -1337,6 +1319,59 @@ export default function TopupSummaryPage() {
                         )}
                       </div>
                     )}
+
+                    {/* Use Reward Points container */}
+                    <div
+                      onClick={() => {
+                        if (!isAuthenticated) {
+                          setLoginOpen(true)
+                        }
+                      }}
+                      className="flex items-center gap-3 cursor-pointer rounded-xl border border-neutral-200 bg-neutral-50/50 p-2.5 hover:bg-neutral-50 transition-all select-none"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={useRewards}
+                        disabled={isAuthenticated && rewardBalance <= 0}
+                        onChange={(e) => {
+                          if (isAuthenticated) {
+                            setUseRewards(e.target.checked)
+                          }
+                        }}
+                        className="size-4 rounded border-neutral-300 text-[var(--hero-cta-orange)] focus:ring-[var(--hero-cta-orange)] accent-[var(--hero-cta-orange)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-bold text-neutral-800 flex justify-between gap-2">
+                          <span className="truncate">Use Reward Points</span>
+                          {isAuthenticated ? (
+                            isLoadingRewards ? (
+                              <span className="shrink-0 text-[10px] font-semibold text-neutral-400 animate-pulse">
+                                Loading points...
+                              </span>
+                            ) : (
+                              <span className="shrink-0 font-extrabold text-neutral-900">
+                                {rewardBalance} pts ({formatMoney(amounts.rewardPointsInPayCurrency, amounts.payableCurrency)})
+                              </span>
+                            )
+                          ) : (
+                            <span className="shrink-0 text-[10px] font-semibold text-neutral-400">
+                              Login to check points
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[9px] text-neutral-400 mt-0.5 leading-tight">
+                          {isAuthenticated ? (
+                            maxRedemptionPercentage < 100 ? (
+                              `Max ${maxRedemptionPercentage}% points consumption allowed`
+                            ) : (
+                              `Pay up to 100% using points`
+                            )
+                          ) : (
+                            'Apply your reward points balance to this order'
+                          )}
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
                   {isAuthenticated && useWallet && amounts.usedWalletAmount > 0 && (
@@ -1358,30 +1393,15 @@ export default function TopupSummaryPage() {
                   )}
 
                   <div className="my-3 h-px bg-neutral-200" />
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider block">
-                      Pay in currency
-                    </label>
-                    <select
-                      value={payableCurrency}
-                      onChange={(e) => setSelectedPayableCurrency(e.target.value)}
-                      className="block w-full rounded-lg border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-800 focus:border-[var(--hero-cta-orange)] focus:ring-[var(--hero-cta-orange)] focus:outline-none"
-                    >
-                      {payableCurrencyOptions.map((code) => (
-                        <option key={code} value={code}>
-                          {code}
-                          {code === lineCurrency ? ' (plan currency)' : ''}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="space-y-2 text-right">
                     {payableCurrency !== lineCurrency && conversionRate && (
                       <p className="text-[10px] text-neutral-400">
-                        1 {lineCurrency} ≈ {conversionRate.toFixed(4)} {payableCurrency}
+                        Conversion rate: 1 {lineCurrency} ≈ {conversionRate.toFixed(4)} {payableCurrency}
                       </p>
                     )}
                     {amounts.conversionFailed && payableCurrency !== lineCurrency && (
                       <p className="text-[10px] font-medium text-amber-700">
-                        Exchange rate unavailable. Select {lineCurrency} or try again shortly.
+                        Exchange rate unavailable. Try again shortly.
                       </p>
                     )}
                     {!razorpayPaymentCheck.ok && amounts.grand > 0 && (

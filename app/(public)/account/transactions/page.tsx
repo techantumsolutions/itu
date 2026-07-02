@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { TransactionDetailDialog, type TransactionDetailModel } from '@/components/transaction-detail-dialog'
+import { CreateTicketDialog } from '@/components/create-ticket-dialog'
 import {
   Dialog,
   DialogContent,
@@ -98,6 +99,16 @@ export default function TransactionsPage() {
   const [paymentAuthorized, setPaymentAuthorized] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState<number>(10)
+  const [ticketOpen, setTicketOpen] = useState(false)
+  const [ticketTxId, setTicketTxId] = useState<string | null>(null)
+
+  const viewer = useMemo(
+    () =>
+      user
+        ? { id: user.id, email: user.email, name: user.name, role: user.role }
+        : null,
+    [user],
+  )
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -236,6 +247,13 @@ export default function TransactionsPage() {
     })
   }
 
+  const isWithin7Days = (dateString: string) => {
+    const date = new Date(dateString)
+    if (Number.isNaN(date.getTime())) return false
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
+    return Date.now() - date.getTime() <= sevenDaysMs
+  }
+
   const openTransactionDetail = (txn: (typeof transactions)[number]) => {
     const routingType = txn.metadata?.carrier ? 'Cheapest' : '—'
 
@@ -254,7 +272,17 @@ export default function TransactionsPage() {
       currency: txn.currency === 'PTS' ? 'USD' : txn.currency,
       customerName: user?.name || '—',
       customerEmail: user?.email || '—',
-      customerCountry: user?.countryCode || '—',
+      customerPhone: user?.phone || '—',
+      customerCountry: (() => {
+        const country = user?.country || user?.countryCode
+        if (!country) return '—'
+        if (country.length === 2) {
+          const name = getCountryName(country)
+          const flag = getFlagEmoji(country)
+          return `${flag} ${name}`
+        }
+        return country
+      })(),
       destinationCountry,
       networkOperator,
       mobileNumber: txn.metadata?.mobile_number || txn.metadata?.phoneNumber || '—',
@@ -489,15 +517,13 @@ export default function TransactionsPage() {
                   <TableHead>Operator</TableHead>
                   <TableHead>Recharge Amount</TableHead>
                   <TableHead>Status</TableHead>
-
-                  <TableHead>Reward Points</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredTransactions.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
                       No transactions found
                     </TableCell>
                   </TableRow>
@@ -536,16 +562,6 @@ export default function TransactionsPage() {
                         {txn.currency === 'PTS' ? `${txn.amount} pts` : `${txn.amount.toFixed(2)}`}
                       </TableCell>
                       <TableCell>{getStatusBadge(txn.status)}</TableCell>
-
-                      <TableCell>
-                        {user ? (
-                          <span className={cn('text-sm font-medium', txn.rewardPoints ? 'text-primary' : 'text-muted-foreground')}>
-                            {txn.rewardPoints ? `+${txn.rewardPoints} pts` : '—'}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -578,10 +594,15 @@ export default function TransactionsPage() {
                                 Enable Auto Recharge
                               </DropdownMenuItem>
                             )}
-                            {txn.type === 'recharge' && (
-                              <DropdownMenuItem onClick={() => openTransactionDetail(txn)}>
+                            {txn.type === 'recharge' && isWithin7Days(txn.createdAt) && (
+                              <DropdownMenuItem
+                                onClick={() => {
+                                  setTicketTxId(txn.id)
+                                  setTicketOpen(true)
+                                }}
+                              >
                                 <MessageSquarePlus className="mr-2 h-4 w-4" />
-                                Raise Complaint
+                                Raise Ticket
                               </DropdownMenuItem>
                             )}
                             {txn.rechargeOrderId ? (
@@ -732,8 +753,15 @@ export default function TransactionsPage() {
         open={detailOpen}
         onOpenChange={setDetailOpen}
         transaction={detailModel}
-        viewer={user ? { id: user.id, email: user.email, name: user.name, role: user.role } : null}
+        viewer={viewer}
         isAdmin={false}
+      />
+
+      <CreateTicketDialog
+        open={ticketOpen}
+        onOpenChange={setTicketOpen}
+        preselectedTxId={ticketTxId}
+        lockTransaction={true}
       />
 
       <Dialog open={recurringOpen} onOpenChange={setRecurringOpen}>

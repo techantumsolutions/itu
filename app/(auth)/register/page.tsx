@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useMemo, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
 import { Eye, EyeOff, Loader2, CheckCircle2, ArrowLeft, Check, ChevronDown } from 'lucide-react'
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useCMSStore } from '@/lib/cms-store'
+import { useAuthStore } from '@/lib/stores'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { validatePassword } from '@/lib/validators/password'
 import { PasswordRequirementsHint } from '@/components/password-requirements-hint'
@@ -29,9 +30,12 @@ import {
   validateNationalPhoneDigits,
 } from '@/lib/country-codes'
 
-export default function RegisterPage() {
+function RegisterForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirectVal = searchParams.get('redirect')
   const { content, hasHydrated } = useCMSStore()
+  const { setSession } = useAuthStore()
   
   const [step, setStep] = useState<'form' | 'otp' | 'success'>('form')
   const [name, setName] = useState('')
@@ -148,6 +152,9 @@ export default function RegisterPage() {
         throw new Error(data.error || 'Verification failed. Please try again.')
       }
 
+      if (data.user) {
+        setSession(data.user)
+      }
       setStep('success')
     } catch (err: any) {
       setError(err?.message || 'OTP verification failed.')
@@ -371,7 +378,7 @@ export default function RegisterPage() {
 
                 <p className="mt-5 text-center text-sm text-neutral-500">
                   Already have an account?{' '}
-                  <Link href="/login" className="font-semibold text-[var(--hero-cta-orange)] hover:underline">
+                  <Link href={redirectVal ? `/login?redirect=${encodeURIComponent(redirectVal)}` : "/login"} className="font-semibold text-[var(--hero-cta-orange)] hover:underline">
                     Sign in
                   </Link>
                 </p>
@@ -475,9 +482,15 @@ export default function RegisterPage() {
               <CardContent className="px-6 pb-12 pt-6 md:px-8 flex flex-col items-center">
                 <Button
                   className="h-12 w-full max-w-sm rounded-xl bg-[var(--hero-cta-orange)] text-base font-semibold text-white hover:brightness-105"
-                  onClick={() => router.push('/login')}
+                  onClick={() => {
+                    if (redirectVal) {
+                      router.push(redirectVal)
+                    } else {
+                      router.push('/login')
+                    }
+                  }}
                 >
-                  Go to Sign In
+                  {redirectVal ? 'Continue to Checkout' : 'Go to Sign In'}
                 </Button>
               </CardContent>
             </>
@@ -485,5 +498,17 @@ export default function RegisterPage() {
         </Card>
       </div>
     </div>
+  )
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-[400px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-neutral-400" />
+      </div>
+    }>
+      <RegisterForm />
+    </Suspense>
   )
 }
