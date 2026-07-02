@@ -62,7 +62,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   if (input.credentials) patch.credentials_encrypted = encryptProviderCredentials(input.credentials)
 
   const provider = await aggPatchProvider(id, patch)
-  const actor = getRequestUser(request)
+  const actor = await getRequestUser(request)
   await aggAudit({ actor: actor?.email, action: 'provider.update', entityType: 'lcr_provider', entityId: id, before, after: provider })
   if (provider) delete provider.credentials_encrypted
   return NextResponse.json({ provider })

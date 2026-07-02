@@ -10,7 +10,7 @@ export async function POST(request: Request, context: Ctx) {
   const denied = await requireAdminPermission(request, 'tickets.edit')
   if (denied) return denied
 
-  const admin = getRequestUser(request)
+  const admin = await getRequestUser(request)
   const { id: ticketId } = await context.params
 
   try {

@@ -6,7 +6,7 @@ import { linkPaymentOrderToCheckoutSession } from '@/lib/topup/prepare-checkout-
 import { redeemPoints } from '@/lib/rewards/reward-service'
 
 export async function POST(request: Request) {
-  const user = getRequestUser(request)
+  const user = await getRequestUser(request)
   if (!user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

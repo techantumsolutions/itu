@@ -1,6 +1,7 @@
 /**
- * Creates or updates the canonical super-admin Auth user + profiles row.
+ * Ensures the canonical super-admin Auth user + profiles row exist.
  *   npm run bootstrap:admin
+ *   npm run bootstrap:admin -- --reset-password
  */
 import { readFileSync, existsSync } from 'fs'
 import { resolve } from 'path'
@@ -36,21 +37,29 @@ async function main() {
     console.warn('Warning: SUPABASE_ANON_KEY is not set — email login will fail until you add it from Supabase → Settings → API.')
   }
 
-  const result = await bootstrapSuperAdmin()
-  console.log(
-    result.created
-      ? `Created Auth user ${result.email} (${result.userId})`
-      : `Updated password for ${result.email} (${result.userId})`,
-  )
+  const resetPassword = process.argv.includes('--reset-password')
+  const result = await bootstrapSuperAdmin({ resetPassword })
+
+  if (result.created) {
+    console.log(`Created Auth user ${result.email} (${result.userId})`)
+  } else if (result.passwordReset) {
+    console.log(`Reset password for ${result.email} (${result.userId})`)
+  } else {
+    console.log(`Ensured profile for existing ${result.email} (${result.userId}); password unchanged`)
+  }
   console.log(`Profile app_role set to super_admin`)
   console.log('')
-  console.log('Sign in at /admin/login with:')
-  console.log(`  Email:    ${result.email}`)
-  console.log(
-    result.passwordSource === 'env'
-      ? '  Password: ADMIN_BOOTSTRAP_PASSWORD from .env'
-      : '  Password: 1234567890 (dev default)',
-  )
+  if (result.created || result.passwordReset) {
+    console.log('Sign in at /admin/login with:')
+    console.log(`  Email:    ${result.email}`)
+    console.log(
+      result.passwordSource === 'env'
+        ? '  Password: ADMIN_BOOTSTRAP_PASSWORD from .env'
+        : '  Password: 1234567890 (dev default)',
+    )
+  } else {
+    console.log('Existing credentials were preserved. Use --reset-password to force a password reset.')
+  }
 }
 
 main().catch((e) => {

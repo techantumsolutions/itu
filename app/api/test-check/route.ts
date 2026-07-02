@@ -1,16 +1,12 @@
 import { NextResponse } from 'next/server'
-import { supabaseRest } from '@/lib/db/supabase-rest'
+import { blockInProduction } from '@/lib/security/require-secret'
 
 export async function GET() {
-  try {
-    const pRes = await supabaseRest('lcr_providers?select=id,code,name,adapter_key')
-    const providers = await pRes.json().catch(() => [])
-    
-    const mRes = await supabaseRest('internal_plan_provider_mapping?select=*')
-    const mappings = await mRes.json().catch(() => [])
+  const blocked = blockInProduction()
+  if (blocked) return blocked
 
-    return NextResponse.json({ providers, mappings })
-  } catch (err: any) {
-    return NextResponse.json({ error: err.message })
-  }
+  return NextResponse.json(
+    { error: 'This debug endpoint is disabled. Remove or protect before production.' },
+    { status: 404 },
+  )
 }

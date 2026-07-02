@@ -62,7 +62,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
   const after = rows[0] ?? null
 
   if (newName && oldName && oldName !== newName && before?.country_id) {
-    const actor = getRequestUser(request)
+    const actor = await getRequestUser(request)
     await recordAdminOperatorRename({
       systemOperatorId: id,
       oldName,
@@ -74,7 +74,7 @@ export async function PATCH(request: Request, ctx: { params: Promise<{ id: strin
     })
   }
 
-  const actor = getRequestUser(request)
+  const actor = await getRequestUser(request)
   await aggAudit({
     actor: actor?.email ?? 'admin',
     action: 'operator.patch',

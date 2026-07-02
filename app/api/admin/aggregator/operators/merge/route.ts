@@ -34,7 +34,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const actor = getRequestUser(request)
+    const actor = await getRequestUser(request)
     const result = await aggMergeSystemOperators(targetOperatorId, sourceOperatorIds, actor?.email ?? 'admin')
 
     await logAdminActivity({

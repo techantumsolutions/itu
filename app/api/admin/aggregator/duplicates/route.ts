@@ -31,7 +31,7 @@ export async function PATCH(request: Request) {
   const body = await request.json().catch(() => ({}))
   const parsed = reviewSchema.safeParse(body)
   if (!parsed.success) return NextResponse.json({ error: 'Invalid review payload', issues: parsed.error.flatten() }, { status: 400 })
-  const actor = getRequestUser(request)
+  const actor = await getRequestUser(request)
   const res = await supabaseRest(`duplicate_plan_suggestions?id=eq.${encodeURIComponent(parsed.data.id)}`, {
     method: 'PATCH',
     headers: { Prefer: 'return=representation' },

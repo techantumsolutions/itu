@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { countriesList } from '@/lib/country-codes'
 import { logAdminActivity } from '@/lib/auth/audit'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 
 /**
  * POST /api/admin/seed-dial-prefixes
@@ -9,7 +10,9 @@ import { logAdminActivity } from '@/lib/auth/audit'
  * using libphonenumber-js as the authoritative source via countriesList.
  * Must be called from server context (Next.js) where ESM imports work.
  */
-export async function POST() {
+export async function POST(request: Request) {
+  const denied = await requireAdminPermission(request, 'settings.edit')
+  if (denied) return denied
   // Build iso2 -> dialCode lookup from libphonenumber-js
   const callingCodeMap = new Map<string, string>()
   for (const c of countriesList) {

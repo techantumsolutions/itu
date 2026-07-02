@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server'
-import { getRequestUser } from '@/lib/tickets/auth-headers'
+import { getAuthenticatedRequestUser } from '@/lib/tickets/auth-headers'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 
 export async function GET(request: Request) {
-  const user = getRequestUser(request)
+  const user = await getAuthenticatedRequestUser(request)
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
     // 1. Fetch user profile to get their preferred currency
     const profileRes = await supabaseRest(`profiles?id=eq.${encodeURIComponent(user.id)}&select=currency&limit=1`, {
-      cache: 'no-store'
+      cache: 'no-store',
     })
     let preferredCurrency = 'USD'
     if (profileRes.ok) {
@@ -21,9 +21,10 @@ export async function GET(request: Request) {
 
     // 2. Fetch max consumption percentage from settings
     let maxConsumptionPercentage = 100
-    const settingsRes = await supabaseRest('app_settings?key=eq.wallet_max_consumption_percentage&select=value&limit=1', {
-      cache: 'no-store'
-    })
+    const settingsRes = await supabaseRest(
+      'app_settings?key=eq.wallet_max_consumption_percentage&select=value&limit=1',
+      { cache: 'no-store' },
+    )
     if (settingsRes.ok) {
       const rows = await settingsRes.json().catch(() => [])
       if (rows?.[0]?.value !== undefined) {
@@ -33,7 +34,7 @@ export async function GET(request: Request) {
 
     // 3. Query wallets table for user_id to get ALL wallets
     const res = await supabaseRest(`wallets?user_id=eq.${encodeURIComponent(user.id)}&select=balance,currency`, {
-      cache: 'no-store'
+      cache: 'no-store',
     })
     if (!res.ok) {
       return NextResponse.json({ error: 'Failed to load wallet' }, { status: 500 })
@@ -55,7 +56,7 @@ export async function GET(request: Request) {
     }
 
     // Find the wallet matching preferredCurrency, or default to the first one
-    let activeWallet = wallets.find((w: any) => w.currency === preferredCurrency)
+    let activeWallet = wallets.find((w: { currency?: string }) => w.currency === preferredCurrency)
     if (!activeWallet) {
       activeWallet = wallets[0]
     }
@@ -64,10 +65,10 @@ export async function GET(request: Request) {
       balance: Number(activeWallet.balance) || 0,
       currency: activeWallet.currency || preferredCurrency,
       maxConsumptionPercentage,
-      wallets: wallets.map((w: any) => ({
+      wallets: wallets.map((w: { currency?: string; balance?: number }) => ({
         currency: w.currency,
-        balance: Number(w.balance) || 0
-      }))
+        balance: Number(w.balance) || 0,
+      })),
     })
   } catch (error) {
     console.error('Failed to get wallet balance:', error)

@@ -153,7 +153,7 @@ export async function POST(request: Request) {
   if (!isSupabaseCatalogConfigured()) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 })
   }
-  const actor = getRequestUser(request)
+  const actor = await getRequestUser(request)
 
   const body = await request.json().catch(() => ({}))
   const code = typeof body.code === 'string' ? body.code.trim().toUpperCase() : ''

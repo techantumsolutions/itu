@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server'
+import { requireBearerSecret } from '@/lib/security/require-secret'
 import { isSupabaseCatalogConfigured, supabaseRest } from '@/lib/db/supabase-rest'
 import { enqueueProviderSync, getProviderSyncQueue } from '@/lib/jobs/queue'
 import { syncProviderCatalog } from '@/lib/lcr/sync-catalog'
 
 export async function POST(request: Request) {
-  const authHeader = request.headers.get('authorization') || ''
-  const configuredSecret = process.env.CRON_SECRET
-  if (configuredSecret && authHeader !== `Bearer ${configuredSecret}`) {
-    return NextResponse.json({ error: 'Unauthorized cron request' }, { status: 401 })
-  }
+  const denied = requireBearerSecret(request, 'CRON_SECRET', {
+    missingMessage: 'CRON_SECRET is not configured',
+    unauthorizedMessage: 'Unauthorized cron request',
+  })
+  if (denied) return denied
 
   if (!isSupabaseCatalogConfigured()) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 })

@@ -1,0 +1,2036 @@
+{
+  "timestamp": "2026-07-01T11:11:06.912Z",
+  "baseUrl": "http://127.0.0.1:3000",
+  "targets": {
+    "public": 150,
+    "admin": 300,
+    "lcr": 500,
+    "auth": 300,
+    "cron": 500,
+    "internal": 300,
+    "other": 300
+  },
+  "inventory": {
+    "totalRoutes": 148,
+    "byCategory": {
+      "other": 30,
+      "admin": 45,
+      "lcr": 31,
+      "public": 21,
+      "auth": 16,
+      "cron": 3,
+      "internal": 2
+    },
+    "withRedisCache": 4,
+    "avgDbQueriesPublic": 0.24
+  },
+  "routes": [
+    {
+      "path": "/api/account/rewards/history",
+      "category": "other",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 4,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/activity-logs",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/ads",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/ads/analytics",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/ads/campaigns",
+      "category": "admin",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "dbQueriesStatic": 4,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/ads/creatives",
+      "category": "admin",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "dbQueriesStatic": 4,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/ads/upload",
+      "category": "admin",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/cron-status",
+      "category": "lcr",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/duplicates",
+      "category": "lcr",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/operators",
+      "category": "lcr",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/operators/00000000-0000-0000-0000-000000000001",
+      "category": "lcr",
+      "methods": [
+        "PATCH"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/operators/map",
+      "category": "lcr",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/operators/merge",
+      "category": "lcr",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/operators/sync-local",
+      "category": "lcr",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/plans",
+      "category": "lcr",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/plans/map",
+      "category": "lcr",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/providers",
+      "category": "lcr",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/providers/00000000-0000-0000-0000-000000000001",
+      "category": "lcr",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/review-queue",
+      "category": "lcr",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/review-queue/00000000-0000-0000-0000-000000000001",
+      "category": "lcr",
+      "methods": [
+        "POST",
+        "PATCH"
+      ],
+      "dbQueriesStatic": 3,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/sync",
+      "category": "lcr",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/sync-logs",
+      "category": "lcr",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/sync-step",
+      "category": "lcr",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregator/telecom-registry",
+      "category": "lcr",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregators/dtone/sync",
+      "category": "admin",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/aggregators/refresh",
+      "category": "admin",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/catalog/operator-merge-history",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/catalog/operator-merge-history/00000000-0000-0000-0000-000000000001",
+      "category": "admin",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/catalog/plan-merge-history",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/catalog/plan-merge-history/00000000-0000-0000-0000-000000000001",
+      "category": "admin",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/catalog/system-plans",
+      "category": "admin",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/customers",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/dashboard",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 4,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/lcr/bootstrap-env",
+      "category": "lcr",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 5,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/lcr/countries",
+      "category": "lcr",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/lcr/enqueue-sync",
+      "category": "lcr",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/lcr/internal-plans",
+      "category": "lcr",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "dbQueriesStatic": 8,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/lcr/internal-plans/merge",
+      "category": "lcr",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/lcr/providers",
+      "category": "lcr",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 6,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/lcr/providers/00000000-0000-0000-0000-000000000001",
+      "category": "lcr",
+      "methods": [
+        "PATCH",
+        "DELETE"
+      ],
+      "dbQueriesStatic": 4,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/lcr/review-queue",
+      "category": "lcr",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/lcr/route-simulate",
+      "category": "lcr",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/lcr/settings",
+      "category": "lcr",
+      "methods": [
+        "GET",
+        "PUT"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/lcr/sync",
+      "category": "lcr",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/lcr/system-plans",
+      "category": "lcr",
+      "methods": [
+        "GET",
+        "PATCH"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/lcr/system-plans/00000000-0000-0000-0000-000000000001/provider-costs",
+      "category": "lcr",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/lcr/system-plans/merge",
+      "category": "lcr",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/provider-priorities",
+      "category": "admin",
+      "methods": [
+        "GET",
+        "PUT"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/reconciliation",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/reports/aggregator",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 4,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/rewards/accounts",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/rewards/ledger",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/rewards/rules",
+      "category": "admin",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/rewards/rules/00000000-0000-0000-0000-000000000001",
+      "category": "admin",
+      "methods": [
+        "PUT",
+        "DELETE"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/rewards/settings",
+      "category": "admin",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 3,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/routing-logs",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/routing-logs/detail",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/routing-rules",
+      "category": "admin",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/routing-rules/00000000-0000-0000-0000-000000000001",
+      "category": "admin",
+      "methods": [
+        "PUT",
+        "DELETE"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/routing-rules/options",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/seed-dial-prefixes",
+      "category": "admin",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/settings/2fa",
+      "category": "admin",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/settings/page-passwords",
+      "category": "admin",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/settings/page-passwords/verify",
+      "category": "admin",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/settings/recharge-fees",
+      "category": "admin",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/settings/wallet",
+      "category": "admin",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/setup-password/complete",
+      "category": "admin",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/setup-password/info",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/staff",
+      "category": "admin",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 3,
+      "redisReads": 0,
+      "redisWrites": 1
+    },
+    {
+      "path": "/api/admin/staff/00000000-0000-0000-0000-000000000001",
+      "category": "admin",
+      "methods": [
+        "PATCH"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/tickets",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/tickets/00000000-0000-0000-0000-000000000001",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/tickets/00000000-0000-0000-0000-000000000001/notes",
+      "category": "admin",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/tickets/00000000-0000-0000-0000-000000000001/respond",
+      "category": "admin",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/tickets/00000000-0000-0000-0000-000000000001/status",
+      "category": "admin",
+      "methods": [
+        "PATCH"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/transactions",
+      "category": "admin",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/admin/transactions/refund",
+      "category": "admin",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 5,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/ads",
+      "category": "public",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/auth/2fa/totp-setup",
+      "category": "auth",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/auth/2fa/verify",
+      "category": "auth",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/auth/admin-reset-password/send",
+      "category": "auth",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 1
+    },
+    {
+      "path": "/api/auth/admin-reset-password/verify",
+      "category": "auth",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/auth/dev-bootstrap-admin",
+      "category": "auth",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/auth/login",
+      "category": "auth",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 7,
+      "redisReads": 0,
+      "redisWrites": 3
+    },
+    {
+      "path": "/api/auth/logout",
+      "category": "auth",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/auth/me",
+      "category": "auth",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/auth/otp/send",
+      "category": "auth",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/auth/otp/verify",
+      "category": "auth",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/auth/register",
+      "category": "auth",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 1
+    },
+    {
+      "path": "/api/auth/register/resend",
+      "category": "auth",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 1
+    },
+    {
+      "path": "/api/auth/register/verify",
+      "category": "auth",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/auth/reset-password/send",
+      "category": "auth",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 1
+    },
+    {
+      "path": "/api/auth/reset-password/verify",
+      "category": "auth",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/auth/session-config",
+      "category": "auth",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/cache/purge",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/catalog/classify-plan",
+      "category": "public",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/catalog/enrich-plan",
+      "category": "public",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/catalog/evaluate-operator-domain",
+      "category": "public",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/catalog/operator-trust/00000000-0000-0000-0000-000000000001",
+      "category": "public",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/catalog/operators",
+      "category": "public",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 1,
+      "redisWrites": 1
+    },
+    {
+      "path": "/api/catalog/operators/00000000-0000-0000-0000-000000000001/plans",
+      "category": "public",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 1,
+      "redisWrites": 1
+    },
+    {
+      "path": "/api/catalog/plans",
+      "category": "public",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 1,
+      "redisWrites": 1
+    },
+    {
+      "path": "/api/catalog/search/countries",
+      "category": "public",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 1,
+      "redisWrites": 1
+    },
+    {
+      "path": "/api/cms",
+      "category": "public",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 3
+    },
+    {
+      "path": "/api/countries",
+      "category": "public",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 1
+    },
+    {
+      "path": "/api/countries/operator-counts",
+      "category": "public",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/cron/aggregators",
+      "category": "cron",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/cron/lcr-v2-sync",
+      "category": "cron",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/cron/system-plans-merge",
+      "category": "cron",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/dtone/products",
+      "category": "other",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/geo",
+      "category": "public",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/health",
+      "category": "public",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/operator/detect",
+      "category": "public",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/operators",
+      "category": "public",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/payment/create-session",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/payment/razorpay/create-order",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/payment/razorpay/verify",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 7,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/payment/wallet/checkout",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 10,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/payment/webhook",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/payments/razorpay/create-order",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/plans",
+      "category": "public",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 1
+    },
+    {
+      "path": "/api/plans/00000000-0000-0000-0000-000000000001",
+      "category": "public",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/products",
+      "category": "public",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/profile/locale",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/profile/security/change-password",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/profile/transactions",
+      "category": "other",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 4,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/profile/update",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/profile/update-password",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/profile/update/check-unique",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/profile/update/send-otp",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/profile/update/verify-otp",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 2,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/profile/upload",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/promo/apply",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/providers",
+      "category": "public",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 1
+    },
+    {
+      "path": "/api/receipt/00000000-0000-0000-0000-000000000001",
+      "category": "other",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/recharge",
+      "category": "other",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/rewards/ledger",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/settings/recharge-processing-fees",
+      "category": "public",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/test-check",
+      "category": "internal",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/test-profile",
+      "category": "internal",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/tickets",
+      "category": "other",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/tickets/00000000-0000-0000-0000-000000000001",
+      "category": "other",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/tickets/00000000-0000-0000-0000-000000000001/message",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/tickets/upload",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/topup/prepare-checkout",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 0,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/wallet/balance",
+      "category": "other",
+      "methods": [
+        "GET"
+      ],
+      "dbQueriesStatic": 4,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/wallet/deduct",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    },
+    {
+      "path": "/api/wallet/topup",
+      "category": "other",
+      "methods": [
+        "POST"
+      ],
+      "dbQueriesStatic": 1,
+      "redisReads": 0,
+      "redisWrites": 0
+    }
+  ],
+  "httpBenchmarks": [
+    {
+      "path": "/api/health",
+      "category": "public",
+      "status": 200,
+      "p50Ms": 40.8,
+      "p99Ms": 139.3,
+      "avgMs": 57.6,
+      "payloadBytes": 27,
+      "gzipBytes": 27,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/countries",
+      "category": "public",
+      "status": 200,
+      "p50Ms": 105.2,
+      "p99Ms": 323.9,
+      "avgMs": 147.4,
+      "payloadBytes": 34905,
+      "gzipBytes": 34905,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 1.4
+    },
+    {
+      "path": "/api/providers?country=MEX",
+      "category": "public",
+      "status": 200,
+      "p50Ms": 17.6,
+      "p99Ms": 20.5,
+      "avgMs": 17,
+      "payloadBytes": 983,
+      "gzipBytes": 983,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 0.51
+    },
+    {
+      "path": "/api/plans?country=MEX&limit=20",
+      "category": "public",
+      "status": 400,
+      "p50Ms": 24.8,
+      "p99Ms": 28.1,
+      "avgMs": 22.3,
+      "payloadBytes": 50,
+      "gzipBytes": 50,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 1.92
+    },
+    {
+      "path": "/api/cms",
+      "category": "public",
+      "status": 200,
+      "p50Ms": 97.4,
+      "p99Ms": 153.9,
+      "avgMs": 108.6,
+      "payloadBytes": 2801719,
+      "gzipBytes": 2801719,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 1
+    },
+    {
+      "path": "/api/catalog/operators?country=MEX&limit=20",
+      "category": "public",
+      "status": 200,
+      "p50Ms": 20.4,
+      "p99Ms": 30.9,
+      "avgMs": 21.3,
+      "payloadBytes": 983,
+      "gzipBytes": 983,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 1.16
+    },
+    {
+      "path": "/api/catalog/plans?limit=20",
+      "category": "public",
+      "status": 200,
+      "p50Ms": 23.2,
+      "p99Ms": 35.4,
+      "avgMs": 24.9,
+      "payloadBytes": 5850,
+      "gzipBytes": 5850,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 0.95
+    },
+    {
+      "path": "/api/catalog/search/countries",
+      "category": "public",
+      "status": 200,
+      "p50Ms": 28.6,
+      "p99Ms": 34.9,
+      "avgMs": 27.9,
+      "payloadBytes": 16865,
+      "gzipBytes": 16865,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 1.58
+    },
+    {
+      "path": "/api/geo",
+      "category": "public",
+      "status": 200,
+      "p50Ms": 12.6,
+      "p99Ms": 27.6,
+      "avgMs": 15.4,
+      "payloadBytes": 86,
+      "gzipBytes": 86,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 1.66
+    },
+    {
+      "path": "/api/ads",
+      "category": "public",
+      "status": 400,
+      "p50Ms": 10,
+      "p99Ms": 24.6,
+      "avgMs": 13.1,
+      "payloadBytes": 39,
+      "gzipBytes": 39,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 0.41
+    },
+    {
+      "path": "/api/settings/recharge-processing-fees",
+      "category": "public",
+      "status": 200,
+      "p50Ms": 30.3,
+      "p99Ms": 38.7,
+      "avgMs": 30.2,
+      "payloadBytes": 87,
+      "gzipBytes": 87,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 1.06
+    },
+    {
+      "path": "/api/auth/session-config",
+      "category": "public",
+      "status": 200,
+      "p50Ms": 32.9,
+      "p99Ms": 61.5,
+      "avgMs": 37.2,
+      "payloadBytes": 59,
+      "gzipBytes": 59,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 1.25
+    },
+    {
+      "path": "/api/admin/dashboard",
+      "category": "admin",
+      "status": 500,
+      "p50Ms": 161.2,
+      "p99Ms": 223.6,
+      "avgMs": 172.4,
+      "payloadBytes": 41,
+      "gzipBytes": 41,
+      "compressed": false,
+      "targetMs": 300,
+      "pass": false,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/admin/customers?limit=10",
+      "category": "admin",
+      "status": 200,
+      "p50Ms": 189.8,
+      "p99Ms": 220.9,
+      "avgMs": 185.3,
+      "payloadBytes": 1077,
+      "gzipBytes": 1077,
+      "compressed": false,
+      "targetMs": 300,
+      "pass": true,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/admin/transactions?limit=10",
+      "category": "admin",
+      "status": 200,
+      "p50Ms": 203.3,
+      "p99Ms": 263.8,
+      "avgMs": 210.4,
+      "payloadBytes": 16226,
+      "gzipBytes": 16226,
+      "compressed": false,
+      "targetMs": 300,
+      "pass": true,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/admin/routing-rules",
+      "category": "admin",
+      "status": 200,
+      "p50Ms": 164.5,
+      "p99Ms": 189.8,
+      "avgMs": 167.8,
+      "payloadBytes": 857,
+      "gzipBytes": 857,
+      "compressed": false,
+      "targetMs": 300,
+      "pass": true,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/admin/provider-priorities",
+      "category": "admin",
+      "status": 200,
+      "p50Ms": 318.4,
+      "p99Ms": 425.4,
+      "avgMs": 312.7,
+      "payloadBytes": 522,
+      "gzipBytes": 522,
+      "compressed": false,
+      "targetMs": 300,
+      "pass": false,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/admin/activity-logs?limit=10",
+      "category": "admin",
+      "status": 500,
+      "p50Ms": 165,
+      "p99Ms": 182.2,
+      "avgMs": 156.1,
+      "payloadBytes": 156,
+      "gzipBytes": 156,
+      "compressed": false,
+      "targetMs": 300,
+      "pass": false,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/admin/lcr/providers",
+      "category": "lcr",
+      "status": 200,
+      "p50Ms": 190.2,
+      "p99Ms": 206.6,
+      "avgMs": 185.8,
+      "payloadBytes": 1895,
+      "gzipBytes": 1895,
+      "compressed": false,
+      "targetMs": 500,
+      "pass": true,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/admin/lcr/settings",
+      "category": "lcr",
+      "status": 200,
+      "p50Ms": 153.8,
+      "p99Ms": 173.3,
+      "avgMs": 150.3,
+      "payloadBytes": 221,
+      "gzipBytes": 221,
+      "compressed": false,
+      "targetMs": 500,
+      "pass": true,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/admin/lcr/countries",
+      "category": "lcr",
+      "status": 200,
+      "p50Ms": 190.8,
+      "p99Ms": 225.8,
+      "avgMs": 192.2,
+      "payloadBytes": 4088,
+      "gzipBytes": 4088,
+      "compressed": false,
+      "targetMs": 500,
+      "pass": true,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/admin/lcr/system-plans?limit=10",
+      "category": "lcr",
+      "status": 200,
+      "p50Ms": 217.3,
+      "p99Ms": 251.5,
+      "avgMs": 218,
+      "payloadBytes": 2981,
+      "gzipBytes": 2981,
+      "compressed": false,
+      "targetMs": 500,
+      "pass": true,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/admin/lcr/internal-plans?limit=10",
+      "category": "lcr",
+      "status": 200,
+      "p50Ms": 173.2,
+      "p99Ms": 236.5,
+      "avgMs": 187.2,
+      "payloadBytes": 2551,
+      "gzipBytes": 2551,
+      "compressed": false,
+      "targetMs": 500,
+      "pass": true,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/admin/lcr/review-queue?limit=10",
+      "category": "lcr",
+      "status": 200,
+      "p50Ms": 171.6,
+      "p99Ms": 210.7,
+      "avgMs": 177.5,
+      "payloadBytes": 49,
+      "gzipBytes": 49,
+      "compressed": false,
+      "targetMs": 500,
+      "pass": true,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/admin/aggregator/operators?limit=10",
+      "category": "lcr",
+      "status": 200,
+      "p50Ms": 239.6,
+      "p99Ms": 265.8,
+      "avgMs": 211.9,
+      "payloadBytes": 17547,
+      "gzipBytes": 17547,
+      "compressed": false,
+      "targetMs": 500,
+      "pass": true,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/admin/aggregator/plans?limit=10",
+      "category": "lcr",
+      "status": 200,
+      "p50Ms": 169.3,
+      "p99Ms": 253.6,
+      "avgMs": 185.1,
+      "payloadBytes": 28713,
+      "gzipBytes": 28713,
+      "compressed": false,
+      "targetMs": 500,
+      "pass": true,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/admin/aggregator/cron-status",
+      "category": "lcr",
+      "status": 200,
+      "p50Ms": 163.7,
+      "p99Ms": 174.1,
+      "avgMs": 150.9,
+      "payloadBytes": 299,
+      "gzipBytes": 299,
+      "compressed": false,
+      "targetMs": 500,
+      "pass": true,
+      "cacheSpeedup": null
+    },
+    {
+      "path": "/api/catalog/operator-trust/00000000-0000-0000-0000-000000000001",
+      "category": "public",
+      "status": 403,
+      "p50Ms": 21.6,
+      "p99Ms": 34.9,
+      "avgMs": 22.5,
+      "payloadBytes": 21,
+      "gzipBytes": 21,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 2.66
+    },
+    {
+      "path": "/api/catalog/operators/00000000-0000-0000-0000-000000000001/plans",
+      "category": "public",
+      "status": 200,
+      "p50Ms": 30.1,
+      "p99Ms": 57.3,
+      "avgMs": 35.5,
+      "payloadBytes": 62,
+      "gzipBytes": 62,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 0.89
+    },
+    {
+      "path": "/api/countries/operator-counts",
+      "category": "public",
+      "status": 200,
+      "p50Ms": 28.9,
+      "p99Ms": 39.3,
+      "avgMs": 30.9,
+      "payloadBytes": 3632,
+      "gzipBytes": 3632,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 0.5
+    },
+    {
+      "path": "/api/operators",
+      "category": "public",
+      "status": 400,
+      "p50Ms": 18.8,
+      "p99Ms": 52.1,
+      "avgMs": 24.3,
+      "payloadBytes": 36,
+      "gzipBytes": 36,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 1.12
+    },
+    {
+      "path": "/api/plans/00000000-0000-0000-0000-000000000001",
+      "category": "public",
+      "status": 404,
+      "p50Ms": 43.1,
+      "p99Ms": 47.3,
+      "avgMs": 42.5,
+      "payloadBytes": 21,
+      "gzipBytes": 21,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 0.57
+    },
+    {
+      "path": "/api/products",
+      "category": "public",
+      "status": 400,
+      "p50Ms": 11.3,
+      "p99Ms": 13.6,
+      "avgMs": 11,
+      "payloadBytes": 36,
+      "gzipBytes": 36,
+      "compressed": false,
+      "targetMs": 150,
+      "pass": true,
+      "cacheSpeedup": 0.72
+    }
+  ],
+  "summary": {
+    "endpointsTested": 33,
+    "pass": 30,
+    "fail": 3,
+    "compressionResponses": 0,
+    "avgCacheSpeedupWarmVsCold": 1.14,
+    "failures": [
+      {
+        "path": "/api/admin/dashboard",
+        "category": "admin",
+        "p50Ms": 161.2,
+        "targetMs": 300,
+        "status": 500
+      },
+      {
+        "path": "/api/admin/provider-priorities",
+        "category": "admin",
+        "p50Ms": 318.4,
+        "targetMs": 300,
+        "status": 200
+      },
+      {
+        "path": "/api/admin/activity-logs?limit=10",
+        "category": "admin",
+        "p50Ms": 165,
+        "targetMs": 300,
+        "status": 500
+      }
+    ]
+  }
+}

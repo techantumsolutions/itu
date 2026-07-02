@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Supabase not configured' }, { status: 503 })
   }
 
-  const actor = getRequestUser(request)
+  const actor = await getRequestUser(request)
   const created: string[] = []
   const errors: { code: string; detail: string }[] = []
 

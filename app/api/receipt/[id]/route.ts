@@ -1,12 +1,24 @@
 import { NextResponse } from 'next/server'
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib'
 import { getOrderDb } from '@/lib/topup/orders-db'
+import { getUserIdFromRequest } from '@/lib/auth/get-user-id-from-request'
+import { adminHasPermission } from '@/lib/auth/require-admin-permission'
 
-export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
+    const userId = await getUserIdFromRequest(request)
+    const isAdmin = userId ? await adminHasPermission(request, 'transactions.view') : false
+    if (!userId && !isAdmin) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { id } = await context.params
     const order = await getOrderDb(id)
     if (!order) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+
+    if (order.status !== 'success') {
+      return NextResponse.json({ error: 'Receipt not available until payment succeeds' }, { status: 403 })
+    }
 
     const pdfDoc = await PDFDocument.create()
     const page = pdfDoc.addPage([595.28, 841.89]) // A4 in points

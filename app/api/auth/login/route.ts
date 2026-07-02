@@ -45,11 +45,14 @@ async function fetchLoginProfileByEmail(email: string): Promise<LoginProfileRow 
 }
 
 export async function POST(req: Request) {
+  console.log('Login request received')
   let ipAddress = req.headers.get('x-forwarded-for') || '127.0.0.1'
   if (ipAddress.includes(',')) ipAddress = ipAddress.split(',')[0].trim()
   const country = req.headers.get('x-vercel-ip-country') || 'Unknown'
   const userAgent = req.headers.get('user-agent') || ''
-
+  console.log('IP address:', ipAddress)
+  console.log('Country:', country)
+  console.log('User agent:', userAgent)
   try {
     const body = (await req.json().catch(() => null)) as {
       email?: string
@@ -63,19 +66,23 @@ export async function POST(req: Request) {
     const fingerprint = body?.fingerprint
     const turnstileResponse = body?.cf_turnstile_response
     const source = body?.source
-
+    console.log('Email:', email)
+    console.log('Password:', password)
+    console.log('Fingerprint:', fingerprint)
+    console.log('Turnstile response:', turnstileResponse)
+    console.log('Source:', source)
     if (!email || !password) {
       return NextResponse.json({ ok: false, error: 'Missing fields' }, { status: 400 })
     }
-    
+    console.log('Fingerprint and source check passed')
     if (!fingerprint && source !== 'admin') {
       return NextResponse.json({ ok: false, error: 'Device identification failed' }, { status: 400 })
     }
-
+    console.log('Device identification check passed')
     // 1. Fetch profile to check role and is_active status
     const existingProfile = await fetchLoginProfileByEmail(email)
     const isAdmin = isStaffAppRole(existingProfile?.app_role, email)
-
+    console.log('Admin check passed:', isAdmin)
     // 2. Reject frozen admin accounts immediately
     if (isAdmin && existingProfile?.is_active === false) {
       await logLoginAudit({ userId: existingProfile?.id, email, status: 'blocked', ipAddress, country, userAgent })
@@ -84,7 +91,7 @@ export async function POST(req: Request) {
         { status: 401 }
       )
     }
-
+    console.log('Admin account active check passed')
     // 3. Admin Turnstile verification
     // if (isAdmin && source === 'admin-user') {
     //   const secret = process.env.TURNSTILE_SECRET_KEY
@@ -110,41 +117,46 @@ export async function POST(req: Request) {
     //     }
     //   }
     // }
-
+    console.log('Admin Turnstile verification check passed')
     let user = null
     let session = null
-
+    console.log('User and session initialization passed')
     if (isAdmin) {
       // 4. Admin lockout protection: attempt sign in and track failures
       try {
+        console.log('Attempting admin login')
         const authData = await supabaseSignInWithPassword({ email, password })
+        console.log('Admin login successful')
         user = authData.user
         session = authData.session
-
+        console.log('Admin login successful')
         // Clear failed attempts upon successful password
         const cacheKey = `admin_failed_attempts:${email}`
         await cacheDel(cacheKey)
       } catch (err: any) {
         const loginErrorMsg = err?.message || 'Login failed'
         await logLoginAudit({ userId: existingProfile?.id, email, status: 'failed', ipAddress, country, userAgent })
-        
+        console.log('Admin login failed, logging audit')
         const cacheKey = `admin_failed_attempts:${email}`
         let attempts = (await cacheGetJson<number>(cacheKey)) || 0
         attempts += 1
         await cacheSetJson(cacheKey, attempts, 3600) // expire after 1 hour
-
+        console.log('Admin failed attempts cache set')
         if (attempts >= 5 && existingProfile?.id) {
           const isSuperAdminSource = existingProfile.app_role === 'super_admin' && source === 'admin'
           if (isSuperAdminSource) {
-            // Send email warning alert instead of freezing
+            console.log('Super admin source detected, sending email warning alert')
+              // Send email warning alert instead of freezing
             await sendSuperAdminLockoutAlert({ email, ipAddress, country, userAgent })
           } else {
+            console.log('Freezing admin account')
             // Freeze the admin account in the profiles table
             await supabaseRest(`profiles?id=eq.${encodeURIComponent(existingProfile.id)}`, {
               method: 'PATCH',
               body: JSON.stringify({ is_active: false, updated_at: new Date().toISOString() }),
             })
             await logLoginAudit({ userId: existingProfile?.id, email, status: 'blocked', ipAddress, country, userAgent })
+            console.log('Admin account frozen, logging audit')
             return NextResponse.json(
               { ok: false, error: 'Your account has been freezed due to wrong password attempts' },
               { status: 401 }
@@ -152,16 +164,22 @@ export async function POST(req: Request) {
           }
         }
 
+        console.log('Admin login failed, returning error')
         return NextResponse.json({ ok: false, error: loginErrorMsg }, { status: 401 })
       }
     } else {
+      console.log('Default login for normal users')
       // 5. Default login for normal users
       try {
         const authData = await supabaseSignInWithPassword({ email, password })
         user = authData.user
+        console.log('User:', user)
         session = authData.session
+        console.log('Session:', session)
       } catch (err: any) {
+        console.log('User login failed, logging audit')
         await logLoginAudit({ userId: existingProfile?.id, email, status: 'failed', ipAddress, country, userAgent })
+        console.log('User login failed, returning error')
         return NextResponse.json({ ok: false, error: err?.message || 'Login failed' }, { status: 401 })
       }
     }

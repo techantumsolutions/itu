@@ -4,8 +4,19 @@ import { selectBestProviderWithObservability } from '@/lib/api/lcr-engine'
 import { isLcrV2Enabled } from '@/lib/lcr-v2/flags'
 import { processLcrV2Recharge, lcrV2AttemptToApiOrder } from '@/lib/lcr-v2/recharge'
 import { dbFindRechargeByDistributorRef, dbFindRechargeById, dbGetInternalPlan } from '@/lib/lcr-v2/recharge-db'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
+import { runtimeEnv } from '@/lib/env/runtime'
+
+function publicRechargeEnabled(): boolean {
+  return process.env.NODE_ENV !== 'production' || runtimeEnv('RECHARGE_PUBLIC_ENABLED') === 'true'
+}
 
 export async function POST(request: Request) {
+  if (!publicRechargeEnabled()) {
+    const denied = await requireAdminPermission(request, 'providers.sync')
+    if (denied) return denied
+  }
+
   try {
     const body = await request.json()
     const {

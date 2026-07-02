@@ -3,7 +3,7 @@ import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 
 export async function POST(request: Request) {
-  const user = getRequestUser(request)
+  const user = await getRequestUser(request)
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await request.json().catch(() => ({}))
   const amount = Number(body.amount)

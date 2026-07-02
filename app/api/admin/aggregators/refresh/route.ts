@@ -5,8 +5,12 @@ import {
   isInRefreshWindow,
   refreshAggregatorData,
 } from '@/lib/api/lcr-engine'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 
-export async function GET() {
+export async function GET(request: Request) {
+  const denied = await requireAdminPermission(request, 'integrations.view')
+  if (denied) return denied
+
   const latest = getLatestRefreshRun()
   return NextResponse.json({
     latest,
@@ -16,7 +20,10 @@ export async function GET() {
   })
 }
 
-export async function POST() {
+export async function POST(request: Request) {
+  const denied = await requireAdminPermission(request, 'integrations.edit')
+  if (denied) return denied
+
   try {
     const run = await refreshAggregatorData({ source: 'manual', maxAttempts: 2 })
     return NextResponse.json({ run })

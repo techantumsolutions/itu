@@ -3,7 +3,7 @@ import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { createTicket, listTicketsForUser } from '@/lib/tickets/db-persistence'
 
 export async function GET(request: Request) {
-  const user = getRequestUser(request)
+  const user = await getRequestUser(request)
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const user = getRequestUser(request)
+  const user = await getRequestUser(request)
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }

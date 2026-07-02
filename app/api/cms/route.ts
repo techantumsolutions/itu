@@ -6,53 +6,47 @@ import { logAdminActivity } from '@/lib/auth/audit'
 import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 
 export const dynamic = 'force-dynamic'
-export const revalidate = 0
 
 const CMS_ID = 'default'
 const CMS_CACHE_KEY = `cms:site:${CMS_ID}`
+const CMS_BROWSER_CACHE = 'public, max-age=60, stale-while-revalidate=300'
+
+function cmsResponse(payload: unknown, init?: { status?: number }) {
+  return NextResponse.json(payload, {
+    status: init?.status ?? 200,
+    headers: { 'Cache-Control': CMS_BROWSER_CACHE },
+  })
+}
 
 export async function GET() {
   try {
     const cached = await cacheGetJson<{ content: SiteContent | null; ok: boolean }>(CMS_CACHE_KEY)
     if (cached) {
-      // Only log if not a cached hit for admin, but wait: cache hit still means they accessed it.
-      // But to be consistent we can just call logAdminActivity. It returns early anyway for non-admins.
-      await logAdminActivity({
-        action: 'View CMS Content',
-        pageName: 'CMS',
-      })
-      return NextResponse.json(
-        cached,
-        { headers: { 'Cache-Control': 'no-store, max-age=0' } },
-      )
+      return cmsResponse(cached)
     }
 
     const res = await supabaseRest(`cms_site?select=content&id=eq.${encodeURIComponent(CMS_ID)}&limit=1`)
     if (!res.ok) {
       const payload = { content: null as SiteContent | null, ok: false, error: await res.text() }
-      // Cache negative briefly to avoid hammering Supabase during outages.
       await cacheSetJson(CMS_CACHE_KEY, payload, 5)
-      return NextResponse.json(payload, { status: 200, headers: { 'Cache-Control': 'no-store, max-age=0' } })
+      return NextResponse.json(payload, {
+        status: 200,
+        headers: { 'Cache-Control': 'public, max-age=5' },
+      })
     }
     const rows = (await res.json()) as Array<{ content?: unknown }>
     const content = (rows?.[0]?.content ?? null) as SiteContent | null
     const payload = { content, ok: true }
     await cacheSetJson(CMS_CACHE_KEY, payload, 60)
 
-    await logAdminActivity({
-      action: 'View CMS Content',
-      pageName: 'CMS',
-    })
-
-    return NextResponse.json(
-      payload,
-      { headers: { 'Cache-Control': 'no-store, max-age=0' } },
-    )
+    return cmsResponse(payload)
   } catch (e) {
-    // If Supabase env/table isn't configured yet, fall back to client defaults.
     const payload = { content: null as SiteContent | null, ok: false, error: 'cms_unavailable' }
     await cacheSetJson(CMS_CACHE_KEY, payload, 5)
-    return NextResponse.json(payload, { status: 200, headers: { 'Cache-Control': 'no-store, max-age=0' } })
+    return NextResponse.json(payload, {
+      status: 200,
+      headers: { 'Cache-Control': 'public, max-age=5' },
+    })
   }
 }
 
