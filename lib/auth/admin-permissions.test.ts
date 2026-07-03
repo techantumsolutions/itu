@@ -37,13 +37,26 @@ describe('admin permissions migration', () => {
     expect(migrated['routing_rules.view']).toBe(false)
   })
 
-  it('defaults new limited admin to dashboard, providers view, settings, help', () => {
+  it('defaults new limited admin to dashboard, providers view, settings', () => {
     const d = defaultLimitedAdminPermissions()
     expect(d['dashboard.view']).toBe(true)
     expect(d['providers.view']).toBe(true)
     expect(d['settings.view']).toBe(true)
-    expect(d['help.view']).toBe(true)
+    expect(d['help.view']).toBe(false)
     expect(d['plans.view']).toBe(false)
+  })
+
+  it('maps legacy analytics and statistics to reports.view', () => {
+    const migrated = migrateLegacyPermissions({ analytics: true, statistics: true })
+    expect(migrated['reports.view']).toBe(true)
+    expect(migrated['analytics.view']).toBe(false)
+    expect(migrated['statistics.view']).toBe(false)
+  })
+
+  it('maps legacy help to settings.view', () => {
+    const migrated = migrateLegacyPermissions({ help: true })
+    expect(migrated['settings.view']).toBe(true)
+    expect(migrated['help.view']).toBe(false)
   })
 
   it('null permissions grants full access for legacy admins', () => {

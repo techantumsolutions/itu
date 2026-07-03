@@ -8,12 +8,9 @@ import type { AdminPermissionKey } from '@/lib/auth/admin-permissions'
 import {
   LayoutDashboard,
   Package,
-  BarChart3,
-  LineChart,
   Users,
   UserCog,
   Settings,
-  HelpCircle,
   LogOut,
   Globe,
   Route,
@@ -25,7 +22,6 @@ import {
   PlugZap,
   Cog,
   History,
-  Wallet,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -41,7 +37,6 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-  SidebarSeparator,
 } from '@/components/ui/sidebar'
 
 import { cn } from '@/lib/utils'
@@ -78,19 +73,8 @@ const mainMenuItems: {
   { title: 'Support Tickets', url: '/admin/support-tickets', icon: MessageSquare, viewPermission: 'tickets.view' },
   { title: 'Ads Manager', url: '/admin/ads', icon: Megaphone, viewPermission: 'ads.view' },
   { title: 'Reconciliation', url: '/admin/reconciliation', icon: FileSpreadsheet, viewPermission: 'reconciliation.view' },
-  { title: 'Reports & Analytics', url: '/admin/reports', icon: ChartNoAxesCombined, viewPermission: 'reports.view' },
-  { title: 'Analytics', url: '/admin/analytics', icon: LineChart, viewPermission: 'analytics.view' },
-  { title: 'Statistics', url: '/admin/statistics', icon: BarChart3, viewPermission: 'statistics.view' },
-]
-
-const helpCenterItems: {
-  title: string
-  url: string
-  icon: typeof Settings
-  viewPermission: AdminPermissionKey
-}[] = [
+  { title: 'Reports', url: '/admin/reports', icon: ChartNoAxesCombined, viewPermission: 'reports.view' },
   { title: 'Settings', url: '/admin/settings', icon: Settings, viewPermission: 'settings.view' },
-  { title: 'Help Center', url: '/admin/help', icon: HelpCircle, viewPermission: 'help.view' },
 ]
 
 export function AppSidebar() {
@@ -110,10 +94,6 @@ export function AppSidebar() {
   }
 
   const visibleMain = mainMenuItems.filter((item) => user && clientHasAdminPermission(user, item.viewPermission))
-
-  const visibleHelp = helpCenterItems.filter(
-    (item) => user && clientHasAdminPermission(user, item.viewPermission),
-  )
 
   return (
     <Sidebar collapsible="icon" className="border-r border-border/70 bg-sidebar shadow-elevated-sm">
@@ -173,40 +153,6 @@ export function AppSidebar() {
                         })}
                       </SidebarMenuSub>
                     ) : null}
-                  </SidebarMenuItem>
-                )
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        <SidebarSeparator />
-
-        <SidebarGroup>
-          <SidebarGroupLabel className="px-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            Help Center
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {visibleHelp.map((item) => {
-                const isActive = pathname === item.url
-                return (
-                  <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={isActive}
-                      tooltip={item.title}
-                      className={cn(
-                        'rounded-xl border border-transparent transition-all duration-200',
-                        isActive &&
-                        'border-primary/15 bg-primary/10 font-semibold text-primary shadow-elevated-sm ',
-                      )}
-                    >
-                      <Link href={item.url}>
-                        <item.icon className="size-4" />
-                        <span>{item.title}</span>
-                      </Link>
-                    </SidebarMenuButton>
                   </SidebarMenuItem>
                 )
               })}
