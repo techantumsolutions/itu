@@ -61,13 +61,13 @@ export function DashboardHeader({ title }: DashboardHeaderProps) {
           </kbd>
         </div> */}
 
-        {/* Notifications */}
-        <Button variant="ghost" size="icon" className="relative rounded-xl text-muted-foreground hover:text-foreground">
+        {/* Notifications and messages */}
+        {/* <Button variant="ghost" size="icon" className="relative rounded-xl text-muted-foreground hover:text-foreground">
           <Mail className="size-5" />
           <Badge className="absolute -right-1 -top-1 flex size-5 items-center justify-center rounded-full p-0 text-[10px] shadow-elevated-sm">
             3
           </Badge>
-        </Button>
+        </Button> */}
 
         <Button variant="ghost" size="icon" className="relative rounded-xl text-muted-foreground hover:text-foreground">
           <Bell className="size-5" />
@@ -97,9 +97,9 @@ export function DashboardHeader({ title }: DashboardHeaderProps) {
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>Profile</DropdownMenuItem>
-            <DropdownMenuItem>Settings</DropdownMenuItem>
-            <DropdownMenuItem>Billing</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push('/admin/settings?tab=profile')}>Profile</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push('/admin/settings')}>Settings</DropdownMenuItem>
+            {/* <DropdownMenuItem>Billing</DropdownMenuItem> */}
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-destructive focus:text-destructive"

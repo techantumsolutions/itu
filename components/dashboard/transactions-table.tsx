@@ -160,7 +160,7 @@ export function TransactionsTable() {
                 </TableCell>
               </TableRow>
             ) : null}
-            {sortedTransactions.slice(0, 5).map((transaction) => {
+            {sortedTransactions.slice(0, 6).map((transaction) => {
               const productName = transaction.description || "Transaction"
               const purchaseNo = transaction.metadata?.orderId || transaction.id
               
