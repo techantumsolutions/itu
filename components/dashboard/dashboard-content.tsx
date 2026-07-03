@@ -1,0 +1,26 @@
+import type { DashboardMetrics } from '@/lib/admin/dashboard-metrics'
+import { StatCards } from '@/components/dashboard/stat-cards'
+import { TransactionsTable } from '@/components/dashboard/transactions-table'
+import { TopProducts } from '@/components/dashboard/top-products'
+import { SalesReport } from '@/components/dashboard/sales-report'
+
+type DashboardContentProps = {
+  data: DashboardMetrics
+}
+
+export function DashboardContent({ data }: DashboardContentProps) {
+  return (
+    <div className="flex flex-col gap-8">
+      <div className="grid grid-cols-1 gap-8 xl:grid-cols-[1fr_340px]">
+        <div className="flex flex-col gap-6">
+          <StatCards summary={data.summary} />
+          <TransactionsTable />
+        </div>
+        <div className="flex flex-col gap-6">
+          <SalesReport summary={data.summary} />
+          <TopProducts products={data.topProducts} reportingCurrency={data.summary.reporting_currency} />
+        </div>
+      </div>
+    </div>
+  )
+}

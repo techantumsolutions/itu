@@ -36,7 +36,6 @@ import { normalizeCountryCode } from '@/lib/locale/country-config'
 import { cn } from '@/lib/utils'
 import { ItuLogoMark } from '@/components/itu-logo-mark'
 import { FooterPaymentLogos } from '@/components/footer-payment-logos'
-import { TargetedAdBanner } from '@/components/targeted-ad-banner'
 import { CMSTypographyScope } from '@/components/cms-typography-scope'
 import { SessionIdleGuard } from '@/components/session-idle-guard'
 
@@ -675,9 +674,12 @@ export default function PublicLayout({
           pathname === '/' ? 'pt-0' : 'pt-[5.25rem] sm:pt-[5.5rem]',
         )}
       >
-        {pathname === '/' && <TargetedAdBanner />}
-        <AdManager placement="global_popup" country={regionCode} />
-        <AdManager placement="global_scroll" country={regionCode} />
+        {pathname === '/' && (
+          <>
+            <AdManager placement="global_popup" country={regionCode} />
+            <AdManager placement="global_scroll" country={regionCode} />
+          </>
+        )}
         {pathname === '/' ? (
           children
         ) : pathname.startsWith('/account') ? (

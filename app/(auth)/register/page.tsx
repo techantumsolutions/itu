@@ -29,6 +29,8 @@ import {
   getNationalPhoneDigitBounds,
   validateNationalPhoneDigits,
 } from '@/lib/country-codes'
+import { RecaptchaCheckbox } from '@/components/security/RecaptchaCheckbox'
+import { useRecaptchaField } from '@/hooks/use-recaptcha-field'
 
 function RegisterForm() {
   const router = useRouter()
@@ -68,6 +70,8 @@ function RegisterForm() {
   const [verifyingOtp, setVerifyingOtp] = useState(false)
   const [showPasswordErrors, setShowPasswordErrors] = useState(false)
 
+  const registerCaptcha = useRecaptchaField(email)
+
   useEffect(() => {
     if (step !== 'otp') return
     if (otpTimer <= 0) return
@@ -94,6 +98,11 @@ function RegisterForm() {
       return
     }
 
+    if (!registerCaptcha.hasCaptcha) {
+      setError('Please verify that you are not a robot.')
+      return
+    }
+
     if (phone.trim()) {
       if (!phoneValidation?.valid) {
         setShowPhoneError(true)
@@ -111,6 +120,7 @@ function RegisterForm() {
           email: email.trim().toLowerCase(), 
           password: password.trim(), 
           name: name.trim(),
+          captchaToken: registerCaptcha.captchaToken,
           ...(phone.trim()
             ? {
                 phone: phoneValidation?.digits || phone.replace(/\D/g, ''),
@@ -122,7 +132,8 @@ function RegisterForm() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Failed to send verification code. Please try again.')
+        registerCaptcha.resetCaptcha()
+        throw new Error(data.error || data.message || 'Failed to send verification code. Please try again.')
       }
 
       setOtpValue('')
@@ -360,10 +371,16 @@ function RegisterForm() {
                     </label>
                   </div>
 
+                  <RecaptchaCheckbox
+                    ref={registerCaptcha.recaptchaRef}
+                    disabled={isLoading}
+                    onTokenChange={registerCaptcha.setCaptchaToken}
+                  />
+
                   <Button
                     type="submit"
                     className="h-12 w-full rounded-xl bg-[var(--hero-cta-orange)] text-base font-semibold text-white hover:brightness-105"
-                    disabled={isLoading}
+                    disabled={isLoading || !registerCaptcha.hasCaptcha}
                   >
                     {isLoading ? (
                       <>

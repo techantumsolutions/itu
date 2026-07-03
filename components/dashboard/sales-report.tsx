@@ -1,102 +1,93 @@
-"use client"
+'use client'
 
-import { useEffect, useMemo, useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts"
+import { useMemo } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
+import type { DashboardSummary } from '@/lib/admin/dashboard-metrics'
 
-export function SalesReport() {
-  const [summary, setSummary] = useState({
-    total_revenue: 0,
-    total_orders: 0,
-    completed_orders: 0,
-    failed_orders: 0,
-  })
+const CHART_COLORS = {
+  completed: 'hsl(142 76% 36%)',
+  failed: 'hsl(0 84% 60%)',
+  pending: 'hsl(45 93% 47%)',
+}
 
-  useEffect(() => {
-    void fetch('/api/admin/dashboard', { credentials: 'include', cache: 'no-store' })
-      .then((r) => r.json())
-      .then((data) => {
-        const s = data?.summary ?? {}
-        setSummary({
-          total_revenue: Number(s.total_revenue) || 0,
-          total_orders: Number(s.total_orders) || 0,
-          completed_orders: Number(s.completed_orders) || 0,
-          failed_orders: Number(s.failed_orders) || 0,
-        })
-      })
-      .catch(() => {})
-  }, [])
+type SalesReportProps = {
+  summary: DashboardSummary
+}
 
+export function SalesReport({ summary }: SalesReportProps) {
   const salesData = useMemo(() => {
-    const pending = Math.max(0, summary.total_orders - summary.completed_orders - summary.failed_orders)
     return [
-      { name: "Completed", value: summary.completed_orders, color: "hsl(var(--chart-1))" },
-      { name: "Pending", value: pending, color: "hsl(var(--chart-2))" },
-      { name: "Failed", value: summary.failed_orders, color: "hsl(var(--muted))" },
+      { name: 'Successful', value: summary.completed_orders, color: CHART_COLORS.completed },
+      { name: 'Failed', value: summary.failed_orders, color: CHART_COLORS.failed },
+      { name: 'Pending', value: summary.pending_orders, color: CHART_COLORS.pending },
     ].filter((row) => row.value > 0)
   }, [summary])
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
+  const currency = summary.reporting_currency || 'EUR'
+
+  const formatCurrency = (amount: number) =>
+    new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency,
       minimumFractionDigits: 2,
     }).format(amount)
-  }
+
+  const successRate =
+    summary.total_orders > 0
+      ? Math.round((summary.completed_orders / summary.total_orders) * 100)
+      : 0
 
   return (
     <Card className="rounded-2xl border-border/70 shadow-elevated-sm">
       <CardHeader className="border-b border-border/60 pb-4">
         <CardTitle className="text-xl font-semibold tracking-tight">Sales Report</CardTitle>
-        <p className="text-sm text-muted-foreground">
-          Quarterly Sales Performance Analysis
-        </p>
+        <p className="text-sm text-muted-foreground">Recharge outcomes and margin summary</p>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Donut Chart */}
-        <div className="relative h-[200px] flex items-center justify-center">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={salesData}
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={85}
-                paddingAngle={2}
-                dataKey="value"
-                strokeWidth={0}
-              >
-                {salesData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-            </PieChart>
-          </ResponsiveContainer>
-          {/* Center text */}
-          <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-2xl font-bold">
-              {formatCurrency(summary.total_revenue)}
-            </span>
-            <span className="text-sm text-muted-foreground">Summary</span>
-          </div>
+        <div className="relative flex h-[220px] items-center justify-center">
+          {salesData.length > 0 ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={salesData}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={58}
+                  outerRadius={82}
+                  paddingAngle={2}
+                  dataKey="value"
+                  strokeWidth={0}
+                >
+                  {salesData.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={(value: number) => [value, 'Recharges']} />
+                <Legend verticalAlign="bottom" height={36} />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-sm text-muted-foreground">No recharge data yet.</p>
+          )}
+          {salesData.length > 0 ? (
+            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center pb-8">
+              <span className="text-xl font-bold">{formatCurrency(summary.total_margin)}</span>
+              <span className="text-xs text-muted-foreground">Total margin</span>
+            </div>
+          ) : null}
         </div>
 
-        {/* Monthly / Yearly Stats */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-1">
-            <p className="text-sm text-muted-foreground">Monthly</p>
-            <p className="text-xl font-bold">
-              {formatCurrency(summary.total_revenue)}
-            </p>
-            <p className="text-xs text-muted-foreground">{summary.completed_orders} completed orders</p>
+            <p className="text-sm text-muted-foreground">Successful</p>
+            <p className="text-xl font-bold">{summary.completed_orders}</p>
+            <p className="text-xs text-muted-foreground">{successRate}% success rate</p>
           </div>
           <div className="space-y-1">
-            <p className="text-sm text-muted-foreground">Yearly</p>
-            <p className="text-xl font-bold">
-              {formatCurrency(summary.total_revenue)}
-            </p>
-            <p className="text-xs text-muted-foreground">{summary.total_orders} total orders</p>
+            <p className="text-sm text-muted-foreground">Failed</p>
+            <p className="text-xl font-bold">{summary.failed_orders}</p>
+            <p className="text-xs text-muted-foreground">{summary.pending_orders} pending</p>
           </div>
         </div>
       </CardContent>

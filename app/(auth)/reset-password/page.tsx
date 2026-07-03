@@ -10,6 +10,8 @@ import { Input } from '@/components/ui/input'
 import { useCMSStore } from '@/lib/cms-store'
 import { validatePassword } from '@/lib/validators/password'
 import { PasswordRequirementsHint } from '@/components/password-requirements-hint'
+import { RecaptchaCheckbox } from '@/components/security/RecaptchaCheckbox'
+import { useRecaptchaField } from '@/hooks/use-recaptcha-field'
 
 function ResetPasswordForm() {
   const router = useRouter()
@@ -26,6 +28,8 @@ function ResetPasswordForm() {
   const [success, setSuccess] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [showPasswordErrors, setShowPasswordErrors] = useState(false)
+
+  const resetCaptcha = useRecaptchaField()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -46,16 +50,22 @@ function ResetPasswordForm() {
       return
     }
 
+    if (!resetCaptcha.hasCaptcha) {
+      setError('Please verify that you are not a robot.')
+      return
+    }
+
     setSubmitting(true)
     try {
       const res = await fetch('/api/auth/reset-password/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password }),
+        body: JSON.stringify({ token, password, captchaToken: resetCaptcha.captchaToken }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Failed to reset password.')
+        resetCaptcha.resetCaptcha()
+        throw new Error(data.error || data.message || 'Failed to reset password.')
       }
       setSuccess(true)
     } catch (err: any) {
@@ -196,10 +206,16 @@ function ResetPasswordForm() {
                   </div>
                 </div>
 
+                <RecaptchaCheckbox
+                  ref={resetCaptcha.recaptchaRef}
+                  disabled={submitting}
+                  onTokenChange={resetCaptcha.setCaptchaToken}
+                />
+
                 <Button
                   type="submit"
                   className="h-12 w-full rounded-xl bg-[var(--hero-cta-orange)] text-base font-semibold text-white hover:brightness-105"
-                  disabled={submitting || !password || !confirmPassword}
+                  disabled={submitting || !password || !confirmPassword || !resetCaptcha.hasCaptcha}
                 >
                   {submitting ? (
                     <>

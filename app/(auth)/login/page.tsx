@@ -24,6 +24,8 @@ import {
 } from '@/components/ui/command'
 import { countriesList, getFlagEmoji, isValidPhoneNumber } from '@/lib/country-codes'
 import { useFingerprint } from '@/hooks/use-fingerprint'
+import { RecaptchaCheckbox } from '@/components/security/RecaptchaCheckbox'
+import { useRecaptchaField } from '@/hooks/use-recaptcha-field'
 
 function LoginForm() {
   const router = useRouter()
@@ -50,6 +52,9 @@ function LoginForm() {
   const [authView, setAuthView] = useState<'login' | 'forgot' | 'forgot-success'>('login')
   const [forgotEmail, setForgotEmail] = useState('')
   const [sendingReset, setSendingReset] = useState(false)
+
+  const loginCaptcha = useRecaptchaField(identifier)
+  const forgotCaptcha = useRecaptchaField(forgotEmail)
 
   const [loginTab, setLoginTab] = useState<'email' | 'mobile'>('email')
   const [requires2FA, setRequires2FA] = useState(false)
@@ -91,7 +96,11 @@ function LoginForm() {
 
   const handleEmailLogin = async () => {
     setError('')
-    const result = await login(identifier, password, fingerprint || undefined)
+    if (!loginCaptcha.hasCaptcha) {
+      setError('Please verify that you are not a robot.')
+      return
+    }
+    const result = await login(identifier, password, fingerprint || undefined, loginCaptcha.captchaToken)
     
     if (result.ok && result.requires_2fa) {
       setRequires2FA(true)
@@ -110,22 +119,31 @@ function LoginForm() {
         router.push(redirectVal || '/account')
       }
     } else {
+      loginCaptcha.resetCaptcha()
       setError(result.error ?? 'Invalid email or password.')
     }
   }
 
   const handleSendResetLink = async () => {
     setError('')
+    if (!forgotCaptcha.hasCaptcha) {
+      setError('Please verify that you are not a robot.')
+      return
+    }
     setSendingReset(true)
     try {
       const res = await fetch('/api/auth/reset-password/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() }),
+        body: JSON.stringify({
+          email: forgotEmail.trim().toLowerCase(),
+          captchaToken: forgotCaptcha.captchaToken,
+        }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Failed to send reset link.')
+        forgotCaptcha.resetCaptcha()
+        throw new Error(data.error || data.message || 'Failed to send reset link.')
       }
       setAuthView('forgot-success')
     } catch (err: any) {
@@ -212,9 +230,15 @@ function LoginForm() {
                   />
                 </div>
 
+                <RecaptchaCheckbox
+                  ref={forgotCaptcha.recaptchaRef}
+                  disabled={sendingReset}
+                  onTokenChange={forgotCaptcha.setCaptchaToken}
+                />
+
                 <Button
                   className="h-12 w-full rounded-xl bg-[var(--hero-cta-orange)] text-base font-semibold text-white hover:brightness-105"
-                  disabled={sendingReset || !forgotEmail.trim().includes('@')}
+                  disabled={sendingReset || !forgotEmail.trim().includes('@') || !forgotCaptcha.hasCaptcha}
                   onClick={handleSendResetLink}
                 >
                   {sendingReset ? (
@@ -384,9 +408,23 @@ function LoginForm() {
                   </div>
                 ) : null}
 
+                <RecaptchaCheckbox
+                  ref={loginCaptcha.recaptchaRef}
+                  disabled={isLoading || sendingOtp}
+                  onTokenChange={loginCaptcha.setCaptchaToken}
+                />
+
                 <Button
                   className="h-12 w-full rounded-xl bg-[var(--hero-cta-orange)] text-base font-semibold text-white hover:brightness-105"
-                  disabled={isLoading || sendingOtp || !identifier.trim() || (!isEmail && !isValidPhone) || (isEmail && !password) || (isEmail && !fingerprint)}
+                  disabled={
+                    isLoading ||
+                    sendingOtp ||
+                    !identifier.trim() ||
+                    (!isEmail && !isValidPhone) ||
+                    (isEmail && !password) ||
+                    (isEmail && !fingerprint) ||
+                    !loginCaptcha.hasCaptcha
+                  }
                   onClick={async () => {
                     setError('')
                     if (isEmail) {
@@ -397,15 +435,25 @@ function LoginForm() {
                       setError('Invalid format')
                       return
                     }
+                    if (!loginCaptcha.hasCaptcha) {
+                      setError('Please verify that you are not a robot.')
+                      return
+                    }
                     setSendingOtp(true)
                     try {
                       const res = await fetch('/api/auth/otp/send', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ phone: `+${selectedDialCode}${normalizedPhone}` }),
+                        body: JSON.stringify({
+                          phone: `+${selectedDialCode}${normalizedPhone}`,
+                          captchaToken: loginCaptcha.captchaToken,
+                        }),
                       })
                       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; otp?: string }
-                      if (!res.ok || !data.ok) throw new Error(data.error || 'otp_send_failed')
+                      if (!res.ok || !data.ok) {
+                        loginCaptcha.resetCaptcha()
+                        throw new Error(data.error || data.message || 'otp_send_failed')
+                      }
                       if (data.otp) {
                         setDevOtp(data.otp)
                       } else {

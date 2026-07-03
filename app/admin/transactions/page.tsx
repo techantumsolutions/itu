@@ -49,9 +49,12 @@ type AdminTransaction = {
   amount: number
   currency: string
   status: string
+  displayStatus?: string
   description: string
   metadata: Record<string, any>
   createdAt: string
+  margin?: number
+  marginCurrency?: string
   user?: {
     name: string
     email: string
@@ -68,15 +71,49 @@ type AdminTransaction = {
   } | null
 }
 
+type TransactionsSummary = {
+  total_orders: number
+  completed_orders: number
+  failed_orders: number
+  pending_orders: number
+  total_margin: number
+  reporting_currency: string
+}
+
+type TransactionsPagination = {
+  page: number
+  pageSize: number
+  total: number
+  totalPages: number
+}
+
 export default function AdminTransactionsPage() {
   const user = useAuthStore((s) => s.user)
   const { displayProvider } = useProviderDisplay()
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [dateFilter, setDateFilter] = useState<string>('all')
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(25)
+  const [loading, setLoading] = useState(true)
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailModel, setDetailModel] = useState<TransactionDetailModel | null>(null)
   const [transactions, setTransactions] = useState<AdminTransaction[]>([])
+  const [summary, setSummary] = useState<TransactionsSummary>({
+    total_orders: 0,
+    completed_orders: 0,
+    failed_orders: 0,
+    pending_orders: 0,
+    total_margin: 0,
+    reporting_currency: 'EUR',
+  })
+  const [pagination, setPagination] = useState<TransactionsPagination>({
+    page: 1,
+    pageSize: 25,
+    total: 0,
+    totalPages: 1,
+  })
   const [refreshTrigger, setRefreshTrigger] = useState(0)
   const [refundDialogOpen, setRefundDialogOpen] = useState(false)
   const [refundTransaction, setRefundTransaction] = useState<AdminTransaction | null>(null)
@@ -84,14 +121,44 @@ export default function AdminTransactionsPage() {
   const canRefund = !!(user && clientHasAdminPermission(user, 'customers.edit'))
 
   useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
+
+  useEffect(() => {
+    setPage(1)
+  }, [statusFilter, dateFilter, debouncedSearch, pageSize])
+
+  useEffect(() => {
     const params = new URLSearchParams()
+    params.set('page', String(page))
+    params.set('pageSize', String(pageSize))
     if (statusFilter !== 'all') params.set('status', statusFilter)
-    params.set('limit', '500')
+    if (dateFilter !== 'all') params.set('date', dateFilter)
+    if (debouncedSearch) params.set('search', debouncedSearch)
+
+    setLoading(true)
     void fetch(`/api/admin/transactions?${params}`, { credentials: 'include', cache: 'no-store' })
       .then((r) => r.json())
-      .then((data) => setTransactions(Array.isArray(data?.transactions) ? data.transactions : []))
-      .catch(() => setTransactions([]))
-  }, [statusFilter, refreshTrigger])
+      .then((data) => {
+        setTransactions(Array.isArray(data?.transactions) ? data.transactions : [])
+        if (data?.summary) setSummary(data.summary)
+        if (data?.pagination) setPagination(data.pagination)
+      })
+      .catch(() => {
+        setTransactions([])
+        setSummary({
+          total_orders: 0,
+          completed_orders: 0,
+          failed_orders: 0,
+          pending_orders: 0,
+          total_margin: 0,
+          reporting_currency: 'EUR',
+        })
+        setPagination({ page: 1, pageSize, total: 0, totalPages: 1 })
+      })
+      .finally(() => setLoading(false))
+  }, [statusFilter, dateFilter, debouncedSearch, page, pageSize, refreshTrigger])
 
   const handleRefundConfirm = async () => {
     if (!refundTransaction) return
@@ -156,6 +223,7 @@ export default function AdminTransactionsPage() {
   }
 
   const getDisplayStatus = (order: AdminTransaction) =>
+    order.displayStatus ??
     resolveTransactionDisplayStatus({
       type: order.type,
       transactionStatus: order.status,
@@ -189,48 +257,6 @@ export default function AdminTransactionsPage() {
   const getDestinationPhoneNumber = (order: AdminTransaction) => {
     return String(order.metadata?.phone_number ?? order.metadata?.phoneNumber ?? order.metadata?.mobile_number ?? order.rechargeDetails?.phoneNumber ?? '—')
   }
-
-  const matchesDateRange = (createdAt: string) => {
-    if (dateFilter === 'all') return true
-    const created = new Date(createdAt)
-    if (Number.isNaN(created.getTime())) return true
-    const now = new Date()
-    if (dateFilter === 'today') {
-      return created.toDateString() === now.toDateString()
-    }
-    if (dateFilter === 'week') {
-      const weekAgo = new Date(now)
-      weekAgo.setDate(now.getDate() - 7)
-      return created >= weekAgo
-    }
-    if (dateFilter === 'month') {
-      const monthAgo = new Date(now)
-      monthAgo.setMonth(now.getMonth() - 1)
-      return created >= monthAgo
-    }
-    return true
-  }
-
-  const filteredOrders = transactions.filter((order) => {
-    const metadata = order.metadata ?? {}
-    const query = searchQuery.trim().toLowerCase()
-    const matchesSearch =
-      !query ||
-      order.id.toLowerCase().includes(query) ||
-      getCustomerName(order).toLowerCase().includes(query) ||
-      getCustomerEmail(order).toLowerCase().includes(query) ||
-      String(order.user?.phone ?? '').includes(searchQuery) ||
-      String(metadata.phone_number ?? '').includes(searchQuery) ||
-      String(metadata.operator ?? metadata.carrierName ?? '').toLowerCase().includes(query) ||
-      String(order.rechargeDetails?.operatorName ?? '').toLowerCase().includes(query) ||
-      getPlanName(order).toLowerCase().includes(query) ||
-      getProviderName(order).toLowerCase().includes(query) ||
-      order.description.toLowerCase().includes(query)
-    const displayStatus = getDisplayStatus(order)
-    const matchesStatus = statusFilter === 'all' || displayStatus === statusFilter
-    const matchesDate = matchesDateRange(order.createdAt)
-    return matchesSearch && matchesStatus && matchesDate
-  })
 
   const getStatusBadge = (status: string) => {
     const styles: Record<string, string> = {
@@ -293,13 +319,7 @@ export default function AdminTransactionsPage() {
     }).format(amount)
   }
 
-  // Stats
-  const totalOrders = transactions.length
-  const completedOrders = transactions.filter((o) => getDisplayStatus(o) === 'completed').length
-  const totalRevenue = transactions
-    .filter((o) => getDisplayStatus(o) === 'completed')
-    .reduce((sum, o) => sum + o.amount, 0)
-  const failedOrders = transactions.filter(o => o.status === 'failed').length
+  const reportingCurrency = summary.reporting_currency || 'EUR'
 
   return (
     <div className="space-y-6">
@@ -319,25 +339,25 @@ export default function AdminTransactionsPage() {
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Total Orders</CardDescription>
-            <CardTitle className="text-2xl">{totalOrders}</CardTitle>
+            <CardTitle className="text-2xl">{summary.total_orders}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Completed</CardDescription>
-            <CardTitle className="text-2xl text-green-600">{completedOrders}</CardTitle>
+            <CardTitle className="text-2xl text-green-600">{summary.completed_orders}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Total Revenue</CardDescription>
-            <CardTitle className="text-2xl">{formatCurrency(totalRevenue)}</CardTitle>
+            <CardDescription>Total Revenue (Margin)</CardDescription>
+            <CardTitle className="text-2xl">{formatCurrency(summary.total_margin, reportingCurrency)}</CardTitle>
           </CardHeader>
         </Card>
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Failed</CardDescription>
-            <CardTitle className="text-2xl text-red-600">{failedOrders}</CardTitle>
+            <CardTitle className="text-2xl text-red-600">{summary.failed_orders}</CardTitle>
           </CardHeader>
         </Card>
       </div>
@@ -400,14 +420,20 @@ export default function AdminTransactionsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredOrders.length === 0 ? (
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                      Loading transactions...
+                    </TableCell>
+                  </TableRow>
+                ) : transactions.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       No transactions found
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredOrders.map((order) => (
+                  transactions.map((order) => (
                     <TableRow key={order.id}>
                       <TableCell className="font-mono text-xs">
                         <span title={order.id}>{order.id.slice(0, 8)}...</span>
@@ -497,6 +523,65 @@ export default function AdminTransactionsPage() {
               </TableBody>
             </Table>
           </div>
+
+          {pagination.total > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-border/40 mt-4">
+              <div className="text-xs text-muted-foreground font-medium">
+                Showing {Math.min((pagination.page - 1) * pagination.pageSize + 1, pagination.total)} to{' '}
+                {Math.min(pagination.page * pagination.pageSize, pagination.total)} of {pagination.total} transactions
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs font-semibold"
+                    onClick={() => setPage((p) => Math.max(p - 1, 1))}
+                    disabled={pagination.page === 1 || loading}
+                  >
+                    Previous
+                  </Button>
+
+                  <span className="text-xs font-semibold px-2">
+                    Page {pagination.page} of {pagination.totalPages}
+                  </span>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs font-semibold"
+                    onClick={() => setPage((p) => Math.min(p + 1, pagination.totalPages))}
+                    disabled={pagination.page >= pagination.totalPages || loading}
+                  >
+                    Next
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-muted-foreground">Rows per page:</span>
+                  <Select
+                    value={String(pageSize)}
+                    onValueChange={(val) => {
+                      setPageSize(Number(val))
+                      setPage(1)
+                    }}
+                    disabled={loading}
+                  >
+                    <SelectTrigger className="h-8 w-[70px] bg-background border-border/80 text-xs font-semibold">
+                      <SelectValue placeholder={String(pageSize)} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="25">25</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -13,10 +13,8 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp
 import { useAuthStore } from '@/lib/stores'
 import { isClientAdminUser } from '@/lib/tickets/auth-headers'
 import { useFingerprint } from '@/hooks/use-fingerprint'
-import { Turnstile, type TurnstileInstance } from '@marsidev/react-turnstile'
-const DEV_DEFAULT_EMAIL = 'admin@itu.com'
-const isDev = process.env.NODE_ENV === 'development'
-const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '1x00000000000000000000AA' // Dummy key for dev
+import { RecaptchaCheckbox } from '@/components/security/RecaptchaCheckbox'
+import { useRecaptchaField } from '@/hooks/use-recaptcha-field'
 
 export default function AdminUserLoginPage() {
   const router = useRouter()
@@ -30,13 +28,13 @@ export default function AdminUserLoginPage() {
   const [devHint, setDevHint] = useState<string | null>(null)
   const [resetting, setResetting] = useState(false)
 
-  const [turnstileToken, setTurnstileToken] = useState('')
-  const turnstileRef = useRef<TurnstileInstance | null>(null)
-
   // Forgot password States
   const [authView, setAuthView] = useState<'login' | 'forgot' | 'forgot-success'>('login')
   const [forgotEmail, setForgotEmail] = useState('')
   const [sendingReset, setSendingReset] = useState(false)
+
+  const loginCaptcha = useRecaptchaField(email)
+  const forgotCaptcha = useRecaptchaField(forgotEmail)
 
   // 2FA States
   const [requires2FA, setRequires2FA] = useState(false)
@@ -57,25 +55,16 @@ export default function AdminUserLoginPage() {
     })
   }, [router])
 
-  // Reset Turnstile token when email or password is empty
-  useEffect(() => {
-    if (!email.trim() || !password) {
-      setTurnstileToken('')
-    }
-  }, [email, password])
-
-
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
 
-    // if (!turnstileToken && process.env.NODE_ENV === 'production') {
-    //   setError('Please complete the CAPTCHA')
-    //   return
-    // }
+    if (!loginCaptcha.hasCaptcha) {
+      setError('Please verify that you are not a robot.')
+      return
+    }
 
-    const result = await login(email.trim(), password, fingerprint || undefined, turnstileToken, 'admin-user')
+    const result = await login(email.trim(), password, fingerprint || undefined, loginCaptcha.captchaToken, 'admin-user')
 
     if (result.ok && result.requires_2fa) {
       setRequires2FA(true)
@@ -96,11 +85,12 @@ export default function AdminUserLoginPage() {
       useAuthStore.getState().logout()
       return
     }
-    // Login failed! Clear captcha token and reset widget
-    setTurnstileToken('')
-    turnstileRef.current?.reset()
+    loginCaptcha.resetCaptcha()
 
+    const captchaMessage =
+      result.error?.toLowerCase().includes('captcha') ? result.error : null
     setError(
+      captchaMessage ??
       result.error ??
       'Invalid email or password. If this is a new project, run: npm run bootstrap:admin (requires Supabase keys in .env).',
     )
@@ -176,16 +166,24 @@ export default function AdminUserLoginPage() {
               <form className="space-y-4" onSubmit={async (e) => {
                 e.preventDefault()
                 setError('')
+                if (!forgotCaptcha.hasCaptcha) {
+                  setError('Please verify that you are not a robot.')
+                  return
+                }
                 setSendingReset(true)
                 try {
                   const res = await fetch('/api/auth/admin-reset-password/send', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() }),
+                    body: JSON.stringify({
+                      email: forgotEmail.trim().toLowerCase(),
+                      captchaToken: forgotCaptcha.captchaToken,
+                    }),
                   })
                   const data = await res.json().catch(() => ({}))
                   if (!res.ok || !data.ok) {
-                    throw new Error(data.error || 'Failed to send reset link.')
+                    forgotCaptcha.resetCaptcha()
+                    throw new Error(data.error || data.message || 'Failed to send reset link.')
                   }
                   setAuthView('forgot-success')
                 } catch (err: any) {
@@ -207,10 +205,16 @@ export default function AdminUserLoginPage() {
                   />
                 </div>
 
+                <RecaptchaCheckbox
+                  ref={forgotCaptcha.recaptchaRef}
+                  disabled={sendingReset}
+                  onTokenChange={forgotCaptcha.setCaptchaToken}
+                />
+
                 <Button
                   type="submit"
                   className="h-11 w-full rounded-xl bg-neutral-900 text-base font-semibold text-white hover:bg-neutral-800"
-                  disabled={sendingReset || !forgotEmail.trim().includes('@')}
+                  disabled={sendingReset || !forgotEmail.trim().includes('@') || !forgotCaptcha.hasCaptcha}
                 >
                   {sendingReset ? (
                     <>
@@ -303,25 +307,22 @@ export default function AdminUserLoginPage() {
                   </div>
                 </div>
 
-                {/* <div className="flex justify-center py-2 min-h-[75px] items-center">
-                  <div className={email.trim() && password ? '' : 'hidden'}>
-                    <Turnstile
-                      ref={turnstileRef}
-                      siteKey={TURNSTILE_SITE_KEY}
-                      onSuccess={(token) => setTurnstileToken(token)}
-                    />
-                  </div>
-                  {!(email.trim() && password) && (
-                    <p className="text-xs text-neutral-400 italic">
-                      Please enter your email and password to verify CAPTCHA
-                    </p>
-                  )}
-                </div> */}
+                <RecaptchaCheckbox
+                  ref={loginCaptcha.recaptchaRef}
+                  disabled={isLoading}
+                  onTokenChange={loginCaptcha.setCaptchaToken}
+                />
 
                 <Button
                   type="submit"
                   className="h-11 w-full rounded-xl bg-neutral-900 text-base font-semibold text-white hover:bg-neutral-800"
-                  disabled={isLoading || !email.trim() || !password || !fingerprint}
+                  disabled={
+                    isLoading ||
+                    !email.trim() ||
+                    !password ||
+                    !fingerprint ||
+                    !loginCaptcha.hasCaptcha
+                  }
                 >
                   {isLoading ? (
                     <>

@@ -1118,7 +1118,7 @@ function SettingsContent() {
         {/* System Tab */}
         <TabsContent value="system">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <Card className="flex h-full flex-col">
+            {/* <Card className="flex h-full flex-col">
               <CardHeader>
                 <CardTitle>Duplicate Detection</CardTitle>
                 <CardDescription>Suggested duplicate plan matches for review.</CardDescription>
@@ -1132,7 +1132,7 @@ function SettingsContent() {
                   </a>
                 </Button>
               </CardFooter>
-            </Card>
+            </Card> */}
 
             <Card className="flex h-full flex-col">
               <CardHeader>
@@ -1149,7 +1149,7 @@ function SettingsContent() {
                 </Button>
               </CardFooter>
             </Card>
-
+{/* 
             <Card className="flex h-full flex-col">
               <CardHeader>
                 <CardTitle>Cron Status</CardTitle>
@@ -1164,7 +1164,7 @@ function SettingsContent() {
                   </a>
                 </Button>
               </CardFooter>
-            </Card>
+            </Card> */}
 
             <Card className="flex h-full flex-col">
               <CardHeader>
