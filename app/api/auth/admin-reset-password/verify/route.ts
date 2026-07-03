@@ -2,12 +2,18 @@ import { NextResponse } from 'next/server'
 import { cacheGetJson, cacheDel } from '@/lib/cache/redis'
 import { runtimeEnv } from '@/lib/env/runtime'
 import { assertStrongPassword } from '@/lib/validators/password-api'
+import { requireCaptcha } from '@/lib/security/recaptcha-guard'
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json().catch(() => null)) as { token?: string; password?: string } | null
+    const body = (await req.json().catch(() => null)) as { token?: string; password?: string; captchaToken?: string } | null
     const token = (body?.token ?? '').trim()
     const password = (body?.password ?? '').trim()
+
+    const captcha = await requireCaptcha(req, body?.captchaToken)
+    if (!captcha.ok) {
+      return captcha.response
+    }
 
     if (!token || !password) {
       return NextResponse.json({ ok: false, error: 'Missing token or password' }, { status: 400 })

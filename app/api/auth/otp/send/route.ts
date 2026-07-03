@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { generateOtp, storeOtp } from '@/lib/security/otp'
 import { rateLimit } from '@/lib/security/rate-limit'
+import { requireCaptcha } from '@/lib/security/recaptcha-guard'
 
 export const runtime = 'nodejs'
 
@@ -20,7 +21,13 @@ export async function POST(req: Request) {
       )
     }
 
-    const body = (await req.json().catch(() => null)) as { phone?: string } | null
+    const body = (await req.json().catch(() => null)) as { phone?: string; captchaToken?: string } | null
+
+    const captcha = await requireCaptcha(req, body?.captchaToken, ip)
+    if (!captcha.ok) {
+      return captcha.response
+    }
+
     const phone = (body?.phone ?? '').trim()
     if (!phone) return NextResponse.json({ ok: false, error: 'phone_required' }, { status: 400 })
 

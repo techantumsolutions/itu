@@ -1,53 +1,36 @@
-"use client"
+'use client'
 
-import { useEffect, useState } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { MoreHorizontal, ChevronRight } from "lucide-react"
+} from '@/components/ui/dropdown-menu'
+import { ChevronRight, MoreHorizontal } from 'lucide-react'
+import type { DashboardTopProduct } from '@/lib/admin/dashboard-metrics'
 
-type TopProduct = {
-  product_name: string
-  operator_name: string
-  orders: number
-  revenue: number
-  currency?: string
+type TopProductsProps = {
+  products: DashboardTopProduct[]
+  reportingCurrency: string
 }
 
-export function TopProducts() {
-  const [products, setProducts] = useState<TopProduct[]>([])
-
-  useEffect(() => {
-    void fetch('/api/admin/dashboard', { credentials: 'include', cache: 'no-store' })
-      .then((r) => r.json())
-      .then((data) => {
-        const rows = Array.isArray(data?.topProducts) ? data.topProducts : []
-        setProducts(rows)
-      })
-      .catch(() => setProducts([]))
-  }, [])
-
-  const formatCurrency = (amount: number, currency = 'USD') => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
+export function TopProducts({ products, reportingCurrency }: TopProductsProps) {
+  const formatCurrency = (amount: number, currency = reportingCurrency) =>
+    new Intl.NumberFormat('en-US', {
+      style: 'currency',
       currency,
+      minimumFractionDigits: 2,
     }).format(amount)
-  }
 
   return (
     <Card className="rounded-2xl border-border/70 shadow-elevated-sm">
-      <CardHeader className="border-b border-border/60 pb-4">
+      <CardHeader className="border-b border-border/60 pb-1" style={{ paddingBottom: '0.125rem' }}>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-xl font-semibold tracking-tight">Top Sales Product</CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">
-              Top-selling Product Line Analysis
-            </p>
+            <CardTitle className="text-xl font-semibold tracking-tight">Top Sales Plans</CardTitle>
+            <p className="mt-1 text-sm text-muted-foreground">By margin on completed recharges</p>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -58,44 +41,46 @@ export function TopProducts() {
             <DropdownMenuContent align="end" className="rounded-xl">
               <DropdownMenuItem>View Details</DropdownMenuItem>
               <DropdownMenuItem>Export Report</DropdownMenuItem>
-              <DropdownMenuItem>Share</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-2">
         {products.length === 0 ? (
-          <p className="py-8 text-center text-sm text-muted-foreground">No product sales yet.</p>
+          <p className="py-8 text-center text-sm text-muted-foreground">No completed recharges yet.</p>
         ) : null}
-        {products.slice(0, 4).map((product) => (
+        {products.slice(0, 3).map((product) => (
           <div
-            key={`${product.product_name}-${product.operator_name}`}
+            key={`${product.plan_id ?? product.product_name}-${product.operator_name}`}
             className="flex items-center gap-3 py-2"
           >
-            <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center shrink-0">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
               <span className="text-xs font-medium text-muted-foreground">
                 {product.product_name.charAt(0)}
               </span>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{product.product_name}</p>
-              <p className="text-xs text-primary">{formatCurrency(Number(product.revenue) || 0, product.currency || 'USD')}</p>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium">{product.product_name}</p>
+              <p className="truncate text-xs text-muted-foreground">{product.operator_name}</p>
+              <p className="text-xs text-primary">
+                Margin {formatCurrency(product.margin, product.currency)}
+              </p>
             </div>
-            <div className="text-right shrink-0">
-              <span className="text-sm font-medium text-primary">
-                {Number(product.orders) || 0} Sold
-              </span>
+            <div className="shrink-0 text-right">
+              <span className="text-sm font-medium text-primary">{product.orders} sold</span>
+              <p className="text-xs text-muted-foreground">
+                {formatCurrency(product.revenue, product.currency)} paid
+              </p>
             </div>
           </div>
         ))}
-        
-        <Button 
-          variant="outline" 
-          className="w-full mt-2 gap-2"
-        >
-          Show More
-          <ChevronRight className="h-4 w-4" />
-        </Button>
+
+        {products.length > 2 ? (
+          <Button variant="outline" className="mt-1 w-full gap-2">
+            Show More
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        ) : null}
       </CardContent>
     </Card>
   )
