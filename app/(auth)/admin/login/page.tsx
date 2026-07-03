@@ -13,6 +13,8 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp
 import { useAuthStore } from '@/lib/stores'
 import { isClientAdminUser, isClientSuperAdmin } from '@/lib/tickets/auth-headers'
 import { useFingerprint } from '@/hooks/use-fingerprint'
+import { RecaptchaCheckbox } from '@/components/security/RecaptchaCheckbox'
+import { useRecaptchaField } from '@/hooks/use-recaptcha-field'
 
 const DEV_DEFAULT_EMAIL = 'admin@itu.com'
 const isDev = process.env.NODE_ENV === 'development'
@@ -36,6 +38,8 @@ export default function AdminLoginPage() {
   const [verifying2FA, setVerifying2FA] = useState(false)
   const [devOtp, setDevOtp] = useState<string | null>(null)
 
+  const loginCaptcha = useRecaptchaField(email)
+
   useEffect(() => {
     const p = useAuthStore.persist
     const redirectIfStaff = () => {
@@ -51,7 +55,11 @@ export default function AdminLoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    const result = await login(email.trim(), password, fingerprint || undefined, undefined, 'admin')
+    if (!loginCaptcha.hasCaptcha) {
+      setError('Please verify that you are not a robot.')
+      return
+    }
+    const result = await login(email.trim(), password, fingerprint || undefined, loginCaptcha.captchaToken, 'admin')
     
     if (result.ok && result.requires_2fa) {
       setRequires2FA(true)
@@ -77,6 +85,7 @@ export default function AdminLoginPage() {
       useAuthStore.getState().logout()
       return
     }
+    loginCaptcha.resetCaptcha()
     setError(
       result.error ??
       'Invalid email or password. If this is a new project, run: npm run bootstrap:admin (requires Supabase keys in .env).',
@@ -171,10 +180,15 @@ export default function AdminLoginPage() {
                     </button>
                   </div>
                 </div>
+                <RecaptchaCheckbox
+                  ref={loginCaptcha.recaptchaRef}
+                  disabled={isLoading}
+                  onTokenChange={loginCaptcha.setCaptchaToken}
+                />
                 <Button
                   type="submit"
                   className="h-11 w-full rounded-xl bg-neutral-900 text-base font-semibold text-white hover:bg-neutral-800"
-                  disabled={isLoading || !email.trim() || !password || !fingerprint}
+                  disabled={isLoading || !email.trim() || !password || !fingerprint || !loginCaptcha.hasCaptcha}
                 >
                   {isLoading ? (
                     <>

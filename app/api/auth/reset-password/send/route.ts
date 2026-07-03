@@ -4,11 +4,17 @@ import { cacheSetJson } from '@/lib/cache/redis'
 import { runtimeEnv } from '@/lib/env/runtime'
 import nodemailer from 'nodemailer'
 import crypto from 'crypto'
+import { requireCaptcha } from '@/lib/security/recaptcha-guard'
 
 export async function POST(req: Request) {
   try {
-    const body = (await req.json().catch(() => null)) as { email?: string } | null
+    const body = (await req.json().catch(() => null)) as { email?: string; captchaToken?: string } | null
     const email = (body?.email ?? '').trim().toLowerCase()
+
+    const captcha = await requireCaptcha(req, body?.captchaToken)
+    if (!captcha.ok) {
+      return captcha.response
+    }
 
     if (!email) {
       return NextResponse.json({ ok: false, error: 'Email is required' }, { status: 400 })

@@ -7,6 +7,7 @@ import { cacheGetJson, cacheSetJson, cacheDel } from '@/lib/cache/redis'
 import { logLoginAudit, sendLoginOtp, sendSuperAdminLockoutAlert } from '@/lib/auth/audit'
 import { generateOtp } from '@/lib/security/otp'
 import { authCookieOptions } from '@/lib/auth/cookie-options'
+import { getRequestIp, requireCaptcha } from '@/lib/security/recaptcha-guard'
 
 function cookieOptions() {
   return authCookieOptions()
@@ -46,8 +47,7 @@ async function fetchLoginProfileByEmail(email: string): Promise<LoginProfileRow 
 
 export async function POST(req: Request) {
   console.log('Login request received')
-  let ipAddress = req.headers.get('x-forwarded-for') || '127.0.0.1'
-  if (ipAddress.includes(',')) ipAddress = ipAddress.split(',')[0].trim()
+  const ipAddress = getRequestIp(req)
   const country = req.headers.get('x-vercel-ip-country') || 'Unknown'
   const userAgent = req.headers.get('user-agent') || ''
   console.log('IP address:', ipAddress)
@@ -58,31 +58,31 @@ export async function POST(req: Request) {
       email?: string
       password?: string
       fingerprint?: string
-      cf_turnstile_response?: string
+      captchaToken?: string
       source?: string
     } | null
     const email = (body?.email ?? '').trim().toLowerCase()
     const password = body?.password ?? ''
     const fingerprint = body?.fingerprint
-    const turnstileResponse = body?.cf_turnstile_response
+    const captchaToken = body?.captchaToken
     const source = body?.source
-    console.log('Email:', email)
-    console.log('Password:', password)
-    console.log('Fingerprint:', fingerprint)
-    console.log('Turnstile response:', turnstileResponse)
-    console.log('Source:', source)
     if (!email || !password) {
-      return NextResponse.json({ ok: false, error: 'Missing fields' }, { status: 400 })
+      return NextResponse.json({ ok: false, success: false, error: 'Missing fields', message: 'Missing fields' }, { status: 400 })
     }
-    console.log('Fingerprint and source check passed')
+
+    const captcha = await requireCaptcha(req, captchaToken, ipAddress)
+    if (!captcha.ok) {
+      return captcha.response
+    }
     if (!fingerprint && source !== 'admin') {
-      return NextResponse.json({ ok: false, error: 'Device identification failed' }, { status: 400 })
+      return NextResponse.json(
+        { ok: false, success: false, error: 'Device identification failed', message: 'Device identification failed' },
+        { status: 400 },
+      )
     }
-    console.log('Device identification check passed')
     // 1. Fetch profile to check role and is_active status
     const existingProfile = await fetchLoginProfileByEmail(email)
     const isAdmin = isStaffAppRole(existingProfile?.app_role, email)
-    console.log('Admin check passed:', isAdmin)
     // 2. Reject frozen admin accounts immediately
     if (isAdmin && existingProfile?.is_active === false) {
       await logLoginAudit({ userId: existingProfile?.id, email, status: 'blocked', ipAddress, country, userAgent })
@@ -91,33 +91,6 @@ export async function POST(req: Request) {
         { status: 401 }
       )
     }
-    console.log('Admin account active check passed')
-    // 3. Admin Turnstile verification
-    // if (isAdmin && source === 'admin-user') {
-    //   const secret = process.env.TURNSTILE_SECRET_KEY
-    //   if (secret && secret !== 'dummy_secret') {
-    //     if (!turnstileResponse) {
-    //       await logLoginAudit({ userId: existingProfile?.id, email, status: 'failed', ipAddress, country, userAgent })
-    //       return NextResponse.json({ ok: false, error: 'Missing CAPTCHA response' }, { status: 400 })
-    //     }
-    //     try {
-    //       const turnstileRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
-    //         method: 'POST',
-    //         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    //         body: `secret=${encodeURIComponent(secret)}&response=${encodeURIComponent(turnstileResponse)}`
-    //       })
-    //       const outcome = await turnstileRes.json()
-    //       if (!outcome.success) {
-    //         await logLoginAudit({ userId: existingProfile?.id, email, status: 'failed', ipAddress, country, userAgent })
-    //         return NextResponse.json({ ok: false, error: 'CAPTCHA verification failed' }, { status: 400 })
-    //       }
-    //     } catch (err) {
-    //       console.error('Turnstile verification error:', err)
-    //       return NextResponse.json({ ok: false, error: 'CAPTCHA service error' }, { status: 500 })
-    //     }
-    //   }
-    // }
-    console.log('Admin Turnstile verification check passed')
     let user = null
     let session = null
     console.log('User and session initialization passed')

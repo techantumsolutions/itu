@@ -10,6 +10,7 @@ import {
   PROFILE_PHONE_EXISTS_MESSAGE,
 } from '@/lib/auth/profile-phone'
 import nodemailer from 'nodemailer'
+import { requireCaptcha } from '@/lib/security/recaptcha-guard'
 
 type PendingRegisterRecord = {
   email: string
@@ -30,6 +31,7 @@ export async function POST(req: Request) {
       phone?: string
       countryCode?: string
       dialCode?: string
+      captchaToken?: string
     } | null
     const email = (body?.email ?? '').trim().toLowerCase()
     const password = (body?.password ?? '').trim()
@@ -37,6 +39,11 @@ export async function POST(req: Request) {
     const phoneInput = (body?.phone ?? '').trim()
     const countryCode = (body?.countryCode ?? 'IN').trim().toUpperCase()
     const dialCode = (body?.dialCode ?? '91').trim()
+
+    const captcha = await requireCaptcha(req, body?.captchaToken)
+    if (!captcha.ok) {
+      return captcha.response
+    }
 
     if (!email || !password || !name) {
       return NextResponse.json({ ok: false, error: 'Missing fields' }, { status: 400 })

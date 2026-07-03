@@ -10,7 +10,7 @@ interface AuthState {
   user: User | null
   isAuthenticated: boolean
   isLoading: boolean
-  login: (email: string, password: string, fingerprint?: string, cf_turnstile_response?: string, source?: string) => Promise<{ ok: boolean; error?: string; requires_2fa?: boolean; method?: string; temp_token?: string; totp_enabled?: boolean; otp?: string }>
+  login: (email: string, password: string, fingerprint?: string, captchaToken?: string, source?: string) => Promise<{ ok: boolean; error?: string; requires_2fa?: boolean; method?: string; temp_token?: string; totp_enabled?: boolean; otp?: string }>
   loginWithOTP: (phone: string, countryCode: string) => Promise<boolean>
   logout: () => void
   register: (email: string, password: string, name: string) => Promise<boolean>
@@ -24,7 +24,7 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isLoading: false,
       setSession: (user) => set({ user, isAuthenticated: Boolean(user) }),
-      login: async (email: string, password: string, fingerprint?: string, cf_turnstile_response?: string, source?: string) => {
+      login: async (email: string, password: string, fingerprint?: string, captchaToken?: string, source?: string) => {
         set({ isLoading: true })
         try {
           const normalizedEmail = email.trim().toLowerCase()
@@ -32,9 +32,26 @@ export const useAuthStore = create<AuthState>()(
             method: 'POST',
             credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: normalizedEmail, password, fingerprint, cf_turnstile_response, source }),
+            body: JSON.stringify({ email: normalizedEmail, password, fingerprint, captchaToken, source }),
           })
-          const data = (await res.json().catch(() => ({}))) as any
+          const data = (await res.json().catch(() => ({}))) as {
+            ok?: boolean
+            error?: string
+            message?: string
+            requires_2fa?: boolean
+            method?: string
+            temp_token?: string
+            totp_enabled?: boolean
+            otp?: string
+          }
+
+          if (!res.ok && !data.requires_2fa) {
+            set({ isLoading: false })
+            return {
+              ok: false,
+              error: data.error ?? data.message ?? 'Login failed',
+            }
+          }
           
           if (data.requires_2fa) {
             set({ isLoading: false })

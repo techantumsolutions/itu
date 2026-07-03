@@ -8,6 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { validatePassword } from '@/lib/validators/password'
 import { PasswordRequirementsHint } from '@/components/password-requirements-hint'
+import { RecaptchaCheckbox } from '@/components/security/RecaptchaCheckbox'
+import { useRecaptchaField } from '@/hooks/use-recaptcha-field'
 
 function ResetPasswordForm() {
   const router = useRouter()
@@ -23,6 +25,8 @@ function ResetPasswordForm() {
   const [success, setSuccess] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [showPasswordErrors, setShowPasswordErrors] = useState(false)
+
+  const resetCaptchaField = useRecaptchaField()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -43,16 +47,22 @@ function ResetPasswordForm() {
       return
     }
 
+    if (!resetCaptchaField.hasCaptcha) {
+      setError('Please verify that you are not a robot.')
+      return
+    }
+
     setSubmitting(true)
     try {
       const res = await fetch('/api/auth/admin-reset-password/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password }),
+        body: JSON.stringify({ token, password, captchaToken: resetCaptchaField.captchaToken }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Failed to reset password.')
+        resetCaptchaField.resetCaptcha()
+        throw new Error(data.error || data.message || 'Failed to reset password.')
       }
       setSuccess(true)
     } catch (err: any) {
@@ -163,10 +173,16 @@ function ResetPasswordForm() {
                   </div>
                 </div>
 
+                <RecaptchaCheckbox
+                  ref={resetCaptchaField.recaptchaRef}
+                  disabled={submitting}
+                  onTokenChange={resetCaptchaField.setCaptchaToken}
+                />
+
                 <Button
                   type="submit"
                   className="h-11 w-full rounded-xl bg-neutral-900 text-base font-semibold text-white hover:bg-neutral-800"
-                  disabled={submitting || !password || !confirmPassword}
+                  disabled={submitting || !password || !confirmPassword || !resetCaptchaField.hasCaptcha}
                 >
                   {submitting ? (
                     <>
