@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { supabaseSignInWithPassword, supabaseAdminUpdateUser } from '@/lib/supabase/auth-rest'
 import { assertStrongPassword } from '@/lib/validators/password-api'
+import { createAdminNotification } from '@/lib/notifications/admin-notifications'
 
 export async function POST(request: Request) {
   const user = await getRequestUser(request)
@@ -33,6 +34,16 @@ export async function POST(request: Request) {
     const updateRes = await supabaseAdminUpdateUser(user.id, { password: newPassword })
     if (updateRes.error) {
       return NextResponse.json({ error: updateRes.error }, { status: 500 })
+    }
+
+    const isAdmin = user.role === 'admin' || user.role === 'super_admin' || user.email === 'admin@itu.com'
+    if (isAdmin) {
+      await createAdminNotification({
+        title: 'Admin Password Updated',
+        message: `Admin/staff user ${user.email} has updated their password.`,
+        type: 'admin_password_set',
+        details: { email: user.email, userId: user.id }
+      })
     }
 
     return NextResponse.json({ ok: true })

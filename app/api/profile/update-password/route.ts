@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
 import { supabaseSignInWithPassword, supabaseAdminUpdateUser } from '@/lib/supabase/auth-rest'
 import { assertStrongPassword } from '@/lib/validators/password-api'
+import { createAdminNotification } from '@/lib/notifications/admin-notifications'
 
 function cookieOptions() {
   const isProd = process.env.NODE_ENV === 'production'
@@ -77,6 +78,14 @@ export async function POST(req: Request) {
         { status: 500 }
       )
     }
+
+    // Trigger admin notification for admin password update
+    await createAdminNotification({
+      title: 'Admin Password Updated',
+      message: `Admin/staff user ${email} has updated their password.`,
+      type: 'admin_password_set',
+      details: { email, userId: supabaseUser.id }
+    })
 
     // 5. Sign back in with new password to refresh session token/cookies
     let newSession = null

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseSignInWithPassword } from '@/lib/supabase/auth-rest'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
+import { createAdminNotification } from '@/lib/notifications/admin-notifications'
 import { buildUserFromProfile } from '@/lib/auth/build-auth-user'
 import { cacheGetJson, cacheSetJson, cacheDel } from '@/lib/cache/redis'
 import { logLoginAudit, sendLoginOtp, sendSuperAdminLockoutAlert } from '@/lib/auth/audit'
@@ -154,6 +155,12 @@ export async function POST(req: Request) {
             await supabaseRest(`profiles?id=eq.${encodeURIComponent(existingProfile.id)}`, {
               method: 'PATCH',
               body: JSON.stringify({ is_active: false, updated_at: new Date().toISOString() }),
+            })
+            await createAdminNotification({
+              title: 'Admin Account Frozen',
+              message: `Admin account ${email} has been frozen after 5 failed password attempts.`,
+              type: 'admin_account_frozen',
+              details: { email, userId: existingProfile.id, ipAddress, country }
             })
             await logLoginAudit({ userId: existingProfile?.id, email, status: 'blocked', ipAddress, country, userAgent })
             console.log('Admin account frozen, logging audit')
