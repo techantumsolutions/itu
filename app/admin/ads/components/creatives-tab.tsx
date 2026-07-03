@@ -14,12 +14,11 @@ import { toast } from 'sonner'
 import { Switch } from '@/components/ui/switch'
 import { useAdminModulePermissions } from '@/lib/hooks/use-admin-module-permissions'
 
+// Ads render on the home page only. Every placement targets '/'.
 const PLACEMENTS = [
-  { value: 'global_popup', label: 'Global Popup (All Pages)', pages: ['global'] },
-  { value: 'global_scroll', label: 'Global Scroll Sticky (All Pages)', pages: ['global'] },
   { value: 'home_hero', label: 'Home Page Hero Banner', pages: ['/'] },
-  { value: 'topup_sidebar', label: 'Top-up Page Sidebar', pages: ['/topup'] },
-  { value: 'account_dashboard', label: 'Account Dashboard Banner', pages: ['/account'] },
+  { value: 'global_popup', label: 'Home Page Popup', pages: ['/'] },
+  { value: 'global_scroll', label: 'Home Page Scroll Sticky', pages: ['/'] },
 ]
 
 export function CreativesTab() {

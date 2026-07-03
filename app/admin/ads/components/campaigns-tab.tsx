@@ -16,15 +16,8 @@ import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/utils'
 import { useAdminModulePermissions } from '@/lib/hooks/use-admin-module-permissions'
 
-const AVAILABLE_PAGES = [
-  { value: '/', label: 'Home Page (/)' },
-  { value: '/topup', label: 'Top-up (/topup)' },
-  { value: '/login', label: 'Login (/login)' },
-  { value: '/register', label: 'Register (/register)' },
-  { value: '/help', label: 'Help & FAQ (/help)' },
-  { value: '/account', label: 'My Account (/account)' },
-  { value: '/account/transactions', label: 'Transactions (/account/transactions)' },
-]
+// Ads are only rendered on the home page.
+const AVAILABLE_PAGES = [{ value: '/', label: 'Home Page (/)' }]
 
 export function CampaignsTab() {
   const { canCreate, canEdit, canDelete } = useAdminModulePermissions('ads')
