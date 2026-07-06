@@ -5,6 +5,10 @@ import {
   LCR_BASE_CURRENCY,
   loadCatalogExchangeRates,
 } from '@/lib/routing/exchange-rates'
+import { translatePlanTextToEnglish } from '@/lib/catalog/plan-text-english'
+
+/** Admin dashboard always reports in EUR with English labels. */
+const ADMIN_REPORTING_CURRENCY = 'EUR'
 
 export type DashboardTopProduct = {
   product_name: string
@@ -443,11 +447,11 @@ export async function loadAdminDashboardMetrics(): Promise<DashboardMetrics> {
     fetchAllRechargeRows(),
     fetchExactCount('profiles', 'app_role=eq.user'),
     fetchCatalogCoverageStats(),
-    loadCatalogExchangeRates(LCR_BASE_CURRENCY),
+    loadCatalogExchangeRates(ADMIN_REPORTING_CURRENCY),
   ])
 
   const fallbackRates = getFallbackExchangeRates()
-  const reportingCurrency = LCR_BASE_CURRENCY
+  const reportingCurrency = ADMIN_REPORTING_CURRENCY
 
   const missingCostTxIds = rechargeRows
     .filter((row) => {
@@ -562,9 +566,22 @@ export async function loadAdminDashboardMetrics(): Promise<DashboardMetrics> {
 
     if (status === 'completed') {
       productExisting.orders += 1
-      productExisting.revenue += paidAmount
-      productExisting.margin += marginNative
+      productExisting.revenue += toReportingAmount(
+        paidAmount,
+        paidCurrency,
+        reportingCurrency,
+        rateMap,
+        fallbackRates,
+      )
+      productExisting.margin += toReportingAmount(
+        marginNative,
+        paidCurrency,
+        reportingCurrency,
+        rateMap,
+        fallbackRates,
+      )
     }
+    productExisting.currency = reportingCurrency
     productMap.set(productKey, productExisting)
   }
 
@@ -581,7 +598,10 @@ export async function loadAdminDashboardMetrics(): Promise<DashboardMetrics> {
 
   const topProducts = rankedProducts.map((product) => ({
     ...product,
-    product_name: resolveProductDisplayName(product.product_name, product.plan_id, planNameMap),
+    product_name: translatePlanTextToEnglish(
+      resolveProductDisplayName(product.product_name, product.plan_id, planNameMap),
+    ),
+    currency: reportingCurrency,
   }))
 
   const summary: DashboardSummary = {

@@ -407,7 +407,7 @@ export default function PublicLayout({
               </DropdownMenu>
             )}
 
-            <DropdownMenu>
+            {/* <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
                   variant="ghost"
@@ -437,7 +437,7 @@ export default function PublicLayout({
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>
-            </DropdownMenu>
+            </DropdownMenu> */}
 
             {isAuthenticated && user ? (
               <DropdownMenu>

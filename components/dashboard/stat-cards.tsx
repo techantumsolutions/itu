@@ -57,7 +57,7 @@ type StatCardsProps = {
 }
 
 export function StatCards({ summary }: StatCardsProps) {
-  const currency = summary.reporting_currency || 'EUR'
+  const currency = 'EUR'
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat('en-US', {
       style: 'currency',
