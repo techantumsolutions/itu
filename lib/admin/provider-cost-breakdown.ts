@@ -7,6 +7,7 @@ import {
 import { resolveRawPlanForMapping } from '@/lib/aggregator/plan-mapping-reconciliation'
 import { resolveProviderPricingForSystemPlan } from '@/lib/catalog/resolve-provider-pricing-for-system-plan'
 import type { ProviderPricingDebugMeta } from '@/lib/catalog/provider-pricing-debug'
+import { englishPlanDisplayFields, translatePlanTextToEnglish } from '@/lib/catalog/plan-text-english'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -164,16 +165,22 @@ export async function loadSystemPlanProviderCostBreakdown(
   const plan = planRows[0]
   if (!plan) return null
 
+  const english = englishPlanDisplayFields({
+    planName: plan.system_plan_name || 'Unnamed Plan',
+    benefits: plan.description,
+    validity: plan.validity,
+  })
+
   const planMeta = {
     systemPlanId: plan.id,
-    systemPlanName: plan.system_plan_name || 'Unnamed Plan',
+    systemPlanName: english.planName || 'Unnamed Plan',
     internalPlanId: plan.internal_plan_id ?? null,
     systemPlanPrice: plan.amount ?? null,
     systemPlanCurrency: plan.currency ?? null,
     finalSellingPrice: plan.amount ?? null,
     status: plan.status ?? null,
-    description: plan.description?.trim() || null,
-    validity: plan.validity?.trim() || null,
+    description: english.benefits || null,
+    validity: english.validity || null,
   }
 
   const planMappingsRes = await supabaseRest(
@@ -272,7 +279,7 @@ export async function loadSystemPlanProviderCostBreakdown(
         providerName: provider?.name || auth.providerName,
         providerCode: provider?.code ?? auth.providerCode,
         providerPlanId,
-        providerPlanName: rawPlan?.provider_plan_name ?? null,
+        providerPlanName: translatePlanTextToEnglish(rawPlan?.provider_plan_name ?? '') || null,
         providerRechargeValue,
         rechargeValueCurrency,
         providerCostCurrency,
@@ -293,7 +300,7 @@ export async function loadSystemPlanProviderCostBreakdown(
         extractedPricing,
         rawPlanAmount: rawAmount,
         rawPlanCurrency: rawCurrency,
-        rawPlanName: rawPlan?.provider_plan_name ?? null,
+        rawPlanName: translatePlanTextToEnglish(rawPlan?.provider_plan_name ?? '') || null,
         rawData,
         pricingSource,
       }

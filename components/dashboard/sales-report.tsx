@@ -24,7 +24,7 @@ export function SalesReport({ summary }: SalesReportProps) {
     ].filter((row) => row.value > 0)
   }, [summary])
 
-  const currency = summary.reporting_currency || 'EUR'
+  const currency = 'EUR'
 
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat('en-US', {

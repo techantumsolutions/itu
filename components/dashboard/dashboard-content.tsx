@@ -8,17 +8,20 @@ type DashboardContentProps = {
   data: DashboardMetrics
 }
 
+const ADMIN_LOCALE = 'en-US'
+const ADMIN_REPORTING_CURRENCY = 'EUR'
+
 export function DashboardContent({ data }: DashboardContentProps) {
   return (
     <div className="flex flex-col gap-8">
       <div className="grid grid-cols-1 gap-8 xl:grid-cols-[1fr_340px]">
         <div className="flex flex-col gap-6">
           <StatCards summary={data.summary} />
-          <TransactionsTable />
+          <TransactionsTable reportingCurrency={ADMIN_REPORTING_CURRENCY} locale={ADMIN_LOCALE} />
         </div>
         <div className="flex flex-col gap-6">
           <SalesReport summary={data.summary} />
-          <TopProducts products={data.topProducts} reportingCurrency={data.summary.reporting_currency} />
+          <TopProducts products={data.topProducts} reportingCurrency={ADMIN_REPORTING_CURRENCY} locale={ADMIN_LOCALE} />
         </div>
       </div>
     </div>

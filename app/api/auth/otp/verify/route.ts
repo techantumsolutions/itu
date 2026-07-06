@@ -54,7 +54,7 @@ export async function POST(req: Request) {
         if (rows && rows.length > 0) {
           userId = rows[0]!.id
         } else {
-          // If profile doesn't exist under this phone number, insert a new record
+          const displayName = `+${dialCode} ${nationalNumber}`
           await supabaseRest('profiles', {
             method: 'POST',
             headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
@@ -64,6 +64,7 @@ export async function POST(req: Request) {
                 phone: nationalNumber,
                 country_code: dialCode,
                 country: countryIso,
+                name: displayName,
                 updated_at: new Date().toISOString(),
               },
             ]),

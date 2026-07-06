@@ -4,6 +4,7 @@ import {
   aggProviderLabelsBySystemPlanIds,
 } from '@/lib/aggregator/repository'
 import { matchesPlanListSearch } from '@/lib/admin/operator-list-search'
+import { translatePlanTextToEnglish } from '@/lib/catalog/plan-text-english'
 import { normalizeCountryIso3 } from '@/lib/lcr/countries'
 
 function enc(v: string): string {
@@ -178,7 +179,7 @@ export async function loadAdminSystemPlans(input: {
 
     return {
       id: row.id,
-      plan_name: row.system_plan_name || 'Unnamed Plan',
+      plan_name: translatePlanTextToEnglish(row.system_plan_name || 'Unnamed Plan'),
       country_iso3: row.country_code || opInfo?.countryId || '',
       operator_name: opInfo?.name || opId,
       operator_ref: opId,

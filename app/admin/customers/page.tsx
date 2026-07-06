@@ -5,11 +5,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Search, Users } from 'lucide-react'
+import { resolveAdminCustomerLabel } from '@/lib/auth/customer-display'
 
 type CustomerRow = {
   user_id: string
   email: string | null
   name: string | null
+  phone: string | null
+  country_code: string | null
+  country: string | null
   total_spend: number | string | null
   transaction_count: number | string | null
   last_transaction_at: string | null
@@ -29,7 +33,12 @@ export default function AdminCustomersPage() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return customers
-    return customers.filter((c) => `${c.email ?? ''} ${c.name ?? ''} ${c.user_id}`.toLowerCase().includes(q))
+    return customers.filter((c) => {
+      const label = resolveAdminCustomerLabel(c)
+      return `${c.email ?? ''} ${c.name ?? ''} ${c.phone ?? ''} ${c.country ?? ''} ${c.country_code ?? ''} ${label} ${c.user_id}`
+        .toLowerCase()
+        .includes(q)
+    })
   }, [customers, search])
 
   const totalSpend = customers.reduce((sum, c) => sum + (Number(c.total_spend) || 0), 0)
@@ -82,8 +91,9 @@ export default function AdminCustomersPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
+                <TableHead>Customer</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead>Country</TableHead>
                 <TableHead>Transactions</TableHead>
                 <TableHead>Total Spend</TableHead>
                 <TableHead>Last Transaction</TableHead>
@@ -92,15 +102,18 @@ export default function AdminCustomersPage() {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                     No customers found.
                   </TableCell>
                 </TableRow>
               ) : (
                 filtered.map((customer) => (
                   <TableRow key={customer.user_id}>
-                    <TableCell>{customer.name || 'Unnamed'}</TableCell>
+                    <TableCell>
+                      <p className="font-medium">{resolveAdminCustomerLabel(customer)}</p>
+                    </TableCell>
                     <TableCell>{customer.email || '—'}</TableCell>
+                    <TableCell>{customer.country || '—'}</TableCell>
                     <TableCell>{Number(customer.transaction_count) || 0}</TableCell>
                     <TableCell>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(customer.total_spend) || 0)}</TableCell>
                     <TableCell>

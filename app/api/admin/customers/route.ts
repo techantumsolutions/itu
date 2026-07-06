@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   }
 
   const res = await supabaseRest(
-    'admin_customer_spend?app_role=eq.user&select=user_id,email,name,total_spend,transaction_count,last_transaction_at&order=last_transaction_at.desc.nullslast',
+    'admin_customer_spend?app_role=eq.user&select=user_id,email,name,phone,country_code,country,total_spend,transaction_count,last_transaction_at&order=last_transaction_at.desc.nullslast',
     { cache: 'no-store' },
   )
   if (!res.ok) return NextResponse.json({ error: 'Failed to load customers' }, { status: 500 })
