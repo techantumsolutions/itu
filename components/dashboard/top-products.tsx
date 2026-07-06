@@ -14,11 +14,12 @@ import type { DashboardTopProduct } from '@/lib/admin/dashboard-metrics'
 type TopProductsProps = {
   products: DashboardTopProduct[]
   reportingCurrency: string
+  locale?: string
 }
 
-export function TopProducts({ products, reportingCurrency }: TopProductsProps) {
+export function TopProducts({ products, reportingCurrency, locale = 'en-US' }: TopProductsProps) {
   const formatCurrency = (amount: number, currency = reportingCurrency) =>
-    new Intl.NumberFormat('en-US', {
+    new Intl.NumberFormat(locale, {
       style: 'currency',
       currency,
       minimumFractionDigits: 2,

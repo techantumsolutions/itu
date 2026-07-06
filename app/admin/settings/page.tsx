@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { User, Bell, Shield, Palette, Globe, Save, Settings, ArrowRight, LayoutDashboard, Clock, Eye, EyeOff, Lock, Camera, Loader2, Mail, Phone, CheckCircle2, Check, ChevronDown, History, Search, RefreshCw, FileJson, Receipt } from "lucide-react"
+import { User, Bell, Shield, Save, Settings, ArrowRight, LayoutDashboard, Clock, Eye, EyeOff, Lock, Camera, Loader2, Mail, Phone, CheckCircle2, Check, ChevronDown, History, Search, RefreshCw, FileJson, Receipt } from "lucide-react"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -668,7 +668,7 @@ function SettingsContent() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className={cn("grid w-full", canEditSettings ? "grid-cols-7" : "grid-cols-6")}>
+        <TabsList className={cn("grid w-full", canEditSettings ? "grid-cols-6" : "grid-cols-5")}>
           <TabsTrigger value="profile" className="gap-2">
             <User className="h-4 w-4" />
             <span className="hidden sm:inline">Profile</span>
@@ -681,10 +681,10 @@ function SettingsContent() {
             <Shield className="h-4 w-4" />
             <span className="hidden sm:inline">Security</span>
           </TabsTrigger>
-          <TabsTrigger value="appearance" className="gap-2">
+          {/* <TabsTrigger value="appearance" className="gap-2">
             <Palette className="h-4 w-4" />
             <span className="hidden sm:inline">Appearance</span>
-          </TabsTrigger>
+          </TabsTrigger> */}
           <TabsTrigger value="system" className="gap-2">
             <Settings className="h-4 w-4" />
             <span className="hidden sm:inline">System</span>
@@ -1068,7 +1068,7 @@ function SettingsContent() {
           </Card>
         </TabsContent>
 
-        {/* Appearance Tab */}
+        {/* Appearance Tab — hidden until locale/currency preferences are wired up
         <TabsContent value="appearance">
           <Card>
             <CardHeader>
@@ -1114,6 +1114,7 @@ function SettingsContent() {
             </CardContent>
           </Card>
         </TabsContent>
+        */}
 
         {/* System Tab */}
         <TabsContent value="system">

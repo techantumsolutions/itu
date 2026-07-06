@@ -1,4 +1,4 @@
-import { formatProfilePhone } from '@/lib/auth/build-auth-user'
+import { resolveCustomerDisplay } from '@/lib/auth/customer-display'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { resolveTransactionDisplayStatus } from '@/lib/transactions/display-status'
 import {
@@ -9,9 +9,23 @@ import {
   marginToReporting,
   normalizeCurrency,
 } from '@/lib/admin/margin-utils'
+import {
+  extractPlanIdFromSources,
+  resolvePlanNameMap,
+  resolveProductDisplayName,
+} from '@/lib/admin/plan-name-resolver'
+import {
+  buildRechargeCheckoutSummary,
+  type RechargeCheckoutSummary,
+} from '@/lib/admin/recharge-checkout-summary'
+import {
+  fetchRoutingTypesFromLogs,
+  formatRoutingType,
+  resolveRoutingTypeLabel,
+} from '@/lib/transactions/routing-type'
 
 const TX_SELECT =
-  'id,user_id,type,amount,currency,status,description,metadata,created_at,profiles(name,email,phone,country_code,country),recharge_orders(product_name,sku_code,provider,operator_name,status,phone_number)'
+  'id,user_id,type,amount,currency,status,description,metadata,created_at,profiles(name,email,phone,country_code,country),recharge_orders(product_name,sku_code,plan_id,provider,operator_name,status,phone_number,service_fee,tax,send_amount,send_currency,receive_amount,receive_currency,metadata)'
 
 type TransactionRow = {
   id: string
@@ -33,10 +47,18 @@ type TransactionRow = {
   recharge_orders: Array<{
     product_name: string | null
     sku_code: string | null
+    plan_id: string | null
     provider: string | null
     operator_name: string | null
     status: string | null
     phone_number: string | null
+    service_fee?: number | string | null
+    tax?: number | string | null
+    send_amount?: number | string | null
+    send_currency?: string | null
+    receive_amount?: number | string | null
+    receive_currency?: string | null
+    metadata?: Record<string, unknown> | null
   }> | null
 }
 
@@ -53,6 +75,9 @@ export type AdminTransactionRecord = {
   createdAt: string
   margin: number
   marginCurrency: string
+  planName: string
+  routingType: string
+  rechargeSummary: RechargeCheckoutSummary | null
   user: {
     name: string
     email: string
@@ -123,7 +148,7 @@ function dateFilterIso(date: string): string | null {
 }
 
 function buildDbFilters(query: AdminTransactionsQuery): string {
-  const parts = ['type=neq.refund']
+  const parts = ['type=neq.refund', 'status=neq.pending_payment']
   const since = dateFilterIso(query.date ?? 'all')
   if (since) {
     parts.push(`created_at=gte.${encodeURIComponent(since)}`)
@@ -160,10 +185,11 @@ async function fetchAllMatchingRows(filters: string): Promise<TransactionRow[]> 
 
 function mapBaseTransaction(row: TransactionRow) {
   const rechargeOrder = row.recharge_orders?.[0] ?? null
-  const profilePhone = formatProfilePhone(row.profiles)
-  const profileName = row.profiles?.name?.trim() || ''
-  const profileEmail = row.profiles?.email?.trim() || ''
-  const profileCountry = row.profiles?.country?.trim() || ''
+  const customer = resolveCustomerDisplay({
+    profile: row.profiles,
+    metadata: row.metadata ?? {},
+    rechargePhone: rechargeOrder?.phone_number,
+  })
 
   const displayStatus = resolveTransactionDisplayStatus({
     type: row.type,
@@ -183,10 +209,10 @@ function mapBaseTransaction(row: TransactionRow) {
     metadata: row.metadata ?? {},
     createdAt: row.created_at,
     user: {
-      name: profileName || profilePhone || 'Unknown',
-      email: profileEmail || '—',
-      phone: profilePhone ?? '—',
-      country: profileCountry || '—',
+      name: customer.name,
+      email: customer.email,
+      phone: customer.phone,
+      country: customer.country,
     },
     rechargeDetails: rechargeOrder
       ? {
@@ -277,8 +303,46 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
 
   const routingData = await fetchRoutingCosts(txIdsNeedingLogs)
 
+  const routingTypes = await fetchRoutingTypesFromLogs(
+    allRows.filter((row) => row.type === 'recharge').map((row) => row.id),
+  )
+
+  const planIds = allRows.map((row) => {
+    const recharge = row.recharge_orders?.[0]
+    return extractPlanIdFromSources({
+      planId: recharge?.plan_id,
+      skuCode: recharge?.sku_code,
+      productName: recharge?.product_name,
+      metadata: row.metadata,
+    })
+  })
+
+  const planNameMap = await resolvePlanNameMap(planIds)
+
   const enriched = allRows.map((row) => {
     const base = mapBaseTransaction(row)
+    const recharge = row.recharge_orders?.[0]
+    const planId = extractPlanIdFromSources({
+      planId: recharge?.plan_id,
+      skuCode: recharge?.sku_code,
+      productName: recharge?.product_name,
+      metadata: row.metadata,
+    })
+
+    let planName = 'Recharge Plan'
+    if (base.type === 'topup') planName = 'Wallet Top-up'
+    else if (base.type === 'refund') planName = 'Wallet Refund'
+    else if (base.type === 'commission') planName = 'Commission Credit'
+    else {
+      const metaProductName =
+        typeof base.metadata?.productName === 'string' ? base.metadata.productName : null
+      planName = resolveProductDisplayName(
+        recharge?.product_name ?? metaProductName,
+        planId,
+        planNameMap,
+      )
+    }
+
     const { marginReporting } = resolveMarginForRow(
       row,
       routingData,
@@ -308,19 +372,38 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
       }
     }
 
+    let routingType = resolveRoutingTypeLabel(base.metadata)
+    if (routingType === '—') {
+      const fromLog = routingTypes.get(row.id)
+      if (fromLog) routingType = formatRoutingType(fromLog)
+    }
+
     return {
       ...base,
       rechargeDetails,
+      planName,
+      routingType,
+      rechargeSummary: buildRechargeCheckoutSummary({
+        type: base.type,
+        amount: base.amount,
+        currency: base.currency,
+        metadata: base.metadata,
+        planName,
+        rechargeOrder: recharge ?? null,
+      }),
       margin: marginReporting,
       marginCurrency: reportingCurrency,
     }
   })
 
   const displayStatusFilter = (query.status ?? '').trim()
-  const filtered =
-    displayStatusFilter && displayStatusFilter !== 'all'
-      ? enriched.filter((row) => row.displayStatus === displayStatusFilter)
-      : enriched
+  const filtered = enriched.filter((row) => {
+    if (row.status === 'pending_payment' || row.displayStatus === 'pending_payment') return false
+    if (displayStatusFilter && displayStatusFilter !== 'all') {
+      return row.displayStatus === displayStatusFilter
+    }
+    return true
+  })
 
   let completedOrders = 0
   let failedOrders = 0

@@ -1127,3 +1127,18 @@
 {"time":"2026-07-02T12:43:52.217Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"917898748290","Items":[{"ProviderCode":"AIIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
 {"time":"2026-07-02T12:43:52.311Z","event":"ding_match","matchedOperator":{"id":"2073109c-fad7-4e67-b3d9-7586d1fbef49","code":"2073109c-fad7-4e67-b3d9-7586d1fbef49","name":"Airtel","shortName":"Airtel","countryCode":"IN","countryIso3":"IND","logo":null}}
 {"time":"2026-07-02T12:43:52.435Z","event":"ding_match","matchedOperator":{"id":"2073109c-fad7-4e67-b3d9-7586d1fbef49","code":"2073109c-fad7-4e67-b3d9-7586d1fbef49","name":"Airtel","shortName":"Airtel","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-07-03T09:54:19.414Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-07-03T09:54:20.425Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"917898748290","Items":[{"ProviderCode":"AIIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-07-03T09:54:20.799Z","event":"ding_match","matchedOperator":{"id":"2073109c-fad7-4e67-b3d9-7586d1fbef49","code":"2073109c-fad7-4e67-b3d9-7586d1fbef49","name":"Airtel","shortName":"Airtel","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-07-03T09:57:23.444Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-07-03T09:57:23.484Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-07-03T09:57:24.092Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"917898748290","Items":[{"ProviderCode":"AIIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-07-03T09:57:24.409Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"917898748290","Items":[{"ProviderCode":"AIIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-07-03T09:57:24.431Z","event":"ding_match","matchedOperator":{"id":"2073109c-fad7-4e67-b3d9-7586d1fbef49","code":"2073109c-fad7-4e67-b3d9-7586d1fbef49","name":"Airtel","shortName":"Airtel","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-07-03T09:57:24.769Z","event":"ding_match","matchedOperator":{"id":"2073109c-fad7-4e67-b3d9-7586d1fbef49","code":"2073109c-fad7-4e67-b3d9-7586d1fbef49","name":"Airtel","shortName":"Airtel","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-07-03T10:00:28.155Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-07-03T10:00:28.438Z","event":"dtone_error","error":"fetch failed"}
+{"time":"2026-07-03T11:20:53.383Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-07-03T11:20:53.417Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-07-03T11:20:53.732Z","event":"dtone_error","error":"fetch failed"}
+{"time":"2026-07-03T11:20:53.742Z","event":"dtone_error","error":"fetch failed"}

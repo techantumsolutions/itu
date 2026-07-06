@@ -839,8 +839,8 @@ export default function AdminProductsPage() {
       </Dialog>
 
       <Dialog open={costDialogOpen} onOpenChange={setCostDialogOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
+      <DialogContent className="sm:max-w-4xl w-[95vw] max-h-[85vh] p-0 overflow-hidden flex flex-col">
+          <DialogHeader className='px-4 pt-4'>
             <DialogTitle>Plan details &amp; provider mapping</DialogTitle>
             <DialogDescription>
               System plan information and provider pricing for the selected plan.
@@ -857,8 +857,8 @@ export default function AdminProductsPage() {
               {costError}
             </div>
           ) : costBreakdown ? (
-            <div className="space-y-4">
-              <div className="rounded-md border bg-muted/30 p-4 space-y-3">
+            <div className="space-y-4 w-full overflow-y-auto flex-1 px-4">
+              <div className="rounded-md border bg-muted/30 p-4 space-y-3 w-full">
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">System plan</p>
                   <p className="font-semibold text-base mt-1">
@@ -1004,7 +1004,7 @@ export default function AdminProductsPage() {
             </div>
           ) : null}
 
-          <DialogFooter>
+          <DialogFooter className='pr-2 pb-2'>
             <Button variant="outline" onClick={() => setCostDialogOpen(false)}>
               Close
             </Button>

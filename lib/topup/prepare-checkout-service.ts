@@ -506,6 +506,7 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
         selected_provider_currency: lcrResult.selectedProviderCurrency,
         routing_result: snapshot,
         lcr_result: lcrResult,
+        routing_type: routingResult.routingType,
         provider_selection_timestamp: snapshot.provider_selection_timestamp,
       },
     }),

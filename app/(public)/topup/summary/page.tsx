@@ -40,6 +40,8 @@ import { countriesList, getFlagEmoji, isValidPhoneNumber } from '@/lib/country-c
 import { getCountryCallingCode } from 'libphonenumber-js'
 import { useFingerprint } from '@/hooks/use-fingerprint'
 import { buildUserAuthHeaders } from '@/lib/auth/get-user-id-from-request'
+import { RecaptchaCheckbox } from '@/components/security/RecaptchaCheckbox'
+import { useRecaptchaField } from '@/hooks/use-recaptcha-field'
 
 declare global {
   interface Window {
@@ -122,6 +124,14 @@ function InlineLoginDialog({
 
   const [err, setErr] = useState('')
 
+  const normalizedPhone = phone.replace(/[^\d]/g, '')
+  const mobileCaptcha = useRecaptchaField(`${selectedDialCode}${normalizedPhone}`)
+  const emailCaptcha = useRecaptchaField(email)
+  const isValid = useMemo(() => {
+    if (!phone) return false
+    return isValidPhoneNumber(phone, selectedCountryCode)
+  }, [phone, selectedCountryCode])
+
   // OTP countdown
   useEffect(() => {
     if (otpTimer <= 0) return
@@ -138,37 +148,42 @@ function InlineLoginDialog({
 
   // Reset state when dialog opens
   useEffect(() => {
-    if (open) {
-      setErr('')
-      setOtpStep('phone')
-      setOtpValue('')
-      setPhone('')
-      setDevOtp('')
-      setRequires2FA(false)
-      setTempToken('')
-      setEmailOtpValue('')
-      setDevEmailOtp('')
-    }
-  }, [open])
-
-  const normalizedPhone = phone.replace(/[^\d]/g, '')
-  const isValid = useMemo(() => {
-    if (!phone) return false
-    return isValidPhoneNumber(phone, selectedCountryCode)
-  }, [phone, selectedCountryCode])
+    if (!open) return
+    setErr('')
+    setOtpStep('phone')
+    setOtpValue('')
+    setPhone('')
+    setDevOtp('')
+    setRequires2FA(false)
+    setTempToken('')
+    setEmailOtpValue('')
+    setDevEmailOtp('')
+    mobileCaptcha.resetCaptcha()
+    emailCaptcha.resetCaptcha()
+  }, [open, mobileCaptcha.resetCaptcha, emailCaptcha.resetCaptcha])
 
   const sendOtp = async () => {
     if (!isValid) return
+    if (!mobileCaptcha.hasCaptcha) {
+      setErr('Please verify that you are not a robot.')
+      return
+    }
     setSendingOtp(true)
     setErr('')
     try {
       const res = await fetch('/api/auth/otp/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: `+${selectedDialCode}${normalizedPhone}` }),
+        body: JSON.stringify({
+          phone: `+${selectedDialCode}${normalizedPhone}`,
+          captchaToken: mobileCaptcha.captchaToken,
+        }),
       })
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; otp?: string }
-      if (!res.ok || !data.ok) throw new Error(data.error || 'Failed to send OTP')
+      if (!res.ok || !data.ok) {
+        mobileCaptcha.resetCaptcha()
+        throw new Error(data.error || 'Failed to send OTP')
+      }
       if (data.otp) {
         setDevOtp(data.otp)
       } else {
@@ -213,9 +228,13 @@ function InlineLoginDialog({
 
   const loginEmail = async () => {
     if (!email || !password) return
+    if (!emailCaptcha.hasCaptcha) {
+      setErr('Please verify that you are not a robot.')
+      return
+    }
     setEmailLoading(true)
     setErr('')
-    const result = await login(email, password, fingerprint || undefined)
+    const result = await login(email, password, fingerprint || undefined, emailCaptcha.captchaToken)
     setEmailLoading(false)
     if (result.ok) {
       if (result.requires_2fa) {
@@ -229,6 +248,7 @@ function InlineLoginDialog({
         onSuccess()
       }
     } else {
+      emailCaptcha.resetCaptcha()
       setErr(result.error ?? 'Invalid email or password')
     }
   }
@@ -266,7 +286,13 @@ function InlineLoginDialog({
 
         {err ? <div className="rounded-lg bg-red-50 px-4 py-2 text-sm font-medium text-red-700">{err}</div> : null}
 
-        <Tabs value={tab} onValueChange={(v) => { setTab(v as 'mobile' | 'email'); setErr(''); setRequires2FA(false) }}>
+        <Tabs value={tab} onValueChange={(v) => {
+          setTab(v as 'mobile' | 'email')
+          setErr('')
+          setRequires2FA(false)
+          mobileCaptcha.resetCaptcha()
+          emailCaptcha.resetCaptcha()
+        }}>
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="mobile">
               <Smartphone className="mr-2 h-4 w-4" />
@@ -340,9 +366,14 @@ function InlineLoginDialog({
                     />
                   </div>
                 </div>
+                <RecaptchaCheckbox
+                  ref={mobileCaptcha.recaptchaRef}
+                  disabled={sendingOtp}
+                  onTokenChange={mobileCaptcha.setCaptchaToken}
+                />
                 <Button
                   className="h-11 w-full rounded-xl bg-[var(--hero-cta-orange)] font-semibold text-white hover:brightness-105"
-                  disabled={sendingOtp || !isValid}
+                  disabled={sendingOtp || !isValid || !mobileCaptcha.hasCaptcha}
                   onClick={sendOtp}
                 >
                   {sendingOtp ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -365,7 +396,18 @@ function InlineLoginDialog({
                   {otpTimer > 0 ? (
                     <>Resend in <span className="font-semibold text-[var(--hero-cta-orange)]">00:{String(otpTimer).padStart(2, '0')}</span></>
                   ) : (
-                    <button type="button" className="font-semibold text-[var(--hero-cta-orange)] hover:underline" onClick={sendOtp}>Resend OTP</button>
+                    <button
+                      type="button"
+                      className="font-semibold text-[var(--hero-cta-orange)] hover:underline"
+                      onClick={() => {
+                        setOtpStep('phone')
+                        setOtpValue('')
+                        mobileCaptcha.resetCaptcha()
+                        setErr('Complete verification and send OTP again.')
+                      }}
+                    >
+                      Resend OTP
+                    </button>
                   )}
                 </div>
                 <Button
@@ -474,9 +516,14 @@ function InlineLoginDialog({
                     </button>
                   </div>
                 </div>
+                <RecaptchaCheckbox
+                  ref={emailCaptcha.recaptchaRef}
+                  disabled={emailLoading}
+                  onTokenChange={emailCaptcha.setCaptchaToken}
+                />
                 <Button
                   className="h-11 w-full rounded-xl bg-[var(--hero-cta-orange)] font-semibold text-white hover:brightness-105"
-                  disabled={emailLoading || !email.trim() || !password || !fingerprint}
+                  disabled={emailLoading || !email.trim() || !password || !fingerprint || !emailCaptcha.hasCaptcha}
                   onClick={loginEmail}
                 >
                   {emailLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
@@ -1087,6 +1134,7 @@ export default function TopupSummaryPage() {
     if (!selectedPlan || !pricing || isSubmitting) return
 
     if (!isAuthenticated) {
+      setPayAfterLogin(true)
       setLoginOpen(true)
       return
     }
@@ -1101,9 +1149,15 @@ export default function TopupSummaryPage() {
       {/* Inline login dialog */}
       <InlineLoginDialog
         open={loginOpen}
-        onOpenChange={setLoginOpen}
+        onOpenChange={(open) => {
+          setLoginOpen(open)
+          if (!open) {
+            queueMicrotask(() => {
+              if (!useAuthStore.getState().isAuthenticated) setPayAfterLogin(false)
+            })
+          }
+        }}
         onSuccess={() => {
-          setPayAfterLogin(false)
           setUseWallet(true)
         }}
         defaultPhone={phoneNumber}

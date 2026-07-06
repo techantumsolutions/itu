@@ -33,6 +33,8 @@ import { clientHasAdminPermission } from '@/lib/auth/client-features'
 import { useProviderDisplay } from '@/components/admin/provider-display-context'
 import { toast } from 'sonner'
 import { resolveTransactionDisplayStatus } from '@/lib/transactions/display-status'
+import { resolveRoutingTypeLabel } from '@/lib/transactions/routing-type'
+import { resolveCustomerDisplayName } from '@/lib/auth/customer-display'
 import {
   Dialog,
   DialogContent,
@@ -55,6 +57,19 @@ type AdminTransaction = {
   createdAt: string
   margin?: number
   marginCurrency?: string
+  planName?: string
+  routingType?: string
+  rechargeSummary?: {
+    planId: string
+    planName: string
+    planPrice: number
+    planPriceCurrency: string
+    serviceFee: number
+    tax: number
+    totalPayable: number
+    paymentCurrency: string
+    paymentMethod: string
+  } | null
   user?: {
     name: string
     email: string
@@ -185,12 +200,13 @@ export default function AdminTransactionsPage() {
   }
 
   const getPlanName = (order: AdminTransaction) => {
+    if (order.planName) return order.planName
     if (order.type === 'topup') return 'Wallet Top-up'
     if (order.type === 'refund') return 'Wallet Refund'
     if (order.type === 'commission') return 'Commission Credit'
     return order.rechargeDetails?.productName && order.rechargeDetails.productName !== '—'
       ? order.rechargeDetails.productName
-      : order.metadata?.productName || order.rechargeDetails?.skuCode || order.metadata?.plan_id || 'Recharge Plan'
+      : order.metadata?.productName || order.rechargeDetails?.skuCode || 'Recharge Plan'
   }
 
   const getProviderName = (order: AdminTransaction) => {
@@ -231,11 +247,16 @@ export default function AdminTransactionsPage() {
     })
 
   const getCustomerName = (order: AdminTransaction) => {
-    const name = order.user?.name?.trim()
-    if (name && name !== 'Unknown') return name
-    const phone = order.user?.phone?.trim()
-    if (phone && phone !== '—') return phone
-    return 'Unknown'
+    return resolveCustomerDisplayName({
+      profile: {
+        name: order.user?.name,
+        email: order.user?.email,
+        phone: order.user?.phone,
+        country: order.user?.country,
+      },
+      metadata: order.metadata,
+      rechargePhone: order.rechargeDetails?.phoneNumber,
+    })
   }
 
   const getCustomerEmail = (order: AdminTransaction) => {
@@ -275,6 +296,7 @@ export default function AdminTransactionsPage() {
 
   const openTransactionDetail = (order: AdminTransaction) => {
     const metadata = order.metadata ?? {}
+    const summary = order.rechargeSummary
     setDetailModel({
       id: order.id,
       createdAt: order.createdAt,
@@ -288,12 +310,20 @@ export default function AdminTransactionsPage() {
       destinationCountry: String(metadata.countryName ?? metadata.country ?? '—'),
       networkOperator: order.rechargeDetails?.operatorName || order.metadata?.operator_id || order.metadata?.operator || String(order.metadata?.carrierName ?? '—'),
       mobileNumber: getDestinationPhoneNumber(order),
-      paymentMethod: String(metadata.payment_gateway ?? '—'),
+      planId: summary?.planId,
+      planName: summary?.planName ?? getPlanName(order),
+      planPrice: summary?.planPrice,
+      planPriceCurrency: summary?.planPriceCurrency,
+      serviceFee: summary?.serviceFee,
+      tax: summary?.tax,
+      totalPayable: summary?.totalPayable ?? order.amount,
+      paymentCurrency: summary?.paymentCurrency ?? order.currency,
+      paymentMethod: summary?.paymentMethod ?? String(metadata.payment_gateway ?? '—'),
       paymentStatus: (metadata.razorpay_payment_id || metadata.payment_order_id) ? 'completed' : order.status,
       paymentReferenceId: String(metadata.razorpay_payment_id ?? metadata.providerRef ?? order.id),
       gatewayResponse: String(metadata.gatewayResponse ?? ((metadata.razorpay_payment_id || metadata.payment_order_id || order.status === 'completed') ? 'Approved' : 'Pending')),
       providerUsed: getProviderName(order),
-      routingType: String(metadata.routingType ?? '—'),
+      routingType: order.routingType && order.routingType !== '—' ? order.routingType : resolveRoutingTypeLabel(metadata),
       apiResponseStatus: getDisplayStatus(order) === 'completed' ? 'SUCCESS' : getDisplayStatus(order) === 'failed' ? 'FAILED' : 'PENDING',
       errorMessage: typeof metadata.errorMessage === 'string' ? metadata.errorMessage : undefined,
       failureReason: String(metadata.errorMessage ?? (order.status === 'failed' ? 'Provider unavailable' : '')),
@@ -409,13 +439,13 @@ export default function AdminTransactionsPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Date</TableHead>
                   <TableHead>Order ID</TableHead>
                   <TableHead>Customer</TableHead>
                   <TableHead>Plan & Provider</TableHead>
                   <TableHead>Destination Number</TableHead>
                   <TableHead>Amount Paid</TableHead>
                   <TableHead>Recharge Status</TableHead>
-                  <TableHead>Date</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -435,6 +465,9 @@ export default function AdminTransactionsPage() {
                 ) : (
                   transactions.map((order) => (
                     <TableRow key={order.id}>
+                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                        {formatDate(order.createdAt)}
+                      </TableCell>
                       <TableCell className="font-mono text-xs">
                         <span title={order.id}>{order.id.slice(0, 8)}...</span>
                       </TableCell>
@@ -481,9 +514,6 @@ export default function AdminTransactionsPage() {
                         </div>
                       </TableCell>
                       <TableCell>{getStatusBadge(getDisplayStatus(order))}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                        {formatDate(order.createdAt)}
-                      </TableCell>
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>

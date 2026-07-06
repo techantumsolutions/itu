@@ -18,15 +18,38 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Settings2, SlidersHorizontal, MoreHorizontal, ArrowUpDown } from "lucide-react"
-import type { Transaction } from "@/lib/types"
+import { translatePlanTextToEnglish } from "@/lib/catalog/plan-text-english"
 
 type SortField = "product" | "purchaseNo" | "date" | "amount"
 type SortDirection = "asc" | "desc"
 
-export function TransactionsTable() {
+type DashboardTransaction = {
+  id: string
+  description?: string
+  createdAt: string
+  amount: number
+  currency: string
+  margin?: number
+  marginCurrency?: string
+  status: string
+  displayStatus?: string
+  planName?: string
+  metadata?: { orderId?: string }
+  rechargeDetails?: { productName?: string } | null
+}
+
+type TransactionsTableProps = {
+  reportingCurrency?: string
+  locale?: string
+}
+
+export function TransactionsTable({
+  reportingCurrency = "EUR",
+  locale = "en-US",
+}: TransactionsTableProps) {
   const [sortField, setSortField] = useState<SortField>("date")
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
-  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [transactions, setTransactions] = useState<DashboardTransaction[]>([])
 
   useEffect(() => {
     void fetch('/api/admin/transactions?limit=10', { credentials: 'include', cache: 'no-store' })
@@ -64,21 +87,21 @@ export function TransactionsTable() {
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
+    return new Date(dateString).toLocaleDateString(locale, {
       month: "short",
       day: "numeric",
       year: "numeric",
     })
   }
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
+  const formatCurrency = (amount: number, currency = reportingCurrency) => {
+    return new Intl.NumberFormat(locale, {
       style: "currency",
-      currency: "USD",
+      currency,
     }).format(amount)
   }
 
-  const getStatusColor = (status: Transaction["status"]) => {
+  const getStatusColor = (status: string) => {
     switch (status) {
       case "completed":
         return "text-success"
@@ -161,8 +184,21 @@ export function TransactionsTable() {
               </TableRow>
             ) : null}
             {sortedTransactions.slice(0, 6).map((transaction) => {
-              const productName = transaction.description || "Transaction"
+              const rawName =
+                transaction.planName ||
+                transaction.rechargeDetails?.productName ||
+                transaction.description ||
+                "Transaction"
+              const productName = translatePlanTextToEnglish(rawName) || "Transaction"
               const purchaseNo = transaction.metadata?.orderId || transaction.id
+              const displayAmount =
+                transaction.margin != null && transaction.margin > 0
+                  ? transaction.margin
+                  : transaction.amount
+              const displayCurrency =
+                transaction.margin != null && transaction.margin > 0
+                  ? transaction.marginCurrency || reportingCurrency
+                  : reportingCurrency
               
               return (
                 <TableRow key={transaction.id}>
@@ -182,8 +218,8 @@ export function TransactionsTable() {
                   <TableCell className="text-muted-foreground whitespace-nowrap">
                     {formatDate(transaction.createdAt)}
                   </TableCell>
-                  <TableCell className={`text-right font-medium whitespace-nowrap ${getStatusColor(transaction.status)}`}>
-                    {formatCurrency(transaction.amount)}
+                  <TableCell className={`text-right font-medium whitespace-nowrap ${getStatusColor(transaction.displayStatus || transaction.status)}`}>
+                    {formatCurrency(displayAmount, displayCurrency)}
                   </TableCell>
                 </TableRow>
               )
