@@ -5,6 +5,7 @@
 
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { executeMappedRecharge } from '@/lib/lcr-v2/execute-provider'
+import { createAdminNotification } from '@/lib/notifications/admin-notifications'
 import {
   dbGetProvider,
   dbFindRechargeByDistributorRef,
@@ -233,6 +234,13 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
       })
     }
 
+    await createAdminNotification({
+      title: 'Recharge Failed after Payment',
+      message: `Recharge order ${rechargeOrder?.id || transactionId} failed for phone ${input.mobileNumber} (amount: ${input.amount} ${input.currency || 'INR'}) due to provider unavailable after payment: ${errMsg}`,
+      type: 'recharge_failed_after_payment',
+      details: { transactionId, rechargeOrderId: rechargeOrder?.id, phoneNumber: input.mobileNumber, error: errMsg }
+    })
+
     return {
       ok: false,
       transactionId,
@@ -273,6 +281,14 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
     await dbUpdateRechargeAttempt(attempt.id, { status: 'failed', error: errMsg })
     await updateTransactionStatus(transactionId, 'failed', { error: errMsg })
     if (rechargeOrder) await updateRechargeOrder(rechargeOrder.id, { status: 'failed', failure_reason: errMsg })
+    
+    await createAdminNotification({
+      title: 'Recharge Failed after Payment',
+      message: `Recharge order ${rechargeOrder?.id || transactionId} failed for phone ${input.mobileNumber} (amount: ${input.amount} ${input.currency || 'INR'}) due to authoritative provider validation error: ${errMsg}`,
+      type: 'recharge_failed_after_payment',
+      details: { transactionId, rechargeOrderId: rechargeOrder?.id, phoneNumber: input.mobileNumber, error: errMsg }
+    })
+
     return { ok: false, transactionId, status: 'failed', error: errMsg, hints }
   }
 
@@ -305,6 +321,14 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
         failure_reason: errMsg,
       })
     }
+
+    await createAdminNotification({
+      title: 'Recharge Failed after Payment',
+      message: `Recharge order ${rechargeOrder?.id || transactionId} failed for phone ${input.mobileNumber} (amount: ${input.amount} ${input.currency || 'INR'}) due to provider pre-validation error: ${errMsg}`,
+      type: 'recharge_failed_after_payment',
+      details: { transactionId, rechargeOrderId: rechargeOrder?.id, phoneNumber: input.mobileNumber, error: errMsg }
+    })
+
     return { ok: false, transactionId, status: 'failed', error: errMsg, hints }
   }
 
@@ -435,6 +459,13 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
   if (rechargeOrder) {
     await updateRechargeOrder(rechargeOrder.id, { status: 'failed', failure_reason: exec.error })
   }
+
+  await createAdminNotification({
+    title: 'Recharge Failed after Payment',
+    message: `Recharge order ${rechargeOrder?.id || transactionId} failed for phone ${input.mobileNumber} (amount: ${input.amount} ${input.currency || 'INR'}) due to provider execution error: ${exec.error || 'Unknown Error'}`,
+    type: 'recharge_failed_after_payment',
+    details: { transactionId, rechargeOrderId: rechargeOrder?.id, phoneNumber: input.mobileNumber, error: exec.error, errorCode: exec.errorCode }
+  })
 
   return {
     ok: false,

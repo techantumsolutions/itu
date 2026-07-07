@@ -40,6 +40,7 @@ import { countriesList, getFlagEmoji, isValidPhoneNumber } from '@/lib/country-c
 import { getCountryCallingCode } from 'libphonenumber-js'
 import { useFingerprint } from '@/hooks/use-fingerprint'
 import { buildUserAuthHeaders } from '@/lib/auth/get-user-id-from-request'
+import { readLocaleCookiesFromDocument } from '@/lib/locale/locale-cookies'
 import { RecaptchaCheckbox } from '@/components/security/RecaptchaCheckbox'
 import { useRecaptchaField } from '@/hooks/use-recaptcha-field'
 
@@ -215,7 +216,27 @@ function InlineLoginDialog({
       // Fetch session
       const me = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' })
       const meData = (await me.json().catch(() => ({}))) as { user?: any }
-      if (meData?.user?.id) setSession(meData.user)
+
+      if (meData?.user?.id) {
+        const c = readLocaleCookiesFromDocument()
+        try {
+          await fetch('/api/profile/locale', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: meData.user.id,
+              country: c.country ?? 'IN',
+              language: c.language ?? 'en-IN',
+              currency: c.currency ?? 'INR',
+            }),
+          })
+          meData.user.currency = c.currency || meData.user.currency
+        } catch (localeErr) {
+          console.error('Failed to sync locale on otp verify:', localeErr)
+        }
+        setSession(meData.user)
+      }
 
       onOpenChange(false)
       onSuccess()
@@ -244,6 +265,30 @@ function InlineLoginDialog({
         setEmailOtpValue('')
         setEmailOtpTimer(25)
       } else {
+        const me = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' })
+        const meData = (await me.json().catch(() => ({}))) as { user?: any }
+
+        if (meData?.user?.id) {
+          const c = readLocaleCookiesFromDocument()
+          try {
+            await fetch('/api/profile/locale', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                userId: meData.user.id,
+                country: c.country ?? 'IN',
+                language: c.language ?? 'en-IN',
+                currency: c.currency ?? 'INR',
+              }),
+            })
+            meData.user.currency = c.currency || meData.user.currency
+          } catch (localeErr) {
+            console.error('Failed to sync locale on email login:', localeErr)
+          }
+          setSession(meData.user)
+        }
+
         onOpenChange(false)
         onSuccess()
       }
@@ -265,7 +310,27 @@ function InlineLoginDialog({
       })
       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; user?: any }
       if (!res.ok || !data.ok) throw new Error(data.error || '2FA verification failed')
-      if (data.user?.id) setSession(data.user)
+
+      if (data.user?.id) {
+        const c = readLocaleCookiesFromDocument()
+        try {
+          await fetch('/api/profile/locale', {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: data.user.id,
+              country: c.country ?? 'IN',
+              language: c.language ?? 'en-IN',
+              currency: c.currency ?? 'INR',
+            }),
+          })
+          data.user.currency = c.currency || data.user.currency
+        } catch (localeErr) {
+          console.error('Failed to sync locale on 2fa verification:', localeErr)
+        }
+        setSession(data.user)
+      }
 
       onOpenChange(false)
       onSuccess()
@@ -574,6 +639,17 @@ export default function TopupSummaryPage() {
   const [error, setError] = useState<string | null>(null)
   const [loginOpen, setLoginOpen] = useState(false)
   const [payAfterLogin, setPayAfterLogin] = useState(false)
+  const [storeHydrated, setStoreHydrated] = useState(false)
+
+  // Track store hydration state to prevent race conditions on mount
+  useEffect(() => {
+    const p = useTopupStore.persist
+    if (p?.hasHydrated?.()) {
+      setStoreHydrated(true)
+    } else {
+      return p?.onFinishHydration?.(() => setStoreHydrated(true))
+    }
+  }, [])
 
   // Wallet & Currency states
   const [walletBalance, setWalletBalance] = useState<number | null>(null)
@@ -645,6 +721,8 @@ export default function TopupSummaryPage() {
   }, [])
 
   useEffect(() => {
+    if (!storeHydrated) return
+
     if (!selectedPlan || !pricing) {
       router.replace('/topup')
       return
@@ -652,7 +730,8 @@ export default function TopupSummaryPage() {
     if (!checkoutSessionId) {
       router.replace('/topup')
     }
-  }, [selectedPlan, pricing, checkoutSessionId, router])
+  }, [storeHydrated, selectedPlan, pricing, checkoutSessionId, router])
+
 
   // Fetch wallet balance
   useEffect(() => {
@@ -673,8 +752,8 @@ export default function TopupSummaryPage() {
           if (user.name) headers['x-user-name'] = user.name
           if (user.role) headers['x-user-role'] = user.role
         }
-        const res = await fetch('/api/wallet/balance', { 
-          credentials: 'include', 
+        const res = await fetch('/api/wallet/balance', {
+          credentials: 'include',
           cache: 'no-store',
           headers,
         })
@@ -718,8 +797,8 @@ export default function TopupSummaryPage() {
     const getRewards = async () => {
       setIsLoadingRewards(true)
       try {
-        const res = await fetch('/api/account/rewards/history', { 
-          credentials: 'include', 
+        const res = await fetch('/api/account/rewards/history', {
+          credentials: 'include',
           cache: 'no-store',
         })
         if (res.ok) {

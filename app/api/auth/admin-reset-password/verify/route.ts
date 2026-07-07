@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { cacheGetJson, cacheDel } from '@/lib/cache/redis'
 import { runtimeEnv } from '@/lib/env/runtime'
 import { assertStrongPassword } from '@/lib/validators/password-api'
+import { createAdminNotification } from '@/lib/notifications/admin-notifications'
 import { requireCaptcha } from '@/lib/security/recaptcha-guard'
 
 export async function POST(req: Request) {
@@ -67,6 +68,14 @@ export async function POST(req: Request) {
 
     // 3. Clear token from Redis
     await cacheDel(cacheKey)
+
+    // Trigger admin notification for admin password reset
+    await createAdminNotification({
+      title: 'Admin Password Updated',
+      message: `Admin/staff user ${record.email} has updated their password.`,
+      type: 'admin_password_set',
+      details: { email: record.email, userId }
+    })
 
     return NextResponse.json({
       ok: true,

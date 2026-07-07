@@ -5,6 +5,7 @@ import { supabaseRest } from '@/lib/db/supabase-rest'
 import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
 import { buildUserFromProfile } from '@/lib/auth/build-auth-user'
 import { assertStrongPassword } from '@/lib/validators/password-api'
+import { createAdminNotification } from '@/lib/notifications/admin-notifications'
 import {
   parseProfilePhoneFromParts,
   profilePhoneExists,
@@ -127,6 +128,14 @@ export async function POST(req: Request) {
     } catch (err) {
       console.error('Failed to create database profile row:', err)
     }
+
+    // Trigger admin notification for new user registration
+    await createAdminNotification({
+      title: 'New User Registered',
+      message: `User ${record.email} (${record.name || 'No Name'}) has registered.`,
+      type: 'user_registration',
+      details: { email: record.email, name: record.name, userId: user.id }
+    })
 
     // Authenticate the user to retrieve session tokens
     const { session } = await supabaseSignInWithPassword({
