@@ -1,5 +1,9 @@
 -- Dashboard reporting views: margin-based revenue from completed recharges.
 
+drop view if exists admin_dashboard_summary cascade;
+drop view if exists admin_daily_sales cascade;
+drop view if exists admin_top_products cascade;
+
 create or replace view admin_dashboard_summary as
 select
   count(*)::bigint as total_orders,
