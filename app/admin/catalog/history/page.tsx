@@ -16,6 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import Link from 'next/link'
+import { ArrowLeft } from 'lucide-react'
 import { normalizeCountryIso3 } from '@/lib/lcr/countries'
 
 function CompactDateTime({ value }: { value: unknown }) {
@@ -189,6 +191,13 @@ export default function CatalogHistoryPage() {
           <p className="text-sm text-muted-foreground mt-1">
             Persistent operator and plan merge rules reapplied automatically on every sync.
           </p>
+          <Link
+            href="/admin/settings?tab=system"
+            className="text-sm font-medium text-primary hover:underline flex items-center gap-1 mt-1"
+          >
+            <ArrowLeft className="size-3.5" />
+            Back to settings
+          </Link>
         </div>
         <Button variant="outline" onClick={() => void load()} disabled={loading}>
           {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCcw className="mr-2 h-4 w-4" />}

@@ -8,7 +8,7 @@ export type LcrEngineSettings = {
   routingStrategy: RoutingStrategy
   fallbackStrategy: FallbackStrategy
   autoFailover: boolean
-  retryEnabled: boolean
+  retryEnabled?: boolean
   retryAttempts: number
 }
 

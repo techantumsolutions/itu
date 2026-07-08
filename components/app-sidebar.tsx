@@ -54,7 +54,7 @@ const mainMenuItems: {
   { title: 'Admin users', url: '/admin/staff', icon: UserCog, viewPermission: 'admin_users.view' },
   { title: 'Providers', url: '/admin/providers', icon: Globe, viewPermission: 'providers.view' },
   { title: 'Operators', url: '/admin/integrations/operators', icon: PlugZap, viewPermission: 'operators.view' },
-  { title: 'Catalog History', url: '/admin/catalog/history', icon: History, viewPermission: 'operators.view' },
+  // { title: 'Catalog History', url: '/admin/catalog/history', icon: History, viewPermission: 'operators.view' },
   { title: 'Plans', url: '/admin/products', icon: Package, viewPermission: 'plans.view' },
   { title: 'LCR Engine', url: '/admin/routing/lcr-engine', icon: Cog, viewPermission: 'lcr.view' },
   {

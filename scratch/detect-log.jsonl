@@ -1142,3 +1142,12 @@
 {"time":"2026-07-03T11:20:53.417Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
 {"time":"2026-07-03T11:20:53.732Z","event":"dtone_error","error":"fetch failed"}
 {"time":"2026-07-03T11:20:53.742Z","event":"dtone_error","error":"fetch failed"}
+{"time":"2026-07-07T12:06:13.132Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-07-07T12:06:13.578Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-07-07T12:06:14.045Z","event":"local_db_result","result":{"operator":"Unknown","country":"IN","source":"database"}}
+{"time":"2026-07-07T12:06:16.957Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","Items":[{"ProviderCode":"AIIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-07-07T12:06:17.044Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919196307087","Items":[{"ProviderCode":"RJIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-07-07T12:06:17.094Z","event":"ding_api_result","dingResult":{"CountryIso":"IN","AccountNumberNormalized":"919630708792","Items":[{"ProviderCode":"AIIN","RegionCode":"IN"}],"ResultCode":1,"ErrorCodes":[]}}
+{"time":"2026-07-07T12:06:18.434Z","event":"ding_match","matchedOperator":{"id":"2073109c-fad7-4e67-b3d9-7586d1fbef49","code":"2073109c-fad7-4e67-b3d9-7586d1fbef49","name":"Airtel","shortName":"Airtel","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-07-07T12:06:18.781Z","event":"ding_match","matchedOperator":{"id":"2073109c-fad7-4e67-b3d9-7586d1fbef49","code":"2073109c-fad7-4e67-b3d9-7586d1fbef49","name":"Airtel","shortName":"Airtel","countryCode":"IN","countryIso3":"IND","logo":null}}
+{"time":"2026-07-07T12:06:18.856Z","event":"ding_match","matchedOperator":{"id":"a64e9ff4-935f-4cb9-96a5-037ea294b48e","code":"a64e9ff4-935f-4cb9-96a5-037ea294b48e","name":"Jio IND","shortName":"Jio IND","countryCode":"IN","countryIso3":"IND","logo":null}}

@@ -19,6 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatMoney, formatProviderCostDual } from '@/lib/routing/log-pricing'
 import { formatPlanRechargeValue } from '@/lib/catalog/plan-recharge-value'
 import { useProviderDisplay } from '@/components/admin/provider-display-context'
+import { cn } from '@/lib/utils'
 
 type LogRow = {
   id: string
@@ -76,6 +77,53 @@ export default function RoutingLogsPage() {
   const [expandedRow, setExpandedRow] = useState<string | null>(null)
   const [details, setDetails] = useState<Record<string, any>>({})
   const [detailsLoading, setDetailsLoading] = useState<Record<string, boolean>>({})
+
+  const hasFilters = useMemo(() => {
+    return countryId !== '' || operatorId !== '' || providerId !== 'ALL' || from !== '' || to !== ''
+  }, [countryId, operatorId, providerId, from, to])
+
+  const renderStatusBadge = useCallback((status: string | null | undefined, text?: string, extraClasses = '') => {
+    const norm = String(status ?? '').toLowerCase().trim()
+    const display = text || status || '—'
+    if (norm === 'success' || norm === 'completed') {
+      return (
+        <Badge
+          variant="outline"
+          className={cn(
+            'bg-emerald-500/10 text-emerald-700 border-emerald-500/30 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/25 capitalize font-medium',
+            extraClasses
+          )}
+        >
+          {display}
+        </Badge>
+      )
+    }
+    if (norm === 'failed' || norm === 'cancelled') {
+      return (
+        <Badge variant="destructive" className={cn('capitalize font-medium', extraClasses)}>
+          {display}
+        </Badge>
+      )
+    }
+    if (norm === 'pending' || norm === 'processing' || norm === 'submitted' || norm === 'processing_payment') {
+      return (
+        <Badge
+          variant="outline"
+          className={cn(
+            'bg-amber-500/10 text-amber-700 border-amber-500/30 dark:bg-amber-500/20 dark:text-amber-400 dark:border-amber-500/25 capitalize font-medium',
+            extraClasses
+          )}
+        >
+          {display}
+        </Badge>
+      )
+    }
+    return (
+      <Badge variant="outline" className={cn('capitalize font-medium', extraClasses)}>
+        {display}
+      </Badge>
+    )
+  }, [])
 
   const toggleExpand = async (transactionId: string | null) => {
     if (!transactionId) return
@@ -199,6 +247,22 @@ export default function RoutingLogsPage() {
             >
               Apply filters
             </Button>
+            {hasFilters && (
+              <Button
+                variant="ghost"
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  setCountryId('')
+                  setOperatorId('')
+                  setProviderId('ALL')
+                  setFrom('')
+                  setTo('')
+                  setOffset(0)
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
           </div>
 
           <Table className="w-full overflow-x-auto">
@@ -301,17 +365,7 @@ export default function RoutingLogsPage() {
                                 formatProviderCostDual(log.providerCost, log.providerCurrency).providerCostDisplay}
                             </TableCell>
                             <TableCell className="text-center">
-                              <Badge 
-                                variant={
-                                  log.status === 'success' || log.status === 'completed' 
-                                    ? 'success' 
-                                    : log.status === 'failed' 
-                                      ? 'destructive' 
-                                      : 'outline'
-                                }
-                              >
-                                {log.status}
-                              </Badge>
+                              {renderStatusBadge(log.status)}
                             </TableCell>
                           </div>
                         </div>
@@ -358,9 +412,7 @@ export default function RoutingLogsPage() {
                                   <div>
                                     <div className="text-muted-foreground text-xs">Final Outcome</div>
                                     <div className="font-semibold">
-                                      <Badge variant={detail.status === 'success' ? 'success' : 'destructive'}>
-                                        {detail.status === 'success' ? 'Success' : 'Failed'}
-                                      </Badge>
+                                      {renderStatusBadge(detail.status, detail.status === 'success' ? 'Success' : 'Failed')}
                                     </div>
                                   </div>
                                 </div>
@@ -523,11 +575,14 @@ export default function RoutingLogsPage() {
                                                   <div className="flex gap-2">
                                                     {priority != null && <Badge variant="outline" className="text-[10px]">Priority {priority}</Badge>}
                                                     {isSkipped ? (
-                                                      <Badge variant="outline" className="text-[10px] border-amber-500 text-amber-800 bg-amber-50">
+                                                      <Badge variant="outline" className="text-[10px] border-amber-500 text-amber-800 bg-amber-50 font-medium">
                                                         Skipped
                                                       </Badge>
                                                     ) : (
-                                                      <Badge variant={isEligible ? 'success' : 'destructive'} className="text-[10px]">
+                                                      <Badge 
+                                                        variant={isEligible ? 'outline' : 'destructive'} 
+                                                        className={cn('text-[10px] font-medium', isEligible && 'bg-emerald-500/10 text-emerald-700 border-emerald-500/30 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/25')}
+                                                      >
                                                         {isEligible ? 'Eligible' : 'Filtered'}
                                                       </Badge>
                                                     )}
@@ -582,9 +637,7 @@ export default function RoutingLogsPage() {
                                                     id: hop.providerId,
                                                   })}
                                                 </span>
-                                                <Badge variant={hop.ok ? 'success' : hop.skipped ? 'outline' : 'destructive'} className="text-[10px]">
-                                                  {hop.ok ? 'Success' : hop.skipped ? 'Skipped' : 'Failed'}
-                                                </Badge>
+                                                {renderStatusBadge(hop.ok ? 'success' : hop.skipped ? 'pending' : 'failed', hop.ok ? 'Success' : hop.skipped ? 'Skipped' : 'Failed', 'text-[10px]')}
                                               </div>
                                               <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground">
                                                 <div>Source: <span className="font-medium text-foreground">{hop.source}</span></div>

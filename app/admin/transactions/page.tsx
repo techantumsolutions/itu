@@ -358,10 +358,10 @@ export default function AdminTransactionsPage() {
           <h1 className="text-2xl font-bold">Transactions</h1>
           <p className="text-muted-foreground">Manage all recharge orders and transactions</p>
         </div>
-        <Button variant="outline" className="gap-2">
+        {/* <Button variant="outline" className="gap-2">
           <Download className="h-4 w-4" />
           Export
-        </Button>
+        </Button> */}
       </div>
 
       {/* Stats Cards */}
@@ -399,7 +399,7 @@ export default function AdminTransactionsPage() {
             <div className="relative w-full sm:w-72">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search orders..."
+                placeholder="Search by order, customer, plan, provider, phone, amount..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="pl-9"
@@ -429,6 +429,7 @@ export default function AdminTransactionsPage() {
                   <SelectItem value="today">Today</SelectItem>
                   <SelectItem value="week">This Week</SelectItem>
                   <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="year">This Year</SelectItem>
                 </SelectContent>
               </Select>
             </div>

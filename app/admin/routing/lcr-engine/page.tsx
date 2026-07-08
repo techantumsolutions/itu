@@ -25,7 +25,7 @@ type Settings = {
   routingStrategy: string
   fallbackStrategy: string
   autoFailover: boolean
-  retryEnabled: boolean
+  retryEnabled?: boolean
   retryAttempts: number
 }
 
@@ -50,13 +50,15 @@ export default function LcrEnginePage() {
     retryAttempts: 2,
   })
   const [priorities, setPriorities] = useState<PriorityRow[]>([])
+  const [totalProvidersCount, setTotalProvidersCount] = useState<number>(0)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [settingsRes, prioritiesRes] = await Promise.all([
+      const [settingsRes, prioritiesRes, providersRes] = await Promise.all([
         fetch('/api/admin/lcr/settings', { credentials: 'include', cache: 'no-store' }),
         fetch('/api/admin/provider-priorities', { credentials: 'include', cache: 'no-store' }),
+        fetch('/api/admin/lcr/providers', { credentials: 'include', cache: 'no-store' }).catch(() => null),
       ])
       const settingsData = await settingsRes.json().catch(() => ({}))
       const prioritiesData = await prioritiesRes.json().catch(() => ({}))
@@ -64,6 +66,17 @@ export default function LcrEnginePage() {
       setSchemaReady(settingsData.schemaReady !== false)
       if (settingsData.settings) setSettings(settingsData.settings)
       setPriorities(Array.isArray(prioritiesData.priorities) ? prioritiesData.priorities : [])
+
+      let totalCount = 5
+      if (providersRes && providersRes.ok) {
+        const providersData = await providersRes.json().catch(() => ({}))
+        if (Array.isArray(providersData.providers)) {
+          totalCount = providersData.providers.length
+        }
+      } else if (Array.isArray(prioritiesData.priorities)) {
+        totalCount = prioritiesData.priorities.length
+      }
+      setTotalProvidersCount(totalCount)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Load failed')
     } finally {
@@ -172,14 +185,14 @@ export default function LcrEnginePage() {
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="space-y-2 w-full">
               <Label>Routing strategy</Label>
               <Select
                 value={settings.routingStrategy}
                 onValueChange={(v) => setSettings((s) => ({ ...s, routingStrategy: v }))}
               >
-                <SelectTrigger>
+                <SelectTrigger className='w-full'>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -195,7 +208,7 @@ export default function LcrEnginePage() {
                 value={settings.fallbackStrategy}
                 onValueChange={(v) => setSettings((s) => ({ ...s, fallbackStrategy: v }))}
               >
-                <SelectTrigger>
+                <SelectTrigger className='w-full'>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -204,32 +217,25 @@ export default function LcrEnginePage() {
                 </SelectContent>
               </Select>
             </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="flex items-center justify-between rounded-lg border p-4">
-              <div>
-                <Label htmlFor="retryEnabled">Retry enabled</Label>
-                <p className="text-xs text-muted-foreground">Retry with fallback providers.</p>
-              </div>
-              <Switch
-                id="retryEnabled"
-                checked={settings.retryEnabled}
-                onCheckedChange={(v) => setSettings((s) => ({ ...s, retryEnabled: v }))}
-              />
-            </div>
             <div className="space-y-2">
               <Label htmlFor="retryAttempts">Retry attempts</Label>
-              <Input
-                id="retryAttempts"
-                type="number"
-                min={0}
-                max={10}
-                value={settings.retryAttempts}
-                onChange={(e) =>
-                  setSettings((s) => ({ ...s, retryAttempts: Math.min(10, Math.max(0, Number(e.target.value) || 0)) }))
+              <Select
+                value={settings.retryAttempts !== undefined && settings.retryAttempts !== null ? String(settings.retryAttempts) : ""}
+                onValueChange={(v) =>
+                  setSettings((s) => ({ ...s, retryAttempts: Number(v) }))
                 }
-              />
+              >
+                <SelectTrigger id="retryAttempts" className='w-full'>
+                  <SelectValue placeholder="Select retry attempts" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: Math.max(1, totalProvidersCount + 1) }, (_, i) => (
+                    <SelectItem key={i} value={String(i)}>
+                      {String(i)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
