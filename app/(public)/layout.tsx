@@ -259,10 +259,11 @@ export default function PublicLayout({
   }, [currencyCode, setCurrency])
 
   const isHome = pathname === '/'
+  const isTransparentHeaderPage = pathname === '/' || pathname === '/careers'
   const [navScrolled, setNavScrolled] = useState(false)
 
   useEffect(() => {
-    if (!isHome) {
+    if (!isTransparentHeaderPage) {
       setNavScrolled(false)
       return
     }
@@ -270,10 +271,10 @@ export default function PublicLayout({
     onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
-  }, [isHome])
+  }, [isTransparentHeaderPage])
 
-  const onHeroTop = isHome && !navScrolled
-  const navBarSolid = !isHome || navScrolled
+  const onHeroTop = isTransparentHeaderPage && !navScrolled
+  const navBarSolid = !isTransparentHeaderPage || navScrolled
 
   const navClass = (active: boolean) =>
     cn(
@@ -508,7 +509,7 @@ export default function PublicLayout({
                 size="sm"
                 className={cn(
                   'h-9 shrink-0 px-6 text-[11px] font-bold uppercase tracking-[0.12em]',
-                  isHome
+                  isTransparentHeaderPage
                     ? 'rounded-lg border-0 bg-[var(--hero-cta-orange)] text-white shadow-[0_10px_26px_-8px_rgba(241,90,43,0.55)] hover:bg-[var(--hero-cta-orange)]/92'
                     : 'rounded-full bg-primary text-primary-foreground shadow-[0_6px_20px_-4px_rgba(227,6,19,0.45)] hover:bg-primary/90',
                 )}
@@ -671,7 +672,7 @@ export default function PublicLayout({
       <main
         className={cn(
           'flex flex-1 flex-col',
-          pathname === '/' ? 'pt-0' : 'pt-[5.25rem] sm:pt-[5.5rem]',
+          (pathname === '/' || pathname === '/careers') ? 'pt-0' : 'pt-[5.25rem] sm:pt-[5.5rem]',
         )}
       >
         {pathname === '/' && (
