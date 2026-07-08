@@ -3,8 +3,6 @@ import { supabaseRest } from '@/lib/db/supabase-rest'
 import { resolveTransactionDisplayStatus } from '@/lib/transactions/display-status'
 import {
   computeMargin,
-  extractProviderCost,
-  fetchRoutingCosts,
   loadMarginRateContext,
   marginToReporting,
   normalizeCurrency,
@@ -19,26 +17,40 @@ import {
   type RechargeCheckoutSummary,
 } from '@/lib/admin/recharge-checkout-summary'
 import {
-  fetchRoutingTypesFromLogs,
-  formatRoutingType,
   resolveRoutingTypeLabel,
 } from '@/lib/transactions/routing-type'
 import { resolveAdminTransactionDateRange } from '@/lib/admin/admin-transaction-date-range'
 import { matchesAdminTransactionSearch } from '@/lib/admin/admin-transaction-search'
 
-const TX_SELECT =
-  'id,user_id,type,amount,currency,status,description,metadata,created_at,profiles(name,email,phone,country_code,country),recharge_orders(product_name,sku_code,plan_id,provider,operator_name,status,phone_number,service_fee,tax,send_amount,send_currency,receive_amount,receive_currency,metadata)'
+const RO_SELECT =
+  'id,user_id,transaction_id,lcr_attempt_id,country_iso,operator_code,operator_name,plan_id,sku_code,product_name,phone_number,send_amount,send_currency,receive_amount,receive_currency,status,payment_status,provider,provider_ref,failure_reason,metadata,created_at,updated_at,service_fee,tax,profiles(name,email,phone,country_code,country)'
 
-type TransactionRow = {
+type RechargeOrderRow = {
   id: string
   user_id: string | null
-  type: string
-  amount: number | string
-  currency: string
-  status: string
-  description: string | null
+  transaction_id: string | null
+  lcr_attempt_id: string | null
+  country_iso: string | null
+  operator_code: string | null
+  operator_name: string | null
+  plan_id: string | null
+  sku_code: string | null
+  product_name: string | null
+  phone_number: string | null
+  send_amount: number | string | null
+  send_currency: string | null
+  receive_amount: number | string | null
+  receive_currency: string | null
+  status: string | null
+  payment_status: string | null
+  provider: string | null
+  provider_ref: string | null
+  failure_reason: string | null
   metadata: Record<string, unknown> | null
   created_at: string
+  updated_at: string
+  service_fee: number | string | null
+  tax: number | string | null
   profiles: {
     name: string | null
     email: string | null
@@ -46,22 +58,6 @@ type TransactionRow = {
     country_code: string | null
     country: string | null
   } | null
-  recharge_orders: Array<{
-    product_name: string | null
-    sku_code: string | null
-    plan_id: string | null
-    provider: string | null
-    operator_name: string | null
-    status: string | null
-    phone_number: string | null
-    service_fee?: number | string | null
-    tax?: number | string | null
-    send_amount?: number | string | null
-    send_currency?: string | null
-    receive_amount?: number | string | null
-    receive_currency?: string | null
-    metadata?: Record<string, unknown> | null
-  }> | null
 }
 
 export type AdminTransactionRecord = {
@@ -130,7 +126,7 @@ function numberFrom(value: unknown): number {
 }
 
 function buildDbFilters(query: AdminTransactionsQuery): string {
-  const parts = ['type=neq.refund', 'status=neq.pending_payment']
+  const parts = ['status=neq.pending_payment']
   const range = resolveAdminTransactionDateRange(query.date)
   if (range.start) {
     parts.push(`created_at=gte.${encodeURIComponent(range.start.toISOString())}`)
@@ -141,18 +137,18 @@ function buildDbFilters(query: AdminTransactionsQuery): string {
   return parts.join('&')
 }
 
-async function fetchAllMatchingRows(filters: string): Promise<TransactionRow[]> {
+async function fetchAllMatchingRows(filters: string): Promise<RechargeOrderRow[]> {
   const pageSize = 500
-  const rows: TransactionRow[] = []
+  const rows: RechargeOrderRow[] = []
   let offset = 0
 
   while (true) {
     const res = await supabaseRest(
-      `transactions?${filters}&select=${TX_SELECT}&order=created_at.desc&limit=${pageSize}&offset=${offset}`,
+      `recharge_orders?${filters}&select=${RO_SELECT}&order=created_at.desc&limit=${pageSize}&offset=${offset}`,
       { cache: 'no-store' },
     )
     if (!res.ok) break
-    const batch = (await res.json()) as TransactionRow[]
+    const batch = (await res.json()) as RechargeOrderRow[]
     rows.push(...batch)
     if (batch.length < pageSize) break
     offset += pageSize
@@ -161,29 +157,29 @@ async function fetchAllMatchingRows(filters: string): Promise<TransactionRow[]> 
   return rows
 }
 
-function mapBaseTransaction(row: TransactionRow) {
-  const rechargeOrder = row.recharge_orders?.[0] ?? null
+function mapBaseRechargeOrder(row: RechargeOrderRow) {
   const customer = resolveCustomerDisplay({
     profile: row.profiles,
     metadata: row.metadata ?? {},
-    rechargePhone: rechargeOrder?.phone_number,
+    rechargePhone: row.phone_number || undefined,
   })
 
+  // Display status resolves from payment status and recharge order status
   const displayStatus = resolveTransactionDisplayStatus({
-    type: row.type,
-    transactionStatus: row.status,
-    rechargeOrderStatus: rechargeOrder?.status,
+    type: 'recharge',
+    transactionStatus: row.payment_status || 'completed',
+    rechargeOrderStatus: row.status || 'completed',
   })
 
   return {
-    id: row.id,
+    id: row.transaction_id || row.id, // transaction ID is used for client actions / refunds
     userId: row.user_id ?? '',
-    type: row.type,
-    amount: numberFrom(row.amount),
-    currency: row.currency,
-    status: row.status,
+    type: 'recharge',
+    amount: numberFrom(row.send_amount),
+    currency: row.send_currency || 'USD',
+    status: row.payment_status || 'completed',
     displayStatus,
-    description: row.description ?? '',
+    description: `Recharge ${row.phone_number || '—'}`,
     metadata: row.metadata ?? {},
     createdAt: row.created_at,
     user: {
@@ -192,53 +188,36 @@ function mapBaseTransaction(row: TransactionRow) {
       phone: customer.phone,
       country: customer.country,
     },
-    rechargeDetails: rechargeOrder
-      ? {
-          productName: rechargeOrder.product_name ?? '—',
-          skuCode: rechargeOrder.sku_code ?? '—',
-          provider: rechargeOrder.provider ?? '—',
-          operatorName: rechargeOrder.operator_name ?? '—',
-          status: rechargeOrder.status ?? '—',
-          phoneNumber: rechargeOrder.phone_number ?? '—',
-        }
-      : null,
+    rechargeDetails: {
+      productName: row.product_name ?? '—',
+      skuCode: row.sku_code ?? '—',
+      provider: row.provider ?? '—',
+      operatorName: row.operator_name ?? '—',
+      status: row.status ?? '—',
+      phoneNumber: row.phone_number ?? '—',
+    },
   }
 }
 
 function resolveMarginForRow(
-  row: TransactionRow,
-  routingData: Map<string, { cost: number; currency: string | null; providerCode: string | null }>,
+  row: RechargeOrderRow,
   reportingCurrency: string,
   rateMap: Map<string, number>,
   fallbackRates: Record<string, number>,
 ): { marginNative: number; marginReporting: number } {
-  const base = mapBaseTransaction(row)
-  const paidAmount = base.amount
-  const paidCurrency = normalizeCurrency(base.currency)
+  const paidAmount = numberFrom(row.send_amount)
+  const paidCurrency = normalizeCurrency(row.send_currency || 'USD')
 
-  if (base.displayStatus !== 'completed' || paidAmount <= 0) {
+  // Only calculate margin on successful top-ups
+  if (row.status !== 'completed' || paidAmount <= 0) {
     return { marginNative: 0, marginReporting: 0 }
   }
 
-  let providerCost: number | null = null
-  let providerCurrency: string | null = null
+  const providerCost = numberFrom(row.receive_amount)
+  let providerCurrency = row.receive_currency || paidCurrency
 
-  const fromMeta = extractProviderCost(base.metadata)
-  providerCost = fromMeta.cost
-  providerCurrency = fromMeta.currency
-
-  const fromLog = routingData.get(row.id)
-  if ((providerCost == null || providerCost <= 0) && fromLog && fromLog.cost > 0) {
-    providerCost = fromLog.cost
-    providerCurrency = fromLog.currency
-  }
-
-  if (providerCost == null || providerCost <= 0) {
+  if (providerCost <= 0) {
     return { marginNative: 0, marginReporting: 0 }
-  }
-
-  if (providerCurrency == null) {
-    providerCurrency = paidCurrency
   }
 
   const marginNative = computeMargin(
@@ -271,26 +250,11 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
     fetchAllMatchingRows(filters),
   ])
 
-  const txIdsNeedingLogs = allRows
-    .filter((row) => {
-      const meta = row.metadata ?? {}
-      const fromMeta = extractProviderCost(meta)
-      return fromMeta.cost == null
-    })
-    .map((row) => row.id)
-
-  const routingData = await fetchRoutingCosts(txIdsNeedingLogs)
-
-  const routingTypes = await fetchRoutingTypesFromLogs(
-    allRows.filter((row) => row.type === 'recharge').map((row) => row.id),
-  )
-
   const planIds = allRows.map((row) => {
-    const recharge = row.recharge_orders?.[0]
     return extractPlanIdFromSources({
-      planId: recharge?.plan_id,
-      skuCode: recharge?.sku_code,
-      productName: recharge?.product_name,
+      planId: row.plan_id || undefined,
+      skuCode: row.sku_code || undefined,
+      productName: row.product_name || undefined,
       metadata: row.metadata,
     })
   })
@@ -298,76 +262,57 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
   const planNameMap = await resolvePlanNameMap(planIds)
 
   const enriched = allRows.map((row) => {
-    const base = mapBaseTransaction(row)
-    const recharge = row.recharge_orders?.[0]
+    const base = mapBaseRechargeOrder(row)
     const planId = extractPlanIdFromSources({
-      planId: recharge?.plan_id,
-      skuCode: recharge?.sku_code,
-      productName: recharge?.product_name,
+      planId: row.plan_id || undefined,
+      skuCode: row.sku_code || undefined,
+      productName: row.product_name || undefined,
       metadata: row.metadata,
     })
 
-    let planName = 'Recharge Plan'
-    if (base.type === 'topup') planName = 'Wallet Top-up'
-    else if (base.type === 'refund') planName = 'Wallet Refund'
-    else if (base.type === 'commission') planName = 'Commission Credit'
-    else {
-      const metaProductName =
-        typeof base.metadata?.productName === 'string' ? base.metadata.productName : null
-      planName = resolveProductDisplayName(
-        recharge?.product_name ?? metaProductName,
-        planId,
-        planNameMap,
-      )
-    }
+    const metaProductName =
+      typeof base.metadata?.productName === 'string' ? base.metadata.productName : null
+    const planName = resolveProductDisplayName(
+      row.product_name ?? metaProductName,
+      planId,
+      planNameMap,
+    )
 
     const { marginReporting } = resolveMarginForRow(
       row,
-      routingData,
       reportingCurrency,
       rateMap,
       fallbackRates,
     )
 
-    const logProvider = routingData.get(row.id)?.providerCode
-    let rechargeDetails = base.rechargeDetails
-    if (logProvider) {
-      if (!rechargeDetails) {
-        rechargeDetails = {
-          productName: '—',
-          skuCode: '—',
-          provider: logProvider,
-          operatorName: '—',
-          status: '—',
-          phoneNumber: '—',
-        }
-      } else if (
-        !rechargeDetails.provider ||
-        rechargeDetails.provider === '—' ||
-        rechargeDetails.provider === 'null'
-      ) {
-        rechargeDetails = { ...rechargeDetails, provider: logProvider }
-      }
-    }
-
     let routingType = resolveRoutingTypeLabel(base.metadata)
-    if (routingType === '—') {
-      const fromLog = routingTypes.get(row.id)
-      if (fromLog) routingType = formatRoutingType(fromLog)
-    }
 
     return {
       ...base,
-      rechargeDetails,
       planName,
       routingType,
       rechargeSummary: buildRechargeCheckoutSummary({
-        type: base.type,
+        type: 'recharge',
         amount: base.amount,
         currency: base.currency,
         metadata: base.metadata,
         planName,
-        rechargeOrder: recharge ?? null,
+        rechargeOrder: {
+          product_name: row.product_name,
+          sku_code: row.sku_code,
+          plan_id: row.plan_id,
+          provider: row.provider,
+          operator_name: row.operator_name,
+          status: row.status,
+          phone_number: row.phone_number,
+          service_fee: row.service_fee,
+          tax: row.tax,
+          send_amount: row.send_amount,
+          send_currency: row.send_currency,
+          receive_amount: row.receive_amount,
+          receive_currency: row.receive_currency,
+          metadata: row.metadata,
+        },
       }),
       margin: marginReporting,
       marginCurrency: reportingCurrency,

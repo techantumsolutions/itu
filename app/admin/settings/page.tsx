@@ -668,15 +668,15 @@ function SettingsContent() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className={cn("grid w-full", canEditSettings ? "grid-cols-6" : "grid-cols-5")}>
+        <TabsList className={cn("grid w-full", canEditSettings ? "grid-cols-5" : "grid-cols-4")}>
           <TabsTrigger value="profile" className="gap-2">
             <User className="h-4 w-4" />
             <span className="hidden sm:inline">Profile</span>
           </TabsTrigger>
-          <TabsTrigger value="notifications" className="gap-2">
+          {/* <TabsTrigger value="notifications" className="gap-2">
             <Bell className="h-4 w-4" />
             <span className="hidden sm:inline">Notifications</span>
-          </TabsTrigger>
+          </TabsTrigger> */}
           <TabsTrigger value="security" className="gap-2">
             <Shield className="h-4 w-4" />
             <span className="hidden sm:inline">Security</span>
@@ -869,7 +869,7 @@ function SettingsContent() {
         </TabsContent>
 
         {/* Notifications Tab */}
-        <TabsContent value="notifications">
+        {/* <TabsContent value="notifications">
           <Card>
             <CardHeader>
               <CardTitle>Notification Preferences</CardTitle>
@@ -933,7 +933,7 @@ function SettingsContent() {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+        </TabsContent> */}
 
         {/* Security Tab */}
         <TabsContent value="security">
@@ -1040,20 +1040,20 @@ function SettingsContent() {
                     : "Add an extra layer of security to all administrative accounts"}
                 </p>
                 {canEditSettings ? (
-                <Button
-                  variant={global2FAEnabled ? "destructive" : "outline"}
-                  onClick={handleToggle2FA}
-                  disabled={isSaving2FA}
-                >
-                  {isSaving2FA ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      {global2FAEnabled ? "Disabling..." : "Enabling..."}
-                    </>
-                  ) : (
-                    global2FAEnabled ? "Disable 2FA" : "Enable 2FA"
-                  )}
-                </Button>
+                  <Button
+                    variant={global2FAEnabled ? "destructive" : "outline"}
+                    onClick={handleToggle2FA}
+                    disabled={isSaving2FA}
+                  >
+                    {isSaving2FA ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        {global2FAEnabled ? "Disabling..." : "Enabling..."}
+                      </>
+                    ) : (
+                      global2FAEnabled ? "Disable 2FA" : "Enable 2FA"
+                    )}
+                  </Button>
                 ) : (
                   <p className="text-xs text-muted-foreground">
                     You do not have permission to change global security policies.
@@ -1135,7 +1135,7 @@ function SettingsContent() {
               </CardFooter>
             </Card> */}
 
-            <Card className="flex h-full flex-col">
+            {/* <Card className="flex h-full flex-col">
               <CardHeader>
                 <CardTitle>Sync Logs</CardTitle>
                 <CardDescription>Historical sync runs, counts, errors, and retries.</CardDescription>
@@ -1149,7 +1149,7 @@ function SettingsContent() {
                   </a>
                 </Button>
               </CardFooter>
-            </Card>
+            </Card> */}
 
             <Card className="flex h-full flex-col">
               <CardHeader>
@@ -1297,25 +1297,25 @@ function SettingsContent() {
                 </p>
               </CardContent>
               {canEditSettings ? (
-              <CardFooter>
-                <Button
-                  onClick={handleSaveRechargeFees}
-                  disabled={savingRechargeFees || loadingRechargeFees}
-                  className="w-full sm:w-auto"
-                >
-                  {savingRechargeFees ? (
-                    <>
-                      <Loader2 className="mr-2 size-4 animate-spin" />
-                      Saving…
-                    </>
-                  ) : (
-                    <>
-                      <Save className="mr-2 size-4" />
-                      Save Fees
-                    </>
-                  )}
-                </Button>
-              </CardFooter>
+                <CardFooter>
+                  <Button
+                    onClick={handleSaveRechargeFees}
+                    disabled={savingRechargeFees || loadingRechargeFees}
+                    className="w-full sm:w-auto"
+                  >
+                    {savingRechargeFees ? (
+                      <>
+                        <Loader2 className="mr-2 size-4 animate-spin" />
+                        Saving…
+                      </>
+                    ) : (
+                      <>
+                        <Save className="mr-2 size-4" />
+                        Save Fees
+                      </>
+                    )}
+                  </Button>
+                </CardFooter>
               ) : null}
             </Card>
           </div>
