@@ -23,6 +23,7 @@ export interface Ticket {
   createdAt: string
   updatedAt: string
   attachmentUrl?: string
+  userPhone?: string
 }
 
 export interface TicketMessage {

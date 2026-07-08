@@ -239,6 +239,10 @@ export default function AdminSupportTicketDetailPage() {
                 <dd className="font-medium">{data.userEmail || '—'}</dd>
               </div>
               <div>
+                <dt className="text-muted-foreground">Contact No.</dt>
+                <dd className="font-medium">{data.userPhone || '—'}</dd>
+              </div>
+              <div>
                 <dt className="text-muted-foreground">User ID</dt>
                 <dd className="font-mono text-xs">{data.userId}</dd>
               </div>

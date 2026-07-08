@@ -23,6 +23,8 @@ import {
   formatRoutingType,
   resolveRoutingTypeLabel,
 } from '@/lib/transactions/routing-type'
+import { resolveAdminTransactionDateRange } from '@/lib/admin/admin-transaction-date-range'
+import { matchesAdminTransactionSearch } from '@/lib/admin/admin-transaction-search'
 
 const TX_SELECT =
   'id,user_id,type,amount,currency,status,description,metadata,created_at,profiles(name,email,phone,country_code,country),recharge_orders(product_name,sku_code,plan_id,provider,operator_name,status,phone_number,service_fee,tax,send_amount,send_currency,receive_amount,receive_currency,metadata)'
@@ -127,38 +129,14 @@ function numberFrom(value: unknown): number {
   return Number.isFinite(n) ? n : 0
 }
 
-function dateFilterIso(date: string): string | null {
-  const now = new Date()
-  if (date === 'today') {
-    const start = new Date(now)
-    start.setHours(0, 0, 0, 0)
-    return start.toISOString()
-  }
-  if (date === 'week') {
-    const start = new Date(now)
-    start.setDate(now.getDate() - 7)
-    return start.toISOString()
-  }
-  if (date === 'month') {
-    const start = new Date(now)
-    start.setMonth(now.getMonth() - 1)
-    return start.toISOString()
-  }
-  return null
-}
-
 function buildDbFilters(query: AdminTransactionsQuery): string {
   const parts = ['type=neq.refund', 'status=neq.pending_payment']
-  const since = dateFilterIso(query.date ?? 'all')
-  if (since) {
-    parts.push(`created_at=gte.${encodeURIComponent(since)}`)
+  const range = resolveAdminTransactionDateRange(query.date)
+  if (range.start) {
+    parts.push(`created_at=gte.${encodeURIComponent(range.start.toISOString())}`)
   }
-  const search = (query.search ?? '').trim()
-  if (search) {
-    const enc = encodeURIComponent(`*${search}*`)
-    parts.push(
-      `or=(id.ilike.${enc},description.ilike.${enc},profiles.name.ilike.${enc},profiles.email.ilike.${enc},profiles.phone.ilike.${enc})`,
-    )
+  if (range.end) {
+    parts.push(`created_at=lte.${encodeURIComponent(range.end.toISOString())}`)
   }
   return parts.join('&')
 }
@@ -397,11 +375,13 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
   })
 
   const displayStatusFilter = (query.status ?? '').trim()
+  const searchQuery = (query.search ?? '').trim()
   const filtered = enriched.filter((row) => {
     if (row.status === 'pending_payment' || row.displayStatus === 'pending_payment') return false
     if (displayStatusFilter && displayStatusFilter !== 'all') {
-      return row.displayStatus === displayStatusFilter
+      if (row.displayStatus !== displayStatusFilter) return false
     }
+    if (searchQuery && !matchesAdminTransactionSearch(row, searchQuery)) return false
     return true
   })
 

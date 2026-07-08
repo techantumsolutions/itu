@@ -8,6 +8,7 @@ import type {
   TicketWithThread,
 } from './types'
 import * as filePersistence from './persistence'
+import { formatProfilePhone } from '@/lib/auth/build-auth-user'
 
 type TicketRow = {
   id: string
@@ -39,12 +40,30 @@ type NoteRow = {
   created_at: string
 }
 
-function toTicket(row: TicketRow): Ticket {
+function toTicket(
+  row: TicketRow & {
+    profiles?:
+      | { name: string | null; email: string | null; phone: string | null; country_code: string | null }
+      | { name: string | null; email: string | null; phone: string | null; country_code: string | null }[]
+      | null
+  },
+): Ticket {
+  let profile: { name: string | null; email: string | null; phone: string | null; country_code: string | null } | null = null
+  if (row.profiles) {
+    if (Array.isArray(row.profiles)) {
+      profile = row.profiles[0] ?? null
+    } else {
+      profile = row.profiles
+    }
+  }
+  const userPhone = profile ? formatProfilePhone(profile) : undefined
+  const userName = profile?.name || row.user_name || ''
+  const userEmail = profile?.email || row.user_email || ''
   return {
     id: row.id,
     userId: row.user_id ?? '',
-    userEmail: row.user_email ?? '',
-    userName: row.user_name ?? '',
+    userEmail,
+    userName,
     transactionId: row.transaction_id ?? undefined,
     subject: row.subject,
     description: row.description,
@@ -52,6 +71,7 @@ function toTicket(row: TicketRow): Ticket {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     attachmentUrl: row.attachment_url ?? undefined,
+    userPhone,
   }
 }
 
@@ -91,9 +111,81 @@ async function isTableMissing(res: Response): Promise<boolean> {
   return false
 }
 
-async function selectTicketById(ticketId: string): Promise<TicketRow | null> {
+async function enrichTicketsWithProfiles(tickets: Ticket[]): Promise<Ticket[]> {
+  if (tickets.length === 0) return tickets
+  const userIds = Array.from(new Set(tickets.map((t) => t.userId).filter(Boolean)))
+  if (userIds.length === 0) return tickets
+
+  const profilesMap: Record<
+    string,
+    { name: string | null; email: string | null; phone: string | null; country_code: string | null }
+  > = {}
+
+  try {
+    const inFilter = userIds.map((id) => `id.eq.${encodeURIComponent(id)}`).join(',')
+    const pRes = await supabaseRest(
+      `profiles?or=(${inFilter})&select=id,name,email,phone,country_code`,
+      { cache: 'no-store' },
+    )
+    if (pRes.ok) {
+      const pRows = (await pRes.json()) as any[]
+      for (const row of pRows) {
+        profilesMap[row.id] = {
+          name: row.name,
+          email: row.email,
+          phone: row.phone,
+          country_code: row.country_code,
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Failed to pre-fetch profiles for ticket enrichment:', e)
+  }
+
+  return tickets.map((t) => {
+    const profile = profilesMap[t.userId]
+    if (profile) {
+      const userPhone = formatProfilePhone(profile)
+      return {
+        ...t,
+        userName: profile.name || t.userName || '',
+        userEmail: profile.email || t.userEmail || '',
+        userPhone: userPhone || t.userPhone,
+      }
+    }
+    return t
+  })
+}
+
+async function enrichTicketWithProfile<T extends Ticket>(ticket: T | null): Promise<T | null> {
+  if (!ticket) return null
+  try {
+    const pRes = await supabaseRest(
+      `profiles?id=eq.${encodeURIComponent(ticket.userId)}&select=name,email,phone,country_code&limit=1`,
+      { cache: 'no-store' },
+    )
+    if (pRes.ok) {
+      const pRows = (await pRes.json()) as any[]
+      const profile = pRows[0]
+      if (profile) {
+        const userPhone = formatProfilePhone(profile)
+        return {
+          ...ticket,
+          userName: profile.name || ticket.userName || '',
+          userEmail: profile.email || ticket.userEmail || '',
+          userPhone: userPhone || ticket.userPhone,
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Failed to enrich ticket details with profile:', e)
+  }
+  return ticket
+}
+
+async function selectTicketById(ticketId: string): Promise<(TicketRow & { profiles?: { name: string | null; email: string | null; phone: string | null; country_code: string | null } | null }) | null> {
   const res = await supabaseRest(
-    `support_tickets?id=eq.${encode(ticketId)}&select=id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at&limit=1`,
+    `support_tickets?id=eq.${encode(ticketId)}&select=id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at,profiles(name,email,phone,country_code)&limit=1`,
     { cache: 'no-store' },
   )
   if (!res.ok) {
@@ -180,7 +272,7 @@ export async function createTicket(input: {
 export async function listTicketsForUser(userId: string): Promise<Ticket[]> {
   try {
     const res = await supabaseRest(
-      `support_tickets?user_id=eq.${encode(userId)}&select=id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at&order=updated_at.desc`,
+      `support_tickets?user_id=eq.${encode(userId)}&select=id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at,profiles(name,email,phone,country_code)&order=updated_at.desc`,
       { cache: 'no-store' },
     )
     if (!res.ok) {
@@ -229,20 +321,21 @@ export async function listTicketsAdmin(filters: { status?: TicketStatus | 'all';
   try {
     const status = filters.status && filters.status !== 'all' ? `status=eq.${encode(filters.status)}&` : ''
     const res = await supabaseRest(
-      `support_tickets?${status}select=id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at&order=updated_at.desc`,
+      `support_tickets?${status}select=id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at,profiles(name,email,phone,country_code)&order=updated_at.desc`,
       { cache: 'no-store' },
     )
     if (!res.ok) {
       if (await isTableMissing(res)) {
-        return filePersistence.listTicketsAdmin(filters)
+        return enrichTicketsWithProfiles(await filePersistence.listTicketsAdmin(filters))
       }
       throw new Error('Failed to load tickets')
     }
-    return applySearchFilter(((await res.json()) as TicketRow[]).map(toTicket), filters.q)
+    const dbTickets = applySearchFilter(((await res.json()) as TicketRow[]).map(toTicket), filters.q)
+    return enrichTicketsWithProfiles(dbTickets)
   } catch (err) {
     const msg = err instanceof Error ? err.message : ''
     if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
-      return filePersistence.listTicketsAdmin(filters)
+      return enrichTicketsWithProfiles(await filePersistence.listTicketsAdmin(filters))
     }
     throw err
   }
@@ -251,7 +344,10 @@ export async function listTicketsAdmin(filters: { status?: TicketStatus | 'all';
 export async function getTicketAdmin(ticketId: string): Promise<TicketAdminDetail | null> {
   try {
     const row = await selectTicketById(ticketId)
-    if (!row) return null
+    if (!row) {
+      const fileTicket = await filePersistence.getTicketAdmin(ticketId)
+      return enrichTicketWithProfile(fileTicket)
+    }
 
     let transactionDetails = undefined
     if (row.transaction_id) {
@@ -288,16 +384,18 @@ export async function getTicketAdmin(ticketId: string): Promise<TicketAdminDetai
       }
     }
 
-    return {
+    const ticket = {
       ...toTicket(row),
       transactionDetails,
       messages: await selectMessages(ticketId),
       notes: await selectNotes(ticketId),
     }
+    return enrichTicketWithProfile(ticket)
   } catch (err) {
     const msg = err instanceof Error ? err.message : ''
     if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
-      return filePersistence.getTicketAdmin(ticketId)
+      const fileTicket = await filePersistence.getTicketAdmin(ticketId)
+      return enrichTicketWithProfile(fileTicket)
     }
     throw err
   }

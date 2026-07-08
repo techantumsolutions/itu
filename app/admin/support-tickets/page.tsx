@@ -152,6 +152,7 @@ export default function AdminSupportTicketsPage() {
                   <TableCell className="max-w-[280px] px-4 py-4">
                     <div className="text-sm font-medium text-neutral-900 truncate">{t.userName || '—'}</div>
                     <div className="text-xs text-neutral-500 truncate">{t.userEmail || '—'}</div>
+                    <div className="text-xs text-neutral-400 truncate">{t.userPhone || '—'}</div>
                   </TableCell>
                   <TableCell className="max-w-none whitespace-nowrap px-4 py-4">
                     <TicketStatusBadge status={t.status} />

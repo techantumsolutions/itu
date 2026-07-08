@@ -14,12 +14,12 @@ const ADMIN_REPORTING_CURRENCY = 'EUR'
 export function DashboardContent({ data }: DashboardContentProps) {
   return (
     <div className="flex flex-col gap-8">
-      <div className="grid grid-cols-1 gap-8 xl:grid-cols-[1fr_340px]">
-        <div className="flex flex-col gap-6">
+      <div className="grid grid-cols-1 gap-8 xl:grid-cols-12">
+        <div className="flex flex-col gap-6 xl:col-span-8">
           <StatCards summary={data.summary} />
           <TransactionsTable reportingCurrency={ADMIN_REPORTING_CURRENCY} locale={ADMIN_LOCALE} />
         </div>
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-6 xl:col-span-4">
           <SalesReport summary={data.summary} />
           <TopProducts products={data.topProducts} reportingCurrency={ADMIN_REPORTING_CURRENCY} locale={ADMIN_LOCALE} />
         </div>

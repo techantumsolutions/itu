@@ -1150,22 +1150,22 @@ function SettingsContent() {
                 </Button>
               </CardFooter>
             </Card>
-{/* 
+
             <Card className="flex h-full flex-col">
               <CardHeader>
-                <CardTitle>Cron Status</CardTitle>
-                <CardDescription>Cron and queue status.</CardDescription>
+                <CardTitle>Catalog History</CardTitle>
+                <CardDescription>View the history of catalog changes.</CardDescription>
               </CardHeader>
-              <CardContent className="flex-1 text-sm text-muted-foreground">Manage cron status.</CardContent>
+              <CardContent className="flex-1 text-sm text-muted-foreground">Manage catalog history.</CardContent>
               <CardFooter>
                 <Button asChild className="w-full sm:w-auto">
-                  <a href="/admin/settings/cron-status">
+                  <a href="/admin/catalog/history">
                     Open
                     <ArrowRight className="ml-2 size-4" />
                   </a>
                 </Button>
               </CardFooter>
-            </Card> */}
+            </Card>
 
             <Card className="flex h-full flex-col">
               <CardHeader>

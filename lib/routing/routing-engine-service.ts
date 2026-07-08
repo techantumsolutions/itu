@@ -744,7 +744,7 @@ export class RoutingEngineService {
 
     let applicableRulesWithoutViableProvider = 0
 
-    if (schemaReady && effectiveSettings.enabled) {
+    if (schemaReady) {
       const rules = await getCachedActiveRoutingRules()
       const matchingRules = listMatchingRoutingRules(rules, normalizedInput)
       applicableRulesWithoutViableProvider = matchingRules.length
@@ -813,8 +813,39 @@ export class RoutingEngineService {
 
       if (matchingRules.length > 0) {
         console.log(
-          `[ROUTING] ${matchingRules.length} routing rule(s) matched context but none had a viable provider — using LCR`,
+          `[ROUTING] ${matchingRules.length} routing rule(s) matched context but none had a viable provider`,
         )
+      }
+    }
+
+    if (!effectiveSettings.enabled) {
+      console.log(`[ROUTING] LCR_DISABLED: Engine is disabled (LCR fallback not allowed) and no active routing rules matched`)
+      const logId = schemaReady
+        ? await insertDetailedRoutingLog({
+            transactionId: normalizedInput.transactionId ?? '',
+            countryCode: normalizedInput.countryId ?? '',
+            operatorCode: normalizedInput.operatorId ?? '',
+            planId: normalizedInput.productId,
+            routingStrategy: effectiveSettings.routingStrategy,
+            routingRuleMatched: 'No',
+            executionResult: 'LCR_DISABLED_NO_RULE_MATCHED',
+            verificationMappingCount: mapping_count,
+          })
+        : null
+
+      return {
+        routingType: 'LCR',
+        selected: null,
+        fallbacks: [],
+        evaluated,
+        ruleApplied: 'NONE',
+        settings: effectiveSettings,
+        logId: logId ?? undefined,
+        routing_decision_reason: 'LCR_DISABLED_NO_RULE_MATCHED',
+        internal_plan_id: normalizedInput.productId,
+        mapping_count,
+        candidate_provider_count,
+        eligible_provider_count,
       }
     }
 

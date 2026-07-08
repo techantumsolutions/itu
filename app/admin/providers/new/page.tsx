@@ -219,7 +219,7 @@ export default function AdminAddProviderPage() {
                 </SelectContent>
               </Select>
             </div>
-            <div className="grid gap-2">
+            {/* <div className="grid gap-2">
               <Label htmlFor="countries">Supported countries (ISO2/3, comma-separated)</Label>
               <Input
                 id="countries"
@@ -227,7 +227,7 @@ export default function AdminAddProviderPage() {
                 onChange={(e) => setAddCountries(e.target.value)}
                 placeholder="IND, USA or IN, US"
               />
-            </div>
+            </div> */}
 
             <div className="border-t pt-6 space-y-4">
               <h3 className="text-sm font-medium">API credentials</h3>

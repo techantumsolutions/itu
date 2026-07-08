@@ -156,8 +156,8 @@ export default function RoutingRulesPage() {
       const providersData = await providersRes.json().catch(() => ({}))
       if (!rulesRes.ok) throw new Error(rulesData.error ?? 'Failed to load rules')
       setRules(Array.isArray(rulesData.rules) ? rulesData.rules : [])
-      
-      const mappedCountries = Array.isArray(countriesData.countries) 
+
+      const mappedCountries = Array.isArray(countriesData.countries)
         ? countriesData.countries.map((c: any) => ({ iso3: c.iso3, label: c.name }))
         : [];
       setCountries(mappedCountries);
@@ -503,10 +503,10 @@ export default function RoutingRulesPage() {
             Refresh
           </Button>
           {canCreate ? (
-          <Button onClick={openCreate} disabled={!countries.length} data-perm="create">
-            <Plus className="mr-2 size-4" />
-            Add rule
-          </Button>
+            <Button onClick={openCreate} disabled={!countries.length} data-perm="create">
+              <Plus className="mr-2 size-4" />
+              Add rule
+            </Button>
           ) : null}
         </div>
       </div>
@@ -542,87 +542,87 @@ export default function RoutingRulesPage() {
 
           <div className="rounded-md border overflow-x-auto">
             <Table className="w-full min-w-[800px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[15%]">Rule</TableHead>
-                <TableHead className="w-[10%]">Country</TableHead>
-                <TableHead className="w-[10%]">Operator</TableHead>
-                <TableHead className="w-[10%]">Provider</TableHead>
-                <TableHead className="w-[10%]">Priority</TableHead>
-                {showWriteCols ? (
-                <>
-                <TableHead className="w-[8%]" data-perm-col="edit">Enabled</TableHead>
-                <TableHead className="w-[8%] text-right pr-4" data-perm-col="edit">Actions</TableHead>
-                </>
-                ) : (
-                <TableHead className="w-[8%]">Status</TableHead>
-                )}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={tableColSpan} className="py-8 text-center text-muted-foreground">
-                    Loading…
-                  </TableCell>
-                </TableRow>
-              ) : filtered.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={tableColSpan} className="py-8 text-center text-muted-foreground">
-                    No routing rules found.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                paginatedRules.map((rule) => (
-                  <TableRow key={rule.id}>
-                    <TableCell className="font-medium">{rule.ruleName}</TableCell>
-                    <TableCell>
-                      <CountryCell countryId={rule.countryId} />
-                    </TableCell>
-                    <TableCell>{operatorLabel(rule.operatorId)}</TableCell>
-                    <TableCell>
-                      {displayProvider({
-                        id: rule.providerId,
-                        code: rule.providerCode,
-                        name: rule.providerName,
-                      })}
-                    </TableCell>
-                    <TableCell>{rule.priority}</TableCell>
-                    {showWriteCols ? (
+                  <TableHead className="w-[15%]">Rule</TableHead>
+                  <TableHead className="w-[10%]">Country</TableHead>
+                  <TableHead className="w-[10%]">Operator</TableHead>
+                  <TableHead className="w-[10%]">Provider</TableHead>
+                  <TableHead className="w-[10%]">Priority</TableHead>
+                  {showWriteCols ? (
                     <>
-                    <TableCell data-perm-col="edit">
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={rule.status === 'ACTIVE'}
-                          disabled={togglingId === rule.id}
-                          onCheckedChange={(v) => void toggleRuleStatus(rule, v)}
-                          className="scale-90"
-                        />
-                        <span className="text-[11px] text-muted-foreground">
-                          {rule.status === 'ACTIVE' ? 'On' : 'Off'}
-                        </span>
-                      </div>
-                    </TableCell>
-                    <TableCell data-perm-col="edit">
-                      <div className="flex justify-end gap-1 sm:gap-2">
-                        {canEdit ? (
-                        <Button variant="outline" size="sm" onClick={() => openEdit(rule)} title="Edit" data-perm="edit">
-                          <Pencil className="size-4 sm:mr-2" /> <span className="hidden sm:inline">Edit</span>
-                        </Button>
-                        ) : null}
-                      </div>
-                    </TableCell>
+                      <TableHead className="w-[8%]" data-perm-col="edit">Enabled</TableHead>
+                      <TableHead className="w-[8%] text-right pr-4" data-perm-col="edit">Actions</TableHead>
                     </>
-                    ) : (
-                    <TableCell>
-                      <span className="text-xs text-muted-foreground">{rule.status === 'ACTIVE' ? 'Active' : 'Inactive'}</span>
+                  ) : (
+                    <TableHead className="w-[8%]">Status</TableHead>
+                  )}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={tableColSpan} className="py-8 text-center text-muted-foreground">
+                      Loading…
                     </TableCell>
-                    )}
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : filtered.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={tableColSpan} className="py-8 text-center text-muted-foreground">
+                      No routing rules found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  paginatedRules.map((rule) => (
+                    <TableRow key={rule.id}>
+                      <TableCell className="font-medium">{rule.ruleName}</TableCell>
+                      <TableCell>
+                        <CountryCell countryId={rule.countryId} />
+                      </TableCell>
+                      <TableCell>{operatorLabel(rule.operatorId)}</TableCell>
+                      <TableCell>
+                        {displayProvider({
+                          id: rule.providerId,
+                          code: rule.providerCode,
+                          name: rule.providerName,
+                        })}
+                      </TableCell>
+                      <TableCell>{rule.priority}</TableCell>
+                      {showWriteCols ? (
+                        <>
+                          <TableCell data-perm-col="edit">
+                            <div className="flex items-center gap-2">
+                              <Switch
+                                checked={rule.status === 'ACTIVE'}
+                                disabled={togglingId === rule.id}
+                                onCheckedChange={(v) => void toggleRuleStatus(rule, v)}
+                                className="scale-90"
+                              />
+                              <span className="text-[11px] text-muted-foreground">
+                                {rule.status === 'ACTIVE' ? 'On' : 'Off'}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell data-perm-col="edit">
+                            <div className="flex justify-end gap-1 sm:gap-2">
+                              {canEdit ? (
+                                <Button variant="outline" size="sm" onClick={() => openEdit(rule)} title="Edit" data-perm="edit">
+                                  <Pencil className="size-4 sm:mr-2" /> <span className="hidden sm:inline">Edit</span>
+                                </Button>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                        </>
+                      ) : (
+                        <TableCell>
+                          <span className="text-xs text-muted-foreground">{rule.status === 'ACTIVE' ? 'Active' : 'Inactive'}</span>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </div>
 
           {totalPages > 1 && (
@@ -697,8 +697,8 @@ export default function RoutingRulesPage() {
                         Select all
                       </label>
                     </div>
-                    <div 
-                      className="flex-1 overflow-y-auto overscroll-contain py-1" 
+                    <div
+                      className="flex-1 overflow-y-auto overscroll-contain py-1"
                       style={{ maxHeight: '224px' }}
                       onWheel={(e) => e.stopPropagation()}
                     >
@@ -735,14 +735,15 @@ export default function RoutingRulesPage() {
                   </div>
                 ) : (
                   <Select
-                    value={form.operatorId}
+                    value={countrySelected ? form.operatorId : undefined}
                     disabled={!countrySelected || cascadeLoading}
                     onValueChange={(v) => void onOperatorChange(v)}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className='w-full'>
                       <SelectValue placeholder={countrySelected ? (cascadeLoading ? 'Loading…' : 'Select operator') : 'Select countries first'} />
                     </SelectTrigger>
                     <SelectContent>
+                      <SelectItem value={ROUTING_ANY}>Any operator</SelectItem>
                       {cascadeOperators.map((o) => (
                         <SelectItem key={o.id} value={o.id}>
                           {o.label}
@@ -762,7 +763,7 @@ export default function RoutingRulesPage() {
                   value={String(form.priority)}
                   onValueChange={(v) => setForm((f) => ({ ...f, priority: Number(v) }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className='w-full'>
                     <SelectValue placeholder="Select priority" />
                   </SelectTrigger>
                   <SelectContent>
@@ -780,11 +781,11 @@ export default function RoutingRulesPage() {
               <div className="space-y-2">
                 <Label>Provider</Label>
                 <Select
-                  value={form.providerId}
+                  value={form.providerId || undefined}
                   disabled={providers.length === 0}
                   onValueChange={(v) => setForm((f) => ({ ...f, providerId: v }))}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger className='w-full'>
                     <SelectValue
                       placeholder={
                         providers.length === 0

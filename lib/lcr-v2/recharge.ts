@@ -189,7 +189,7 @@ export async function processLcrV2Recharge(request: Request, body: LcrV2Recharge
 
   const retrySettings = decision.settings
   const maxHops =
-    retrySettings?.retryEnabled === false
+    retrySettings?.autoFailover === false
       ? 1
       : 1 + Math.max(0, retrySettings?.retryAttempts ?? decision.fallbacks.length)
 
@@ -240,6 +240,10 @@ export async function processLcrV2Recharge(request: Request, body: LcrV2Recharge
     currency?: string
     providerPriority?: number
   }>
+
+  if (chain.length > maxHops) {
+    chain = chain.slice(0, maxHops)
+  }
 
   logHint(`Provider failover chain established. Trying providers: ${chain.map(c => `${c.providerName || c.providerId} (Cost: ${c.price ?? 'N/A'} ${c.currency || 'EUR'})`).join(' -> ')}`)
 

@@ -41,7 +41,7 @@ export async function PUT(request: Request) {
     autoFailover: body.autoFailover !== undefined ? Boolean(body.autoFailover) : undefined,
     retryEnabled: body.retryEnabled !== undefined ? Boolean(body.retryEnabled) : undefined,
     retryAttempts:
-      typeof body.retryAttempts === 'number' ? Math.min(10, Math.max(0, body.retryAttempts)) : undefined,
+      typeof body.retryAttempts === 'number' ? Math.max(0, body.retryAttempts) : undefined,
   })
 
   if (!updated) {

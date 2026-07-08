@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Search, Users } from 'lucide-react'
 import { resolveAdminCustomerLabel } from '@/lib/auth/customer-display'
+import { formatProfilePhone } from '@/lib/auth/build-auth-user'
 
 type CustomerRow = {
   user_id: string
@@ -35,7 +36,15 @@ export default function AdminCustomersPage() {
     if (!q) return customers
     return customers.filter((c) => {
       const label = resolveAdminCustomerLabel(c)
-      return `${c.email ?? ''} ${c.name ?? ''} ${c.phone ?? ''} ${c.country ?? ''} ${c.country_code ?? ''} ${label} ${c.user_id}`
+      const email = c.email ?? ''
+      const phone = formatProfilePhone(c) ?? ''
+      const country = c.country ?? ''
+      const transactions = String(c.transaction_count ?? '0')
+      const spendNum = Number(c.total_spend) || 0
+      const spendFormatted = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(spendNum)
+      const lastTx = c.last_transaction_at ? new Date(c.last_transaction_at).toLocaleString() : ''
+
+      return `${label} ${email} ${phone} ${country} ${transactions} ${spendNum} ${spendFormatted} ${lastTx} ${c.user_id}`
         .toLowerCase()
         .includes(q)
     })
@@ -93,6 +102,7 @@ export default function AdminCustomersPage() {
               <TableRow>
                 <TableHead>Customer</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead>Phone</TableHead>
                 <TableHead>Country</TableHead>
                 <TableHead>Transactions</TableHead>
                 <TableHead>Total Spend</TableHead>
@@ -102,7 +112,7 @@ export default function AdminCustomersPage() {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                     No customers found.
                   </TableCell>
                 </TableRow>
@@ -113,6 +123,7 @@ export default function AdminCustomersPage() {
                       <p className="font-medium">{resolveAdminCustomerLabel(customer)}</p>
                     </TableCell>
                     <TableCell>{customer.email || '—'}</TableCell>
+                    <TableCell>{formatProfilePhone(customer) || '—'}</TableCell>
                     <TableCell>{customer.country || '—'}</TableCell>
                     <TableCell>{Number(customer.transaction_count) || 0}</TableCell>
                     <TableCell>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(customer.total_spend) || 0)}</TableCell>
