@@ -349,6 +349,7 @@ create trigger trg_reconciliation_reports_updated_at before update on reconcilia
 drop trigger if exists trg_reconciliation_discrepancies_updated_at on reconciliation_discrepancies;
 create trigger trg_reconciliation_discrepancies_updated_at before update on reconciliation_discrepancies for each row execute function app_set_updated_at();
 
+DROP VIEW IF EXISTS admin_dashboard_summary CASCADE;
 create or replace view admin_dashboard_summary as
 select
   coalesce(sum(case when status = 'completed' and type in ('topup', 'recharge', 'payment') then amount else 0 end), 0) as total_revenue,
@@ -357,6 +358,7 @@ select
   count(*) filter (where status = 'failed') as failed_orders
 from transactions;
 
+DROP VIEW IF EXISTS admin_daily_sales CASCADE;
 create or replace view admin_daily_sales as
 select
   date_trunc('day', created_at)::date as day,
@@ -367,6 +369,7 @@ from transactions
 where type in ('topup', 'recharge', 'payment')
 group by 1, 2;
 
+DROP VIEW IF EXISTS admin_top_products CASCADE;
 create or replace view admin_top_products as
 select
   coalesce(product_name, sku_code, 'Unknown') as product_name,
@@ -378,6 +381,7 @@ from recharge_orders
 group by 1, 2
 order by orders desc, revenue desc;
 
+DROP VIEW IF EXISTS admin_customer_spend CASCADE;
 create or replace view admin_customer_spend as
 select
   p.id as user_id,

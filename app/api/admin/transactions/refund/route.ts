@@ -39,12 +39,28 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Transaction has already been refunded' }, { status: 400 })
     }
 
-    if (transaction.status !== 'failed') {
-      return NextResponse.json({ error: 'Only failed recharge transactions can be refunded' }, { status: 400 })
-    }
-
     if (!transaction.user_id) {
       return NextResponse.json({ error: 'Transaction is not linked to a user profile' }, { status: 400 })
+    }
+
+    // 3b. Check if the associated recharge order failed (payment success but delivery failed)
+    const roRes = await supabaseRest(
+      `recharge_orders?transaction_id=eq.${encodeURIComponent(transactionId)}&select=id,status&limit=1`,
+      { cache: 'no-store' }
+    )
+    const roRows = roRes.ok ? (await roRes.json() as any[]) : []
+    const rechargeOrder = roRows[0] ?? null
+
+    // Allow refund if:
+    //  a) transaction itself is marked failed, OR
+    //  b) transaction is completed but the associated recharge order is failed (payment captured but top-up delivery failed)
+    const txFailed = transaction.status === 'failed'
+    const roFailed = rechargeOrder?.status === 'failed'
+
+    if (!txFailed && !roFailed) {
+      return NextResponse.json({
+        error: 'Refund is only allowed when the recharge delivery failed. This transaction and its recharge order are not in a failed state.',
+      }, { status: 400 })
     }
 
     // 4. Perform the refund operation:
@@ -69,6 +85,10 @@ export async function POST(request: Request) {
     })
 
     // Insert new refund transaction (which triggers the database trigger to credit the wallet)
+    const refundReason = txFailed
+      ? `Refund for failed recharge transaction (Tx ID: ${transactionId})`
+      : `Refund for failed recharge delivery — payment was captured but top-up was not delivered (Tx ID: ${transactionId})`
+
     const refundTxRes = await supabaseRest('transactions', {
       method: 'POST',
       headers: { Prefer: 'return=representation' },
@@ -79,7 +99,7 @@ export async function POST(request: Request) {
           amount: Number(transaction.amount),
           currency: transaction.currency,
           status: 'completed',
-          description: `Refund for failed recharge (Tx ID: ${transactionId})`,
+          description: refundReason,
         },
       ]),
     })
@@ -104,7 +124,7 @@ export async function POST(request: Request) {
           amount: Number(transaction.amount),
           currency: transaction.currency,
           status: 'completed',
-          reason: `Refund for failed recharge (Tx ID: ${transactionId})`,
+          reason: refundReason,
           metadata: {
             refund_transaction_id: refundTxId,
             refund_type: 'wallet',

@@ -228,6 +228,12 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
   })
   logHint(`Created pending recharge order: ${rechargeOrderId || 'None'}`)
 
+  // Set payment status as completed on both tables since payment has succeeded
+  await updateTransactionStatus(transactionId, 'completed')
+  if (rechargeOrderId) {
+    await updateRechargeOrder(rechargeOrderId, { payment_status: 'completed' })
+  }
+
   // 4. Execute routing engine
   let routingResult
   try {
@@ -241,7 +247,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
   } catch (e) {
     const errMsg = e instanceof Error ? e.message : 'Routing engine error'
     logHint(`Routing engine failed with error: ${errMsg}`)
-    await updateTransactionStatus(transactionId, 'failed', { error: errMsg })
+    // Do NOT downgrade transaction payment status on recharge failure
     if (rechargeOrderId) {
       await updateRechargeOrder(rechargeOrderId, { status: 'failed', failure_reason: errMsg })
     }
@@ -322,7 +328,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
       ...candidatePricingLog(bestPricedCandidate),
       executionResult: reason,
     })
-    await updateTransactionStatus(transactionId, 'failed', { error: errMsg, routing: routingResult })
+    // Do NOT downgrade transaction payment status on recharge failure
     if (rechargeOrderId) {
       await updateRechargeOrder(rechargeOrderId, { status: 'failed', failure_reason: errMsg })
     }
@@ -709,8 +715,11 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
       if (rechargeOrderId) {
         await updateRechargeOrder(rechargeOrderId, {
           status: 'completed',
+          payment_status: 'completed',
           provider: providerName,
           provider_ref: providerRef,
+          receive_amount: candidate.provider_wholesale_amount ?? candidate.price ?? null,
+          receive_currency: (candidate.provider_wholesale_currency ?? candidate.currency) || null,
           metadata: {
             payment_order_id: input.paymentOrderId,
             razorpay_payment_id: input.razorpayPaymentId,
@@ -815,7 +824,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     failureReason: 'All providers failed',
   })
 
-  await updateTransactionStatus(transactionId, 'failed', { error: errMsg, routing: routingResult })
+  // Do NOT downgrade transaction payment status on recharge failure
   if (rechargeOrderId) {
     await updateRechargeOrder(rechargeOrderId, { status: 'failed', failure_reason: errMsg })
   }

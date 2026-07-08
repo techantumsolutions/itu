@@ -207,7 +207,14 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
   const providerId = attempt.selected_provider_id || routingDecision.selected_provider_id
 
   if (!providerId || !lockedCandidate) {
-    await updateTransactionStatus(transactionId, 'failed', { error: 'STORED_PROVIDER_MISSING' })
+    await updateTransactionStatus(transactionId, 'completed', { error: 'STORED_PROVIDER_MISSING' })
+    if (rechargeOrder) {
+      await updateRechargeOrder(rechargeOrder.id, { 
+        status: 'failed', 
+        payment_status: 'completed', 
+        failure_reason: 'STORED_PROVIDER_MISSING' 
+      })
+    }
     return { ok: false, transactionId, status: 'failed', error: 'Stored provider selection is missing' }
   }
 
@@ -222,7 +229,7 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
       error: errMsg,
     }).catch(() => {})
 
-    await updateTransactionStatus(transactionId, 'failed', {
+    await updateTransactionStatus(transactionId, 'completed', {
       error: errMsg,
       provider_unavailable_after_payment: true,
     })
@@ -230,6 +237,7 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
     if (rechargeOrder) {
       await updateRechargeOrder(rechargeOrder.id, {
         status: 'provider_unavailable_after_payment',
+        payment_status: 'completed',
         failure_reason: errMsg,
       })
     }
@@ -256,11 +264,15 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
     idempotency_key: input.razorpayPaymentId || attempt.idempotency_key,
   }).catch(() => {})
 
-  await updateTransactionStatus(transactionId, 'processing', {
+  await updateTransactionStatus(transactionId, 'completed', {
     payment_order_id: input.paymentOrderId,
     razorpay_payment_id: input.razorpayPaymentId,
     payment_completed_at: new Date().toISOString(),
   })
+
+  if (rechargeOrder) {
+    await updateRechargeOrder(rechargeOrder.id, { payment_status: 'completed' })
+  }
 
   const plan = await dbGetInternalPlan(input.planId)
   const countryCode = plan?.country_iso3 ?? input.countryId ?? ''
@@ -279,8 +291,14 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
   if (!orphanCheck.ok) {
     const errMsg = orphanCheck.reason ?? 'Authoritative provider validation failed after payment'
     await dbUpdateRechargeAttempt(attempt.id, { status: 'failed', error: errMsg })
-    await updateTransactionStatus(transactionId, 'failed', { error: errMsg })
-    if (rechargeOrder) await updateRechargeOrder(rechargeOrder.id, { status: 'failed', failure_reason: errMsg })
+    await updateTransactionStatus(transactionId, 'completed', { error: errMsg })
+    if (rechargeOrder) {
+      await updateRechargeOrder(rechargeOrder.id, { 
+        status: 'failed', 
+        payment_status: 'completed', 
+        failure_reason: errMsg 
+      })
+    }
     
     await createAdminNotification({
       title: 'Recharge Failed after Payment',
@@ -314,10 +332,11 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
   if (!preCheck.eligible) {
     const errMsg = preCheck.logMessage ?? preCheck.reason ?? 'PROVIDER_UNAVAILABLE_AFTER_PAYMENT'
     await dbUpdateRechargeAttempt(attempt.id, { status: 'failed', error: errMsg })
-    await updateTransactionStatus(transactionId, 'failed', { error: errMsg })
+    await updateTransactionStatus(transactionId, 'completed', { error: errMsg })
     if (rechargeOrder) {
       await updateRechargeOrder(rechargeOrder.id, {
         status: 'provider_unavailable_after_payment',
+        payment_status: 'completed',
         failure_reason: errMsg,
       })
     }
@@ -411,8 +430,11 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
     if (rechargeOrder) {
       await updateRechargeOrder(rechargeOrder.id, {
         status: 'completed',
+        payment_status: 'completed',
         provider: providerName,
         provider_ref: providerRef,
+        receive_amount: lockedCandidate.provider_wholesale_amount ?? lockedCandidate.price ?? null,
+        receive_currency: (lockedCandidate.provider_wholesale_currency ?? lockedCandidate.currency) || null,
       })
     }
 
@@ -455,9 +477,13 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
     responseMessage: exec.errorMessage,
   }).catch(() => {})
 
-  await updateTransactionStatus(transactionId, 'failed', { error: exec.error })
+  await updateTransactionStatus(transactionId, 'completed', { error: exec.error })
   if (rechargeOrder) {
-    await updateRechargeOrder(rechargeOrder.id, { status: 'failed', failure_reason: exec.error })
+    await updateRechargeOrder(rechargeOrder.id, { 
+      status: 'failed', 
+      payment_status: 'completed', 
+      failure_reason: exec.error 
+    })
   }
 
   await createAdminNotification({
