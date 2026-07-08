@@ -235,6 +235,20 @@ export interface HelpPageContent {
   footerText: string
 }
 
+export interface CareersPageContent {
+  heroTitle: string
+  heroSubtitle: string
+  heroBgImage: string
+  perksTitle: string
+  perksSubtitle: string
+  perksList: string[]
+  lifeBeyondTitle: string
+  lifeBeyondSubtitle: string
+  lifeBeyondImages: string[]
+  openPositionsTitle: string
+  openPositionsSubtitle: string
+}
+
 export interface SiteContent {
   header: HeaderContent
   hero: HeroContent
@@ -253,6 +267,7 @@ export interface SiteContent {
   trustSection: TrustSectionContent
   footer: FooterContent
   helpPage: HelpPageContent
+  careersPage: CareersPageContent
 }
 
 export interface CountriesGridItem {
@@ -587,6 +602,26 @@ const defaultContent: SiteContent = {
     ],
     footerText: 'Still stuck? Start a top-up again or contact support.',
   },
+  careersPage: {
+    heroTitle: 'Unlock Your Career At ITU',
+    heroSubtitle: 'Grow With Us And Take Your Professional Life To The Next Level.',
+    heroBgImage: '',
+    perksTitle: 'Perks & Benefits',
+    perksSubtitle: 'We take care of our people so they can take care of our clients.',
+    perksList: [
+      'Health & Wellness Benefits',
+      'Performance Bonuses',
+      'Certification Support',
+      'International Exposure',
+      'Flexible Work Arrangements',
+      'Fast-Track Growth'
+    ],
+    lifeBeyondTitle: 'Life Beyond',
+    lifeBeyondSubtitle: "From team building activities to hackathons, here's a glimpse of the memories we make together.",
+    lifeBeyondImages: ['', '', '', '', ''],
+    openPositionsTitle: 'Open Positions',
+    openPositionsSubtitle: 'Find your next opportunity and help shape the future of collective data.'
+  },
 }
 
 interface CMSStore {
@@ -627,6 +662,7 @@ interface CMSStore {
   addCountriesGridItem: (item: Omit<CountriesGridItem, 'id' | 'order'>) => void
   deleteCountriesGridItem: (id: string) => void
   updateHelpPage: (helpPage: Partial<HelpPageContent>) => void
+  updateCareersPage: (careersPage: Partial<CareersPageContent>) => void
   resetToDefault: () => void
   markClean: () => void
 }
@@ -836,6 +872,18 @@ export const useCMSStore = create<CMSStore>()(
           content: {
             ...state.content,
             helpPage: { ...state.content.helpPage, ...helpPage },
+          },
+          isDirty: true,
+        })),
+
+      updateCareersPage: (careersPage) =>
+        set((state) => ({
+          content: {
+            ...state.content,
+            careersPage: {
+              ...(state.content.careersPage ?? {}),
+              ...careersPage,
+            },
           },
           isDirty: true,
         })),

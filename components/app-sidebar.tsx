@@ -22,6 +22,7 @@ import {
   PlugZap,
   Cog,
   History,
+  Briefcase,
 } from 'lucide-react'
 import {
   Sidebar,
@@ -69,6 +70,7 @@ const mainMenuItems: {
   },
   // { title: 'Wallet', url: '/admin/wallet', icon: Wallet, viewPermission: 'wallet.view' },
   { title: 'Website CMS', url: '/admin/cms', icon: FileEdit, viewPermission: 'cms.view' },
+  { title: 'Jobs & Applications', url: '/admin/jobs', icon: Briefcase, viewPermission: 'cms.view' },
   { title: 'Customers', url: '/admin/customers', icon: Users, viewPermission: 'customers.view' },
   { title: 'Support Tickets', url: '/admin/support-tickets', icon: MessageSquare, viewPermission: 'tickets.view' },
   { title: 'Ads Manager', url: '/admin/ads', icon: Megaphone, viewPermission: 'ads.view' },

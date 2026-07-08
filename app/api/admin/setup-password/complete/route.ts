@@ -3,6 +3,7 @@ import { cacheGetJson, cacheDel } from '@/lib/cache/redis'
 import { runtimeEnv } from '@/lib/env/runtime'
 import { logAdminActivity } from '@/lib/auth/audit'
 import { assertStrongPassword } from '@/lib/validators/password-api'
+import { createAdminNotification } from '@/lib/notifications/admin-notifications'
 
 export async function POST(req: Request) {
   try {
@@ -67,6 +68,14 @@ export async function POST(req: Request) {
       action: 'Complete Admin Setup Password',
       pageName: 'Security',
       details: { email: record.email },
+    })
+
+    // Trigger admin notification for initial password setup completion
+    await createAdminNotification({
+      title: 'Admin Password Set',
+      message: `Admin/staff user ${record.email} has completed setting their password.`,
+      type: 'admin_password_set',
+      details: { email: record.email, userId }
     })
 
     return NextResponse.json({

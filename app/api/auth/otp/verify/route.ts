@@ -3,6 +3,7 @@ import { verifyOtp } from '@/lib/security/otp'
 import { rateLimit } from '@/lib/security/rate-limit'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import crypto from 'crypto'
+import { createAdminNotification } from '@/lib/notifications/admin-notifications'
 import { parsePhoneNumberFromString, CountryCode } from 'libphonenumber-js'
 
 export const runtime = 'nodejs'
@@ -67,6 +68,13 @@ export async function POST(req: Request) {
                 updated_at: new Date().toISOString(),
               },
             ]),
+          })
+          // Trigger admin notification for guest user registration (phone OTP)
+          await createAdminNotification({
+            title: 'New User Registered',
+            message: `User registered via mobile OTP: +${dialCode}${nationalNumber}`,
+            type: 'user_registration',
+            details: { phone: nationalNumber, countryCode: dialCode, userId }
           })
         }
       }

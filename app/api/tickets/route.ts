@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getRequestUser } from '@/lib/tickets/auth-headers'
 import { createTicket, listTicketsForUser } from '@/lib/tickets/db-persistence'
+import { createAdminNotification } from '@/lib/notifications/admin-notifications'
 
 export async function GET(request: Request) {
   const user = await getRequestUser(request)
@@ -60,6 +61,15 @@ export async function POST(request: Request) {
       description,
       attachmentUrl: attachmentUrl || undefined,
     })
+
+    // Trigger admin notification for support ticket creation
+    await createAdminNotification({
+      title: 'New Support Ticket Raised',
+      message: `User ${user.email} raised ticket: "${subject}"`,
+      type: 'support_ticket_raised',
+      details: { ticketId: ticket.id, userId: user.id, email: user.email, subject }
+    })
+
     return NextResponse.json({ ticket })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Server error'
