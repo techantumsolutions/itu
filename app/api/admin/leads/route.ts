@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server'
 import { supabaseRest } from '@/lib/db/supabase-rest'
-import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
+import { requireAdminPermission, requireAnyAdminPermission } from '@/lib/auth/require-admin-feature'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: Request) {
-  const denied = await requireAdminPermission(req, 'customers.view')
+  const denied = await requireAnyAdminPermission(req, ['leads.view', 'customers.view'])
   if (denied) return denied
 
   try {
@@ -37,6 +38,11 @@ export async function GET(req: Request) {
       )
     }
 
+    await logAdminActivity({
+      action: 'View Leads',
+      pageName: 'Leads',
+    })
+
     return NextResponse.json({ leads })
   } catch (err) {
     return NextResponse.json({ error: 'Failed to fetch leads' }, { status: 500 })
@@ -44,7 +50,7 @@ export async function GET(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const denied = await requireAdminPermission(req, 'customers.edit')
+  const denied = await requireAnyAdminPermission(req, ['leads.edit', 'customers.edit'])
   if (denied) return denied
 
   try {
@@ -69,6 +75,12 @@ export async function PATCH(req: Request) {
     if (!res.ok) {
       return NextResponse.json({ error: await res.text() }, { status: 500 })
     }
+
+    await logAdminActivity({
+      action: 'Update Lead Status',
+      pageName: 'Leads',
+      details: { id, status },
+    })
 
     return NextResponse.json({ ok: true })
   } catch (err) {
@@ -95,6 +107,12 @@ export async function DELETE(req: Request) {
     if (!res.ok) {
       return NextResponse.json({ error: await res.text() }, { status: 500 })
     }
+
+    await logAdminActivity({
+      action: 'Delete Lead',
+      pageName: 'Leads',
+      details: { id },
+    })
 
     return NextResponse.json({ ok: true })
   } catch (err) {

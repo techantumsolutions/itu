@@ -59,7 +59,11 @@ import {
   LifeBuoy,
   ChevronLeft,
   ChevronRight,
+  Shield,
+  FileText,
 } from 'lucide-react'
+import { RichTextEditor } from '@/components/admin/rich-text-editor'
+import { PrivacyFaqItem, TermsSectionItem } from '@/lib/cms-store'
 import Link from 'next/link'
 import { ModulePermissionShell } from '@/components/admin/module-permission-shell'
 
@@ -186,7 +190,9 @@ export default function CMSPage() {
     updateHelpPage,
     updateCareersPage,
     updateContactPage,
-    updateAboutPage
+    updateAboutPage,
+    updatePrivacyPage,
+    updateTermsPage
   } = useCMSStore()
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -196,6 +202,12 @@ export default function CMSPage() {
   const [newHelpFAQ, setNewHelpFAQ] = useState({ question: '', answer: '' })
   const [editingCountry, setEditingCountry] = useState<PopularCountry | null>(null)
   const [newCountry, setNewCountry] = useState({ code: '', name: '', flag: '', dialCode: '' })
+  const [editingPrivacyItem, setEditingPrivacyItem] = useState<PrivacyFaqItem | null>(null)
+  const [newPrivacy, setNewPrivacy] = useState({ question: '', answer: '', order: 1 })
+  const [isAddPrivacyOpen, setIsAddPrivacyOpen] = useState(false)
+  const [editingTermsItem, setEditingTermsItem] = useState<TermsSectionItem | null>(null)
+  const [newTerms, setNewTerms] = useState({ title: '', content: '', order: 0 })
+  const [isAddTermsOpen, setIsAddTermsOpen] = useState(false)
   const [savedSnapshot, setSavedSnapshot] = useState(() => JSON.stringify(content))
 
   const contentSnapshot = useMemo(() => JSON.stringify(content), [content])
@@ -242,6 +254,117 @@ export default function CMSPage() {
     if (!file) return
     const dataUrl = await fileToDataUrl(file)
     if (dataUrl) onDone(dataUrl)
+  }
+
+  const addPrivacyItem = () => {
+    const currentSections = content.privacyPage?.sections ?? []
+    const newId = 'p-' + Date.now()
+    const updatedSections = [
+      ...currentSections,
+      {
+        id: newId,
+        question: newPrivacy.question,
+        answer: newPrivacy.answer,
+        order: Number(newPrivacy.order) || (currentSections.length + 1),
+        isActive: true,
+      }
+    ]
+    updatePrivacyPage({ sections: updatedSections })
+    setNewPrivacy({ question: '', answer: '', order: currentSections.length + 2 })
+  }
+
+  const savePrivacyItem = (updatedItem: PrivacyFaqItem) => {
+    const currentSections = content.privacyPage?.sections ?? []
+    const updatedSections = currentSections.map((sec) => 
+      sec.id === updatedItem.id ? updatedItem : sec
+    )
+    updatePrivacyPage({ sections: updatedSections })
+    setEditingPrivacyItem(null)
+  }
+
+  const deletePrivacyItem = (id: string) => {
+    const currentSections = content.privacyPage?.sections ?? []
+    const updatedSections = currentSections.filter((sec) => sec.id !== id)
+    updatePrivacyPage({ sections: updatedSections })
+  }
+
+  const addTermsItem = () => {
+    const currentSections = content.termsPage?.sections ?? []
+    const newId = 't-' + Date.now()
+    const newItem: TermsSectionItem = {
+      id: newId,
+      title: newTerms.title,
+      content: newTerms.content,
+      order: Number(newTerms.order) === 0 ? 0 : (Number(newTerms.order) || 0),
+      isActive: true,
+    }
+
+    const otherItems = [...currentSections].sort((a, b) => a.order - b.order)
+    const targetOrder = Math.max(0, newItem.order)
+    const updatedSections: TermsSectionItem[] = []
+    
+    let inserted = false
+    for (let i = 0; i < otherItems.length; i++) {
+      if (i === targetOrder) {
+        updatedSections.push(newItem)
+        inserted = true
+      }
+      updatedSections.push(otherItems[i])
+    }
+    if (!inserted) {
+      updatedSections.push(newItem)
+    }
+
+    const finalSections = updatedSections.map((item, index) => ({
+      ...item,
+      order: index
+    }))
+
+    updateTermsPage({ sections: finalSections })
+    setNewTerms({ title: '', content: '', order: finalSections.length })
+  }
+
+  const saveTermsItem = (updatedItem: TermsSectionItem) => {
+    const currentSections = content.termsPage?.sections ?? []
+    
+    const otherItems = currentSections
+      .filter((sec) => sec.id !== updatedItem.id)
+      .sort((a, b) => a.order - b.order)
+    
+    const targetOrder = Math.max(0, updatedItem.order)
+    const updatedSections: TermsSectionItem[] = []
+    
+    let inserted = false
+    for (let i = 0; i < otherItems.length; i++) {
+      if (i === targetOrder) {
+        updatedSections.push(updatedItem)
+        inserted = true
+      }
+      updatedSections.push(otherItems[i])
+    }
+    if (!inserted) {
+      updatedSections.push(updatedItem)
+    }
+
+    const finalSections = updatedSections.map((item, index) => ({
+      ...item,
+      order: index
+    }))
+
+    updateTermsPage({ sections: finalSections })
+    setEditingTermsItem(null)
+  }
+
+  const deleteTermsItem = (id: string) => {
+    const currentSections = content.termsPage?.sections ?? []
+    const updatedSections = currentSections
+      .filter((sec) => sec.id !== id)
+      .sort((a, b) => a.order - b.order)
+      .map((item, index) => ({
+        ...item,
+        order: index
+      }))
+    updateTermsPage({ sections: updatedSections })
   }
 
   const handleSave = async () => {
@@ -388,6 +511,14 @@ export default function CMSPage() {
               <TabsTrigger value="about" className="gap-2">
                 <Sparkles className="h-4 w-4" />
                 <span>About Page</span>
+              </TabsTrigger>
+              <TabsTrigger value="privacy" className="gap-2">
+                <Shield className="h-4 w-4" />
+                <span>Privacy Policy</span>
+              </TabsTrigger>
+              <TabsTrigger value="terms" className="gap-2">
+                <FileText className="h-4 w-4" />
+                <span>Terms & Conditions</span>
               </TabsTrigger>
             </TabsList>
           </div>
@@ -3609,6 +3740,424 @@ export default function CMSPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="privacy" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Privacy Policy Settings</CardTitle>
+              <CardDescription>Configure the main title, subtitle, and intro text for the public privacy notice.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="privacy-title">Page Title</Label>
+                  <Input
+                    id="privacy-title"
+                    value={content.privacyPage?.title || ''}
+                    onChange={(e) => updatePrivacyPage({ title: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="privacy-subtitle">Page Subtitle</Label>
+                  <Input
+                    id="privacy-subtitle"
+                    value={content.privacyPage?.subtitle || ''}
+                    onChange={(e) => updatePrivacyPage({ subtitle: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="privacy-intro">Introductory Paragraph</Label>
+                <Textarea
+                  id="privacy-intro"
+                  rows={4}
+                  value={content.privacyPage?.introText || ''}
+                  onChange={(e) => updatePrivacyPage({ introText: e.target.value })}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <div>
+                <CardTitle>Privacy Policy Sections</CardTitle>
+                <CardDescription>Create the side tabs showing questions and rich text formatted answers.</CardDescription>
+              </div>
+              <Button onClick={() => setIsAddPrivacyOpen(true)} size="sm" className="gap-2">
+                <Plus className="h-4 w-4" /> Add Section
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-16 text-center">Order</TableHead>
+                      <TableHead>Question / Title</TableHead>
+                      <TableHead className="w-32">Status</TableHead>
+                      <TableHead className="w-24 text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(!content.privacyPage?.sections || content.privacyPage.sections.length === 0) ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                          No sections added yet. Click "Add Section" to get started.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      [...content.privacyPage.sections]
+                        .sort((a, b) => a.order - b.order)
+                        .map((sec) => (
+                          <TableRow key={sec.id}>
+                            <TableCell className="text-center font-medium">{sec.order}</TableCell>
+                            <TableCell className="font-medium">{sec.question}</TableCell>
+                            <TableCell>
+                              <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${sec.isActive ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-neutral-50 text-neutral-600 border border-neutral-200'}`}>
+                                {sec.isActive ? 'Active' : 'Inactive'}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="inline-flex gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => setEditingPrivacyItem(sec)}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() => deletePrivacyItem(sec.id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Add Dialog */}
+          {isAddPrivacyOpen && (
+            <Dialog open={isAddPrivacyOpen} onOpenChange={setIsAddPrivacyOpen}>
+              <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Add Privacy Notice Section</DialogTitle>
+                  <DialogDescription>Create a new question and rich-text formatted answer.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="add-privacy-question">Question / Title</Label>
+                    <Input
+                      id="add-privacy-question"
+                      value={newPrivacy.question}
+                      placeholder="e.g. What data does Ding collect?"
+                      onChange={(e) => setNewPrivacy({ ...newPrivacy, question: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Answer (Rich Text)</Label>
+                    <RichTextEditor
+                      value={newPrivacy.answer}
+                      onChange={(val) => setNewPrivacy({ ...newPrivacy, answer: val })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="add-privacy-order">Display Order</Label>
+                    <Input
+                      id="add-privacy-order"
+                      type="number"
+                      value={newPrivacy.order}
+                      onChange={(e) => setNewPrivacy({ ...newPrivacy, order: Number(e.target.value) || 1 })}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsAddPrivacyOpen(false)}>Cancel</Button>
+                  <Button onClick={() => {
+                    addPrivacyItem()
+                    setIsAddPrivacyOpen(false)
+                  }}>Add Section</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+
+          {/* Edit Dialog */}
+          {editingPrivacyItem && (
+            <Dialog open={!!editingPrivacyItem} onOpenChange={(open) => !open && setEditingPrivacyItem(null)}>
+              <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Edit Privacy Notice Section</DialogTitle>
+                  <DialogDescription>Modify the question and the rich-text formatted answer.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-privacy-question">Question / Title</Label>
+                    <Input
+                      id="edit-privacy-question"
+                      value={editingPrivacyItem.question}
+                      onChange={(e) => setEditingPrivacyItem({ ...editingPrivacyItem, question: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Answer (Rich Text)</Label>
+                    <RichTextEditor
+                      value={editingPrivacyItem.answer}
+                      onChange={(val) => setEditingPrivacyItem({ ...editingPrivacyItem, answer: val })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-privacy-order">Display Order</Label>
+                      <Input
+                        id="edit-privacy-order"
+                        type="number"
+                        value={editingPrivacyItem.order}
+                        onChange={(e) => setEditingPrivacyItem({ ...editingPrivacyItem, order: Number(e.target.value) || 1 })}
+                      />
+                    </div>
+                    <div className="flex items-center space-x-2 pt-8">
+                      <Switch
+                        id="edit-privacy-active"
+                        checked={editingPrivacyItem.isActive}
+                        onCheckedChange={(checked) => setEditingPrivacyItem({ ...editingPrivacyItem, isActive: checked })}
+                      />
+                      <Label htmlFor="edit-privacy-active">Active (Visible on public site)</Label>
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setEditingPrivacyItem(null)}>Cancel</Button>
+                  <Button onClick={() => savePrivacyItem(editingPrivacyItem)}>Save Changes</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+        </TabsContent>
+
+        <TabsContent value="terms" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Terms & Conditions Settings</CardTitle>
+              <CardDescription>Configure the main title, subtitle, and introductory paragraph for the Terms & Conditions page.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="terms-title">Page Title</Label>
+                  <Input
+                    id="terms-title"
+                    value={content.termsPage?.title || ''}
+                    onChange={(e) => updateTermsPage({ title: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="terms-subtitle">Page Subtitle</Label>
+                  <Input
+                    id="terms-subtitle"
+                    value={content.termsPage?.subtitle || ''}
+                    onChange={(e) => updateTermsPage({ subtitle: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="terms-intro">Introductory Paragraph</Label>
+                <Textarea
+                  id="terms-intro"
+                  rows={4}
+                  value={content.termsPage?.introText || ''}
+                  onChange={(e) => updateTermsPage({ introText: e.target.value })}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0">
+              <div>
+                <CardTitle>Terms & Conditions Sections (Points)</CardTitle>
+                <CardDescription>Manage the sequential list of points that define the Terms & Conditions.</CardDescription>
+              </div>
+              <Button onClick={() => setIsAddTermsOpen(true)} size="sm" className="gap-2">
+                <Plus className="h-4 w-4" /> Add Point
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-16 text-center">Order</TableHead>
+                      <TableHead>Point Title</TableHead>
+                      <TableHead className="w-32">Status</TableHead>
+                      <TableHead className="w-24 text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(!content.termsPage?.sections || content.termsPage.sections.length === 0) ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-8 text-muted-foreground">
+                          No terms points added yet. Click "Add Point" to get started.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      [...content.termsPage.sections]
+                        .sort((a, b) => a.order - b.order)
+                        .map((sec) => (
+                          <TableRow key={sec.id}>
+                            <TableCell className="text-center font-medium">{sec.order}</TableCell>
+                            <TableCell className="font-medium">{sec.title}</TableCell>
+                            <TableCell>
+                              <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${sec.isActive ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-neutral-50 text-neutral-600 border border-neutral-200'}`}>
+                                {sec.isActive ? 'Active' : 'Inactive'}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="inline-flex gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => setEditingTermsItem(sec)}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  onClick={() => deleteTermsItem(sec.id)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Add Dialog */}
+          {isAddTermsOpen && (
+            <Dialog open={isAddTermsOpen} onOpenChange={setIsAddTermsOpen}>
+              <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Add Terms Point</DialogTitle>
+                  <DialogDescription>Create a new numbered point and rich-text formatted description.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="add-terms-title">Point Title</Label>
+                    <Input
+                      id="add-terms-title"
+                      value={newTerms.title}
+                      placeholder="e.g. Acceptance of Terms"
+                      onChange={(e) => setNewTerms({ ...newTerms, title: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Point Content (Rich Text)</Label>
+                    <RichTextEditor
+                      value={newTerms.content}
+                      onChange={(val) => setNewTerms({ ...newTerms, content: val })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="add-terms-order">Display Order</Label>
+                    <Input
+                      id="add-terms-order"
+                      type="number"
+                      min={0}
+                      value={newTerms.order}
+                      onChange={(e) => {
+                        const val = Math.max(0, Number(e.target.value) || 0)
+                        setNewTerms({ ...newTerms, order: val })
+                      }}
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsAddTermsOpen(false)}>Cancel</Button>
+                  <Button onClick={() => {
+                    addTermsItem()
+                    setIsAddTermsOpen(false)
+                  }}>Add Point</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
+
+          {/* Edit Dialog */}
+          {editingTermsItem && (
+            <Dialog open={!!editingTermsItem} onOpenChange={(open) => !open && setEditingTermsItem(null)}>
+              <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Edit Terms Point</DialogTitle>
+                  <DialogDescription>Modify the point title and rich-text formatted description.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-terms-title">Point Title</Label>
+                    <Input
+                      id="edit-terms-title"
+                      value={editingTermsItem.title}
+                      onChange={(e) => setEditingTermsItem({ ...editingTermsItem, title: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Point Content (Rich Text)</Label>
+                    <RichTextEditor
+                      value={editingTermsItem.content}
+                      onChange={(val) => setEditingTermsItem({ ...editingTermsItem, content: val })}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-terms-order">Display Order</Label>
+                      <Input
+                        id="edit-terms-order"
+                        type="number"
+                        min={0}
+                        value={editingTermsItem.order}
+                        onChange={(e) => {
+                          const val = Math.max(0, Number(e.target.value) || 0)
+                          setEditingTermsItem({ ...editingTermsItem, order: val })
+                        }}
+                      />
+                    </div>
+                    <div className="flex items-center space-x-2 pt-8">
+                      <Switch
+                        id="edit-terms-active"
+                        checked={editingTermsItem.isActive}
+                        onCheckedChange={(checked) => setEditingTermsItem({ ...editingTermsItem, isActive: checked })}
+                      />
+                      <Label htmlFor="edit-terms-active">Active (Visible on public site)</Label>
+                    </div>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setEditingTermsItem(null)}>Cancel</Button>
+                  <Button onClick={() => saveTermsItem(editingTermsItem)}>Save Changes</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          )}
         </TabsContent>
 
         {/* Typography tab removed — site is locked to Aeonik */}

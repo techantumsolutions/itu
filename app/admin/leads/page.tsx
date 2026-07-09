@@ -57,8 +57,8 @@ export default function AdminLeadsPage() {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null)
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null)
 
-  const canView = user && clientHasAdminPermission(user, 'customers.view')
-  const canEdit = user && clientHasAdminPermission(user, 'customers.edit')
+  const canView = user && (clientHasAdminPermission(user, 'leads.view') || clientHasAdminPermission(user, 'customers.view'))
+  const canEdit = user && (clientHasAdminPermission(user, 'leads.edit') || clientHasAdminPermission(user, 'customers.edit'))
   const canDelete = user && clientHasAdminPermission(user, 'customers.delete')
 
   const loadLeads = useCallback(async () => {

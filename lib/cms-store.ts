@@ -249,6 +249,36 @@ export interface CareersPageContent {
   openPositionsSubtitle: string
 }
 
+export interface PrivacyFaqItem {
+  id: string
+  question: string
+  answer: string
+  order: number
+  isActive: boolean
+}
+
+export interface PrivacyPageContent {
+  title: string
+  subtitle: string
+  introText: string
+  sections: PrivacyFaqItem[]
+}
+
+export interface TermsSectionItem {
+  id: string
+  title: string
+  content: string
+  order: number
+  isActive: boolean
+}
+
+export interface TermsPageContent {
+  title: string
+  subtitle: string
+  introText: string
+  sections: TermsSectionItem[]
+}
+
 export interface ContactPageContent {
   heroTitle: string
   heroSubtitle: string
@@ -344,6 +374,8 @@ export interface SiteContent {
   careersPage: CareersPageContent
   contactPage?: ContactPageContent
   aboutPage?: AboutPageContent
+  privacyPage?: PrivacyPageContent
+  termsPage?: TermsPageContent
 }
 
 export interface CountriesGridItem {
@@ -777,6 +809,118 @@ const defaultContent: SiteContent = {
     promoSubtitle: 'Top-up wherever, whenever',
     promoDesc: 'Recharge anytime, anywhere with just a few taps.'
   },
+  privacyPage: {
+    title: 'Privacy Notice',
+    subtitle: 'Learn how we collect, use, and protect your personal data.',
+    introText: 'ITU associated Ding mobile applications, present or future (each the "Applications"), are operated by, and the top-up services and prepaid products available on the Applications from time to time ("Services"), are provided by, Ezetop Unlimited Company t/a Ding ("Ding", "we" or "us"). We are registered in Ireland with registered number 422514 and we have our registered office at 3 Shelbourne Buildings, Crampton Avenue, Shelbourne Road, Ballsbridge, Dublin 4, D04C2Y6, Ireland. Our VAT number is 9576713i. Ding is a registered business name of Ezetop Unlimited Company. All correspondence in relation to any Ding company should be sent to 3 Shelbourne Buildings, Crampton Avenue, Shelbourne Road, Ballsbridge, Dublin 4, D04C2Y6, Ireland.',
+    sections: [
+      {
+        id: 'p1',
+        question: 'About us',
+        answer: '<strong>About Us</strong><br/>We are Ezetop Unlimited Company, trading as Ding. We provide international mobile top-up and other prepaid services through our applications and website.',
+        order: 1,
+        isActive: true
+      },
+      {
+        id: 'p2',
+        question: 'How can you get in contact with Ding?',
+        answer: '<strong>Your Privacy Matters</strong><br/><h3>Information We Collect</h3><ul><li><strong>Overview:</strong> Business Central is a cloud-based ERP solution designed for small to medium-sized businesses, offering comprehensive financial management tools. It is one of the ERP examples that allow businesses to manage their finances from anywhere, with real-time data accessible across devices.</li><li><strong>Example Use Case:</strong> A small business automates its invoicing process using Business Central, reducing the time spent on manual data entry and minimizing errors. This cloud-based solution also enables the business to access financial data on the go, improving...</li></ul>',
+        order: 2,
+        isActive: true
+      },
+      {
+        id: 'p3',
+        question: 'What data does Ding collect?',
+        answer: '<strong>Data Collection</strong><br/>We collect personal data that you provide directly to us when registering for an account or using our top-up services.',
+        order: 3,
+        isActive: true
+      },
+      {
+        id: 'p4',
+        question: 'How does Ding collect your personal data?',
+        answer: '<strong>How We Collect Personal Data</strong><br/>We collect data through cookies, account registration forms, and transaction details when you buy top-ups.',
+        order: 4,
+        isActive: true
+      },
+      {
+        id: 'p5',
+        question: 'Why do we process your personal data and what is our legal basis for doing so?',
+        answer: '<strong>Processing & Legal Basis</strong><br/>We process your data to fulfill our contract with you, comply with legal obligations, and pursue legitimate business interests.',
+        order: 5,
+        isActive: true
+      },
+      {
+        id: 'p6',
+        question: 'Do we carry out any automated processing of your personal data?',
+        answer: '<strong>Automated Processing</strong><br/>We do not perform automated decision-making or profiling that significantly affects you, except for security and fraud prevention checks.',
+        order: 6,
+        isActive: true
+      },
+      {
+        id: 'p7',
+        question: 'What happens if you do not provide us with your personal data?',
+        answer: '<strong>Providing Personal Data</strong><br/>If you do not provide required personal data, we may not be able to provide our mobile top-up services or process your transactions.',
+        order: 7,
+        isActive: true
+      },
+      {
+        id: 'p8',
+        question: 'Who do we disclose your personal data to?',
+        answer: '<strong>Data Disclosure</strong><br/>We may share your data with payment processors, mobile operators, and regulatory bodies as required by law or contract.',
+        order: 8,
+        isActive: true
+      }
+    ]
+  },
+  termsPage: {
+    title: 'Terms & Conditions',
+    subtitle: 'Please read these terms and conditions carefully before using our services.',
+    introText: 'These terms and conditions govern your use of the mobile top-up and prepaid recharge services provided by ITU ("we", "us", or "our"). By accessing our applications or website, you agree to be bound by these terms. If you do not agree, please do not use our services.',
+    sections: [
+      {
+        id: 't1',
+        title: 'Acceptance of Terms',
+        content: 'By creating an account or placing a mobile top-up order, you acknowledge that you have read, understood, and agreed to these Terms and Conditions, as well as our Privacy Notice.',
+        order: 0,
+        isActive: true
+      },
+      {
+        id: 't2',
+        title: 'User Accounts & Registration',
+        content: 'To use certain features, you must register for an account. You represent and warrant that all registration information is truthful and accurate, and you agree to maintain the security of your password and login credentials.',
+        order: 1,
+        isActive: true
+      },
+      {
+        id: 't3',
+        title: 'Top-Up Deliveries & Transactions',
+        content: 'All top-up recharges are processed immediately upon payment. Please ensure you enter the correct mobile number and operator. <strong>Due to the instant nature of digital recharges, top-ups cannot be reversed or refunded once successfully delivered by the network operator.</strong>',
+        order: 2,
+        isActive: true
+      },
+      {
+        id: 't4',
+        title: 'Payment & Service Fees',
+        content: 'We support multiple payment methods, including credit cards, debit cards, and local gateways. Some transactions may incur small service processing fees, which will be calculated and clearly displayed at checkout before you authorize payment.',
+        order: 3,
+        isActive: true
+      },
+      {
+        id: 't5',
+        title: 'Prohibited Use & Security Checks',
+        content: 'You agree not to use our top-up services for any fraudulent or unauthorized activities. We reserve the right to flag transactions, perform identity validation checks, or suspend accounts violating local anti-money laundering regulations.',
+        order: 4,
+        isActive: true
+      },
+      {
+        id: 't6',
+        title: 'Limitation of Liability',
+        content: 'To the maximum extent permitted by applicable law, we shall not be liable for any indirect, incidental, or consequential damages resulting from network delivery delays, incorrect operator routing, or temporary service outages.',
+        order: 5,
+        isActive: true
+      }
+    ]
+  }
 }
 
 interface CMSStore {
@@ -820,6 +964,8 @@ interface CMSStore {
   updateCareersPage: (careersPage: Partial<CareersPageContent>) => void
   updateContactPage: (contactPage: Partial<ContactPageContent>) => void
   updateAboutPage: (aboutPage: Partial<AboutPageContent>) => void
+  updatePrivacyPage: (privacyPage: Partial<PrivacyPageContent>) => void
+  updateTermsPage: (termsPage: Partial<TermsPageContent>) => void
   resetToDefault: () => void
   markClean: () => void
 }
@@ -904,6 +1050,16 @@ function mergeSiteContent(partial: Partial<SiteContent> | undefined): SiteConten
       ...p.aboutPage,
       teamQuotes: p.aboutPage?.teamQuotes ?? defaultContent.aboutPage.teamQuotes,
     },
+    privacyPage: p.privacyPage ? {
+      ...defaultContent.privacyPage,
+      ...p.privacyPage,
+      sections: p.privacyPage.sections ?? defaultContent.privacyPage.sections,
+    } : defaultContent.privacyPage,
+    termsPage: p.termsPage ? {
+      ...defaultContent.termsPage,
+      ...p.termsPage,
+      sections: p.termsPage.sections ?? defaultContent.termsPage.sections,
+    } : defaultContent.termsPage,
   }
 }
 
@@ -1073,6 +1229,30 @@ export const useCMSStore = create<CMSStore>()(
             aboutPage: {
               ...(state.content.aboutPage ?? defaultContent.aboutPage),
               ...aboutPage,
+            },
+          },
+          isDirty: true,
+        })),
+
+      updatePrivacyPage: (privacyPage) =>
+        set((state) => ({
+          content: {
+            ...state.content,
+            privacyPage: {
+              ...(state.content.privacyPage ?? defaultContent.privacyPage),
+              ...privacyPage,
+            },
+          },
+          isDirty: true,
+        })),
+
+      updateTermsPage: (termsPage) =>
+        set((state) => ({
+          content: {
+            ...state.content,
+            termsPage: {
+              ...(state.content.termsPage ?? defaultContent.termsPage),
+              ...termsPage,
             },
           },
           isDirty: true,
