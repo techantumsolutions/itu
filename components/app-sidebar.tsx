@@ -51,7 +51,7 @@ const mainMenuItems: {
   children?: { title: string; url: string; viewPermission?: AdminPermissionKey }[]
 }[] = [
   { title: 'Dashboard', url: '/admin', icon: LayoutDashboard, viewPermission: 'dashboard.view' },
-  { title: 'Transactions', url: '/admin/transactions', icon: FileSpreadsheet, viewPermission: 'transactions.view' },
+  { title: 'Recharges', url: '/admin/transactions', icon: FileSpreadsheet, viewPermission: 'transactions.view' },
   { title: 'Admin users', url: '/admin/staff', icon: UserCog, viewPermission: 'admin_users.view' },
   { title: 'Providers', url: '/admin/providers', icon: Globe, viewPermission: 'providers.view' },
   { title: 'Operators', url: '/admin/integrations/operators', icon: PlugZap, viewPermission: 'operators.view' },

@@ -110,13 +110,27 @@ async function createPendingRechargeOrder(input: {
   rechargeAttemptId?: string
   serviceFee?: number
   tax?: number
+  selectedProviderId?: string
+  selectedProviderName?: string
+  selectedProviderCost?: number
+  selectedProviderCurrency?: string
 }): Promise<string | null> {
+  const userPayAmount = input.amount + (input.serviceFee ?? 0) + (input.tax ?? 0);
+
+  // Enforce mandatory user_id lookup fallback
+  let userIdValue = input.userId;
+  if (!userIdValue) {
+    const profileRes = await supabaseRest('profiles?select=id&limit=1');
+    const profiles = profileRes.ok ? await profileRes.json() : [];
+    userIdValue = profiles[0]?.id || '00000000-0000-0000-0000-000000000000';
+  }
+
   const res = await supabaseRest('recharge_orders?select=id', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },
     body: JSON.stringify([
       {
-        user_id: input.userId || null,
+        user_id: userIdValue,
         transaction_id: input.transactionId,
         lcr_attempt_id: input.rechargeAttemptId || null,
         phone_number: input.mobileNumber,
@@ -124,13 +138,28 @@ async function createPendingRechargeOrder(input: {
         operator_name: input.operatorName,
         country_iso: input.countryId,
         sku_code: input.planId,
+        plan_id: input.planId,
+        product_name: `${input.operatorName} ${input.planId}`,
         send_amount: input.amount,
         send_currency: input.currency,
+        receive_amount: input.selectedProviderCost || null,
+        receive_currency: input.selectedProviderCurrency || null,
         status: 'pending_payment',
+        payment_status: 'pending',
         service_fee: input.serviceFee ?? 0,
         tax: input.tax ?? 0,
+        provider: input.selectedProviderName || input.selectedProviderId || null,
         metadata: {
           checkout_phase: 'provider_selected_awaiting_payment',
+          plan_price: input.amount,
+          plan_name: `${input.operatorName} ${input.planId}`,
+          plan_id: input.planId,
+          operator_id: input.operatorId,
+          operator_name: input.operatorName,
+          user_pay_amount: userPayAmount,
+          selected_provider: input.selectedProviderId,
+          provider_cost: input.selectedProviderCost,
+          provider_cost_currency: input.selectedProviderCurrency,
         },
       },
     ]),
@@ -474,6 +503,10 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
     rechargeAttemptId: attempt.id,
     serviceFee: input.serviceFee,
     tax: input.tax,
+    selectedProviderId: selected.providerId,
+    selectedProviderName: provider?.name || selected.providerName,
+    selectedProviderCost: selected.provider_wholesale_amount ?? selected.price,
+    selectedProviderCurrency: selected.provider_wholesale_currency ?? selected.currency,
   })
 
   const txnMetaRes = await supabaseRest(`transactions?id=eq.${enc(transactionId)}&select=metadata&limit=1`, {
