@@ -365,18 +365,18 @@ export default function ReconciliationDashboard() {
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <FileSpreadsheet className="size-5 text-primary" />
-                Upload Supplier Invoice
+                Upload Provider Bill/Invoice
               </DialogTitle>
               <DialogDescription>
-                Select the supplier and billing parameters to execute a comparison run.
+                Select the provider and billing parameters to execute a comparison run.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4 pt-4">
               <div className="space-y-2">
-                <Label htmlFor="supplier-select">Supplier</Label>
+                <Label htmlFor="supplier-select">Provider</Label>
                 <Select value={supplier} onValueChange={setSupplier}>
                   <SelectTrigger id="supplier-select">
-                    <SelectValue placeholder="Select Supplier" />
+                    <SelectValue placeholder="Select Provider" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="dtone">DTOne</SelectItem>
@@ -751,13 +751,12 @@ export default function ReconciliationDashboard() {
                         : `Transaction ID: ${selectedRecharge.transaction_id || '—'} | No billing record matched`}
                     </DialogDescription>
                   </div>
-                  <span className={`text-[10px] uppercase font-bold tracking-wider px-3 py-1 border rounded-full ${
-                    selectedRecharge.recon_status === 'CLEAR'
-                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                      : selectedRecharge.recon_status === 'UNCLEAR'
-                        ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
-                        : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
-                  }`}>
+                  <span className={`text-[10px] uppercase font-bold tracking-wider px-3 py-1 border rounded-full ${selectedRecharge.recon_status === 'CLEAR'
+                    ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                    : selectedRecharge.recon_status === 'UNCLEAR'
+                      ? 'bg-rose-500/10 text-rose-500 border-rose-500/20'
+                      : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                    }`}>
                     {selectedRecharge.recon_status}
                   </span>
                 </div>
@@ -832,9 +831,8 @@ export default function ReconciliationDashboard() {
                         </div>
                         <div className="flex justify-between border-b pb-1">
                           <span className="text-muted-foreground text-xs">Recharge Status</span>
-                          <span className={`font-semibold text-xs border rounded-lg px-2 py-0.5 bg-muted/80 ${
-                            selectedRecharge.recon_item.reconciliation_details.platform_snapshot.recharge_status === 'completed' ? 'text-green-500' : 'text-rose-500'
-                          }`}>
+                          <span className={`font-semibold text-xs border rounded-lg px-2 py-0.5 bg-muted/80 ${selectedRecharge.recon_item.reconciliation_details.platform_snapshot.recharge_status === 'completed' ? 'text-green-500' : 'text-rose-500'
+                            }`}>
                             {selectedRecharge.recon_item.reconciliation_details.platform_snapshot.recharge_status}
                           </span>
                         </div>
@@ -909,17 +907,15 @@ export default function ReconciliationDashboard() {
                           key={idx}
                           type="button"
                           onClick={() => setSelectedAction(isSelected ? null : rec.action)}
-                          className={`w-full text-left p-3 rounded-lg border transition-all cursor-pointer ${
-                            isSelected
-                              ? 'bg-primary/10 border-primary/40 ring-1 ring-primary/30'
-                              : 'bg-muted/40 border-muted-foreground/15 hover:border-muted-foreground/30 hover:bg-muted/60'
-                          }`}
+                          className={`w-full text-left p-3 rounded-lg border transition-all cursor-pointer ${isSelected
+                            ? 'bg-primary/10 border-primary/40 ring-1 ring-primary/30'
+                            : 'bg-muted/40 border-muted-foreground/15 hover:border-muted-foreground/30 hover:bg-muted/60'
+                            }`}
                         >
                           <div className="flex items-start gap-3">
                             {/* Radio indicator */}
-                            <div className={`mt-0.5 shrink-0 size-4 rounded-full border-2 flex items-center justify-center transition-colors ${
-                              isSelected ? 'border-primary bg-primary' : 'border-muted-foreground/40 bg-transparent'
-                            }`}>
+                            <div className={`mt-0.5 shrink-0 size-4 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'border-primary bg-primary' : 'border-muted-foreground/40 bg-transparent'
+                              }`}>
                               {isSelected && <div className="size-1.5 rounded-full bg-white" />}
                             </div>
                             <div className="flex-1">
