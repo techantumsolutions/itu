@@ -13,12 +13,24 @@ import {
   Download,
   Loader2,
   CheckCircle,
+  Check,
+  ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
+import { countriesList, getFlagEmoji, isValidPhoneNumber } from '@/lib/country-codes'
 
 interface Job {
   id: string
@@ -48,6 +60,9 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
   const [formName, setFormName] = useState('')
   const [formEmail, setFormEmail] = useState('')
   const [formPhone, setFormPhone] = useState('')
+  const [openCountry, setOpenCountry] = useState(false)
+  const [selectedCountryCode, setSelectedCountryCode] = useState('IN')
+  const [selectedDialCode, setSelectedDialCode] = useState('91')
   const [formCoverLetter, setFormCoverLetter] = useState('')
   const [formResumeUrl, setFormResumeUrl] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -104,13 +119,23 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
       return
     }
 
+    let formattedPhone: string | null = null
+    if (formPhone.trim()) {
+      const cleaned = formPhone.trim().replace(/\D/g, '')
+      if (!isValidPhoneNumber(cleaned, selectedCountryCode)) {
+        toast.error('Please enter a valid mobile number for the selected country')
+        return
+      }
+      formattedPhone = `+${selectedDialCode}${cleaned}`
+    }
+
     setSubmitting(true)
 
     const payload = {
       job_id: id,
       name: formName.trim(),
       email: formEmail.trim(),
-      phone: formPhone.trim() || null,
+      phone: formattedPhone,
       cover_letter: formCoverLetter.trim() || null,
       resume_url: formResumeUrl,
     }
@@ -146,7 +171,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
 
   return (
     <div className="min-h-screen bg-neutral-50/30 py-12">
-      <div className="max-w-7xl mx-auto px-6 space-y-8">
+      <div className="max-w-6xl mx-auto px-3 space-y-8">
         {/* Back Link */}
         <Link
           href="/careers"
@@ -344,13 +369,63 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
 
                     <div className="space-y-1">
                       <Label htmlFor="candPhone" className="text-xs font-bold text-neutral-700">Phone Number (optional)</Label>
-                      <Input
-                        id="candPhone"
-                        value={formPhone}
-                        onChange={(e) => setFormPhone(e.target.value)}
-                        placeholder="+91 99999 99999"
-                        disabled={submitting}
-                      />
+                      <div className="flex gap-2">
+                        <Popover open={openCountry} onOpenChange={setOpenCountry}>
+                          <PopoverTrigger asChild disabled={submitting}>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              role="combobox"
+                              aria-expanded={openCountry}
+                              className="flex h-10 items-center gap-1 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-100 shrink-0 min-w-[110px] justify-between shadow-none"
+                            >
+                              <span className="truncate">
+                                {selectedCountryCode ? `${getFlagEmoji(selectedCountryCode)} +${selectedDialCode}` : `+${selectedDialCode}`}
+                              </span>
+                              <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[300px] p-0" align="start">
+                            <Command>
+                              <CommandInput placeholder="Search country or code..." />
+                              <CommandList>
+                                <CommandEmpty>No country found.</CommandEmpty>
+                                <CommandGroup>
+                                  {countriesList.map((c) => (
+                                    <CommandItem
+                                      key={c.code}
+                                      value={`${c.name} ${c.code} ${c.dialCode}`}
+                                      onSelect={() => {
+                                        setSelectedDialCode(c.dialCode)
+                                        setSelectedCountryCode(c.code)
+                                        setOpenCountry(false)
+                                      }}
+                                      className="flex items-center justify-between py-2 cursor-pointer"
+                                    >
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-base">{c.flag}</span>
+                                        <span className="font-medium text-neutral-900">{c.name}</span>
+                                        <span className="text-neutral-400 font-normal">(+{c.dialCode})</span>
+                                      </div>
+                                      {selectedCountryCode === c.code && (
+                                        <Check className="h-4 w-4 text-purple-600" />
+                                      )}
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                        <Input
+                          id="candPhone"
+                          value={formPhone}
+                          onChange={(e) => setFormPhone(e.target.value)}
+                          placeholder="99999 99999"
+                          disabled={submitting}
+                          className="h-10 rounded-xl flex-1"
+                        />
+                      </div>
                     </div>
 
                     <div className="space-y-1">

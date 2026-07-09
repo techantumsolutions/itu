@@ -249,6 +249,80 @@ export interface CareersPageContent {
   openPositionsSubtitle: string
 }
 
+export interface ContactPageContent {
+  heroTitle: string
+  heroSubtitle: string
+  heroBgImage: string
+  addressTitle: string
+  addressLine1: string
+  addressLine2: string
+  addressLine3: string
+  phoneTitle: string
+  phoneLine1: string
+  phoneLine2: string
+  emailTitle: string
+  emailLine1: string
+  emailLine2: string
+  formTitle: string
+  formButtonText: string
+  mapEmbedUrl: string
+}
+
+export interface TeamQuoteItem {
+  id: string
+  name: string
+  role: string
+  quote: string
+  image: string
+}
+
+export interface AboutPageContent {
+  heroTitle: string
+  heroSubtitle: string
+  heroBgImage: string
+  whoWeAreTitle: string
+  whoWeArePara1: string
+  whoWeArePara2: string
+  whoWeArePara3: string
+  whoWeAreImage: string
+  pill1Title: string
+  pill1Desc: string
+  pill1Icon: string
+  pill2Title: string
+  pill2Desc: string
+  pill2Icon: string
+  pill3Title: string
+  pill3Desc: string
+  pill3Icon: string
+  pill4Title: string
+  pill4Desc: string
+  pill4Icon: string
+  stat1Count: string
+  stat1Label: string
+  stat2Count: string
+  stat2Label: string
+  stat3Icon: string
+  stat3Label: string
+  networkTitle: string
+  networkSubtitle: string
+  networkDesc: string
+  operatorsTitle: string
+  operatorLogo1: string
+  operatorLogo2: string
+  operatorLogo3: string
+  operatorLogo4: string
+  operatorLogo5: string
+  operatorLogo6: string
+  teamTitle: string
+  teamSubtitle: string
+  teamQuotes: TeamQuoteItem[]
+  appStoreImage: string
+  googlePlayImage: string
+  promoTitle: string
+  promoSubtitle: string
+  promoDesc: string
+}
+
 export interface SiteContent {
   header: HeaderContent
   hero: HeroContent
@@ -268,6 +342,8 @@ export interface SiteContent {
   footer: FooterContent
   helpPage: HelpPageContent
   careersPage: CareersPageContent
+  contactPage?: ContactPageContent
+  aboutPage?: AboutPageContent
 }
 
 export interface CountriesGridItem {
@@ -622,6 +698,85 @@ const defaultContent: SiteContent = {
     openPositionsTitle: 'Open Positions',
     openPositionsSubtitle: 'Find your next opportunity and help shape the future of collective data.'
   },
+  contactPage: {
+    heroTitle: 'Recharge Mobile Phones Anywhere\nIn The World',
+    heroSubtitle: '',
+    heroBgImage: '',
+    addressTitle: 'Address Line',
+    addressLine1: 'ITU GmbH',
+    addressLine2: 'Friedrichstraße 123, 10117 Berlin',
+    addressLine3: 'Germany',
+    phoneTitle: 'Phone Number',
+    phoneLine1: '+49 30 1234 5678',
+    phoneLine2: '+49 89 5678 5432',
+    emailTitle: 'Mail Address',
+    emailLine1: 'www.support@itu.com',
+    emailLine2: 'www.info@itu.com',
+    formTitle: 'Book An Appointment',
+    formButtonText: 'SEND A MESSAGE',
+    mapEmbedUrl: 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d155452.3789069389!2d13.259929283733005!3d52.506970146039535!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47a84e373f035901%3A0x42120465b5e3b70!2sBerlin%2C%20Germany!5e0!3m2!1sen!2sin!4v1700000000000!5m2!1sen!2sin',
+  },
+  aboutPage: {
+    heroTitle: 'Connecting Families Across Borders Through\nInstant Mobile Recharge',
+    heroSubtitle: 'From Germany to over 180+ countries, ITU makes it simple, secure, and instant to recharge mobile phones worldwide through trusted telecom partners.',
+    heroBgImage: '',
+    whoWeAreTitle: 'Who we are',
+    whoWeArePara1: 'ITU is a global digital platform that enables customers to instantly recharge prepaid mobile phones across the world.',
+    whoWeArePara2: "Whether you're supporting family, helping friends stay connected, or sending airtime internationally, ITU provides a fast, secure, and reliable experience backed by trusted telecom operators worldwide.",
+    whoWeArePara3: 'Built in Germany and serving customers globally, we focus on making international mobile recharge effortless.',
+    whoWeAreImage: '',
+    pill1Title: 'Fast',
+    pill1Desc: 'Instant top-ups in seconds',
+    pill1Icon: '',
+    pill2Title: 'Secure',
+    pill2Desc: 'Safe and encrypted transactions',
+    pill2Icon: '',
+    pill3Title: 'Global',
+    pill3Desc: '180+ countries worldwide',
+    pill3Icon: '',
+    pill4Title: 'Reliable',
+    pill4Desc: 'Trusted by millions everyday',
+    pill4Icon: '',
+    stat1Count: '180',
+    stat1Label: 'COUNTRIES',
+    stat2Count: '700+',
+    stat2Label: 'MOBILE OPERATORS',
+    stat3Icon: '',
+    stat3Label: '24/7 SUPPORT',
+    networkTitle: 'Our Global network',
+    networkSubtitle: 'PARTNERING WITH TRUSTED TELECOM OPERATORS ACROSS THE GLOBE',
+    networkDesc: 'Delivering seamless international mobile recharge services through a reliable network of leading telecom operators across Germany, India, USA, UK, Canada, Nigeria, Brazil, Philippines, Mexico, Australia, and major regions including the Middle East, Africa, Asia, Europe, and South America.',
+    operatorsTitle: 'Trusted by leading telecom operators',
+    operatorLogo1: '',
+    operatorLogo2: '',
+    operatorLogo3: '',
+    operatorLogo4: '',
+    operatorLogo5: '',
+    operatorLogo6: '',
+    teamTitle: 'What Our Team Says',
+    teamSubtitle: 'Hear from the people who make our company great',
+    teamQuotes: [
+      {
+        id: 'team-1',
+        name: 'Tosin',
+        role: 'Senior Product Manager',
+        quote: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Cursus nibh mauris, nec turpis orci lectus maecenas. Suspendisse sed magna eget nibh in turpis. Consequat duis diam lacus arcu. Fauclbus venenatis felis id augue sit cursus pellentesque enim arcu.',
+        image: ''
+      },
+      {
+        id: 'team-2',
+        name: 'Tosin',
+        role: 'Senior Product Manager',
+        quote: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Cursus nibh mauris, nec turpis orci lectus maecenas. Suspendisse sed magna eget nibh in turpis. Consequat duis diam lacus arcu. Fauclbus venenatis felis id augue sit cursus pellentesque enim arcu.',
+        image: ''
+      }
+    ],
+    appStoreImage: '',
+    googlePlayImage: '',
+    promoTitle: 'Download the ITU App',
+    promoSubtitle: 'Top-up wherever, whenever',
+    promoDesc: 'Recharge anytime, anywhere with just a few taps.'
+  },
 }
 
 interface CMSStore {
@@ -663,6 +818,8 @@ interface CMSStore {
   deleteCountriesGridItem: (id: string) => void
   updateHelpPage: (helpPage: Partial<HelpPageContent>) => void
   updateCareersPage: (careersPage: Partial<CareersPageContent>) => void
+  updateContactPage: (contactPage: Partial<ContactPageContent>) => void
+  updateAboutPage: (aboutPage: Partial<AboutPageContent>) => void
   resetToDefault: () => void
   markClean: () => void
 }
@@ -737,6 +894,15 @@ function mergeSiteContent(partial: Partial<SiteContent> | undefined): SiteConten
       ...p.helpPage,
       quickLinks: p.helpPage?.quickLinks ?? defaultContent.helpPage.quickLinks,
       faqs: p.helpPage?.faqs ?? defaultContent.helpPage.faqs,
+    },
+    contactPage: {
+      ...defaultContent.contactPage,
+      ...p.contactPage,
+    },
+    aboutPage: {
+      ...defaultContent.aboutPage,
+      ...p.aboutPage,
+      teamQuotes: p.aboutPage?.teamQuotes ?? defaultContent.aboutPage.teamQuotes,
     },
   }
 }
@@ -883,6 +1049,30 @@ export const useCMSStore = create<CMSStore>()(
             careersPage: {
               ...(state.content.careersPage ?? {}),
               ...careersPage,
+            },
+          },
+          isDirty: true,
+        })),
+
+      updateContactPage: (contactPage) =>
+        set((state) => ({
+          content: {
+            ...state.content,
+            contactPage: {
+              ...(state.content.contactPage ?? defaultContent.contactPage),
+              ...contactPage,
+            },
+          },
+          isDirty: true,
+        })),
+
+      updateAboutPage: (aboutPage) =>
+        set((state) => ({
+          content: {
+            ...state.content,
+            aboutPage: {
+              ...(state.content.aboutPage ?? defaultContent.aboutPage),
+              ...aboutPage,
             },
           },
           isDirty: true,

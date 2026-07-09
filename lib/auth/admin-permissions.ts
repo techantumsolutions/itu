@@ -373,6 +373,7 @@ export function getRequiredViewPermissionForPath(pathname: string): AdminPermiss
   if (pathname.startsWith('/admin/routing/logs')) return 'routing_logs.view'
   if (pathname.startsWith('/admin/routing')) return 'routing_rules.view'
   if (pathname.startsWith('/admin/cms')) return 'cms.view'
+  if (pathname.startsWith('/admin/leads')) return 'customers.view'
   if (pathname.startsWith('/admin/customers')) return 'customers.view'
   if (pathname.startsWith('/admin/support-tickets')) return 'tickets.view'
   if (pathname.startsWith('/admin/ads')) return 'ads.view'

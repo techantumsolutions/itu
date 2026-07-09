@@ -42,6 +42,7 @@ export async function POST(req: Request) {
       jd_url,
       is_active,
       about_role,
+      contact_email,
     } = body
 
     if (!title || !department || !description) {
@@ -63,6 +64,7 @@ export async function POST(req: Request) {
       jd_url: jd_url || null,
       is_active: is_active !== false,
       about_role: about_role || '',
+      contact_email: contact_email || null,
       updated_at: new Date().toISOString(),
     }
 
@@ -120,6 +122,7 @@ export async function PATCH(req: Request) {
     if (body.jd_url !== undefined) payload.jd_url = body.jd_url || null
     if (body.is_active !== undefined) payload.is_active = body.is_active
     if (body.about_role !== undefined) payload.about_role = body.about_role || ''
+    if (body.contact_email !== undefined) payload.contact_email = body.contact_email || null
 
     payload.updated_at = new Date().toISOString()
 
