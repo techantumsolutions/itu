@@ -10,9 +10,67 @@ export const CAPTCHA_REQUIRED_MESSAGE = 'Please complete the CAPTCHA verificatio
 export type CaptchaBody = { captchaToken?: string }
 
 export function getRequestIp(req: Request): string {
-  let ip = req.headers.get('x-forwarded-for') || '127.0.0.1'
-  if (ip.includes(',')) ip = ip.split(',')[0].trim()
-  return ip
+  // 1. Check client-real-ip cookie first
+  const cookieHeader = req.headers.get('cookie') || ''
+  const cookies = cookieHeader.split(';').reduce((acc, cookie) => {
+    const [name, value] = cookie.split('=').map(c => c.trim())
+    if (name) acc[name] = value
+    return acc
+  }, {} as Record<string, string>)
+  
+  if (cookies['client-real-ip']) {
+    const ip = cookies['client-real-ip']
+    const isLoopback =
+      ip === '::1' ||
+      ip === '127.0.0.1' ||
+      ip.toLowerCase() === 'localhost' ||
+      ip === '0:0:0:0:0:0:0:1' ||
+      ip.toLowerCase().includes('::ffff:127.0.0.1')
+    if (!isLoopback) {
+      return ip
+    }
+  }
+
+  // 2. Check standard headers
+  const ipHeaders = [
+    'cf-connecting-ip',
+    'x-client-ip',
+    'x-real-ip',
+    'x-forwarded-for',
+    'x-vercel-forwarded-for',
+    'fastly-client-ip',
+    'true-client-ip',
+    'x-cluster-client-ip',
+    'x-forwarded',
+    'forwarded-for',
+    'forwarded'
+  ]
+
+  let fallbackIp: string | null = null
+
+  for (const headerName of ipHeaders) {
+    const value = req.headers.get(headerName)
+    if (!value) continue
+
+    const parts = value.split(',').map(p => p.trim())
+    for (const ip of parts) {
+      if (!ip) continue
+      const isLoopback =
+        ip === '::1' ||
+        ip === '127.0.0.1' ||
+        ip.toLowerCase() === 'localhost' ||
+        ip === '0:0:0:0:0:0:0:1' ||
+        ip.toLowerCase().includes('::ffff:127.0.0.1')
+
+      if (!isLoopback) {
+        return ip
+      } else if (!fallbackIp) {
+        fallbackIp = ip
+      }
+    }
+  }
+
+  return fallbackIp || '127.0.0.1'
 }
 
 export async function verifyRequestCaptcha(

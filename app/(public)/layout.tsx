@@ -259,7 +259,7 @@ export default function PublicLayout({
   }, [currencyCode, setCurrency])
 
   const isHome = pathname === '/'
-  const isTransparentHeaderPage = pathname === '/' || pathname === '/careers'
+  const isTransparentHeaderPage = pathname === '/' || pathname === '/careers' || pathname === '/contact' || pathname === '/about'
   const [navScrolled, setNavScrolled] = useState(false)
 
   useEffect(() => {
@@ -672,7 +672,7 @@ export default function PublicLayout({
       <main
         className={cn(
           'flex flex-1 flex-col',
-          (pathname === '/' || pathname === '/careers') ? 'pt-0' : 'pt-[5.25rem] sm:pt-[5.5rem]',
+          (pathname === '/' || pathname === '/careers' || pathname === '/contact' || pathname === '/about') ? 'pt-0' : 'pt-[5.25rem] sm:pt-[5.5rem]',
         )}
       >
         {pathname === '/' && (

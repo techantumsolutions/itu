@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAdminPermission } from '@/lib/auth/require-admin-feature';
 import { supabaseRest } from '@/lib/db/supabase-rest';
+import { logAdminActivity } from '@/lib/auth/audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,13 @@ export async function GET(
   try {
     // 1. Fetch Report Header
     const headerRes = await supabaseRest(`reconciliation_reports?id=eq.${id}&limit=1`, { cache: 'no-store' });
+    if (headerRes.ok) {
+      await logAdminActivity({
+        action: 'View Reconciliation Report',
+        pageName: 'Reconciliation',
+        details: { id },
+      });
+    }
     if (!headerRes.ok) {
       return NextResponse.json({ error: 'Failed to fetch report header' }, { status: 500 });
     }
@@ -113,6 +121,12 @@ export async function PATCH(
     if (!res.ok) {
       return NextResponse.json({ error: 'Failed to update report' }, { status: 500 });
     }
+
+    await logAdminActivity({
+      action: 'Update Reconciliation Report',
+      pageName: 'Reconciliation',
+      details: { id, status, settlement_status },
+    });
 
     const updated = await res.json();
     return NextResponse.json({ success: true, report: updated?.[0] });

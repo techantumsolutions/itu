@@ -43,13 +43,15 @@ import {
 import { cn } from '@/lib/utils'
 import { ItuLogoMark } from '@/components/itu-logo-mark'
 
-const mainMenuItems: {
+interface MenuItem {
   title: string
   url: string
   icon: typeof LayoutDashboard
-  viewPermission: AdminPermissionKey
-  children?: { title: string; url: string; viewPermission?: AdminPermissionKey }[]
-}[] = [
+  viewPermission: AdminPermissionKey | AdminPermissionKey[]
+  children?: { title: string; url: string; viewPermission?: AdminPermissionKey | AdminPermissionKey[] }[]
+}
+
+const mainMenuItems: MenuItem[] = [
   { title: 'Dashboard', url: '/admin', icon: LayoutDashboard, viewPermission: 'dashboard.view' },
   { title: 'Recharges', url: '/admin/transactions', icon: FileSpreadsheet, viewPermission: 'transactions.view' },
   { title: 'Admin users', url: '/admin/staff', icon: UserCog, viewPermission: 'admin_users.view' },
@@ -70,8 +72,9 @@ const mainMenuItems: {
   },
   // { title: 'Wallet', url: '/admin/wallet', icon: Wallet, viewPermission: 'wallet.view' },
   { title: 'Website CMS', url: '/admin/cms', icon: FileEdit, viewPermission: 'cms.view' },
-  { title: 'Jobs & Applications', url: '/admin/jobs', icon: Briefcase, viewPermission: 'cms.view' },
+  { title: 'Jobs & Applications', url: '/admin/jobs', icon: Briefcase, viewPermission: 'jobs.view' },
   { title: 'Customers', url: '/admin/customers', icon: Users, viewPermission: 'customers.view' },
+  { title: 'Contact Leads', url: '/admin/leads', icon: Users, viewPermission: 'leads.view' },
   { title: 'Support Tickets', url: '/admin/support-tickets', icon: MessageSquare, viewPermission: 'tickets.view' },
   { title: 'Ads Manager', url: '/admin/ads', icon: Megaphone, viewPermission: 'ads.view' },
   { title: 'Reconciliation', url: '/admin/reconciliation', icon: FileSpreadsheet, viewPermission: 'reconciliation.view' },
@@ -95,7 +98,16 @@ export function AppSidebar() {
     }
   }
 
-  const visibleMain = mainMenuItems.filter((item) => user && clientHasAdminPermission(user, item.viewPermission))
+  const hasPermission = (perm: AdminPermissionKey | AdminPermissionKey[] | undefined) => {
+    if (!user) return false
+    if (!perm) return true
+    if (Array.isArray(perm)) {
+      return perm.some((p) => clientHasAdminPermission(user, p))
+    }
+    return clientHasAdminPermission(user, perm)
+  }
+
+  const visibleMain = mainMenuItems.filter((item) => hasPermission(item.viewPermission))
 
   return (
     <Sidebar collapsible="icon" className="border-r border-border/70 bg-sidebar shadow-elevated-sm">
@@ -118,7 +130,7 @@ export function AppSidebar() {
             <SidebarMenu>
               {visibleMain.map((item) => {
                 const visibleChildren = (item.children ?? []).filter(
-                  (child) => !child.viewPermission || clientHasAdminPermission(user, child.viewPermission),
+                  (child) => hasPermission(child.viewPermission),
                 )
                 const isActive =
                   pathname === item.url ||

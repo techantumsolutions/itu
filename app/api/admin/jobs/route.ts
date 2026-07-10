@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
-import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
+import { requireAdminPermission, requireAnyAdminPermission } from '@/lib/auth/require-admin-feature'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { logAdminActivity } from '@/lib/auth/audit'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(req: Request) {
-  const denied = await requireAdminPermission(req, 'cms.view')
+  const denied = await requireAnyAdminPermission(req, ['jobs.view', 'cms.view'])
   if (denied) return denied
 
   try {
@@ -15,6 +15,12 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Failed to fetch jobs' }, { status: 500 })
     }
     const jobs = await res.json()
+
+    await logAdminActivity({
+      action: 'View Jobs',
+      pageName: 'Jobs',
+    })
+
     return NextResponse.json({ jobs })
   } catch (err) {
     return NextResponse.json({ error: 'Server error' }, { status: 500 })
@@ -22,7 +28,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const denied = await requireAdminPermission(req, 'cms.edit')
+  const denied = await requireAnyAdminPermission(req, ['jobs.create', 'cms.edit'])
   if (denied) return denied
 
   try {
@@ -42,6 +48,7 @@ export async function POST(req: Request) {
       jd_url,
       is_active,
       about_role,
+      contact_email,
     } = body
 
     if (!title || !department || !description) {
@@ -63,6 +70,7 @@ export async function POST(req: Request) {
       jd_url: jd_url || null,
       is_active: is_active !== false,
       about_role: about_role || '',
+      contact_email: contact_email || null,
       updated_at: new Date().toISOString(),
     }
 
@@ -93,7 +101,7 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const denied = await requireAdminPermission(req, 'cms.edit')
+  const denied = await requireAnyAdminPermission(req, ['jobs.edit', 'cms.edit'])
   if (denied) return denied
 
   try {
@@ -120,6 +128,7 @@ export async function PATCH(req: Request) {
     if (body.jd_url !== undefined) payload.jd_url = body.jd_url || null
     if (body.is_active !== undefined) payload.is_active = body.is_active
     if (body.about_role !== undefined) payload.about_role = body.about_role || ''
+    if (body.contact_email !== undefined) payload.contact_email = body.contact_email || null
 
     payload.updated_at = new Date().toISOString()
 
@@ -150,7 +159,7 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const denied = await requireAdminPermission(req, 'cms.edit')
+  const denied = await requireAnyAdminPermission(req, ['jobs.edit', 'cms.edit'])
   if (denied) return denied
 
   try {

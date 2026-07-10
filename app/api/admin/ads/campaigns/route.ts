@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { supabaseRest } from '@/lib/db/supabase-rest'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function GET(request: Request) {
   if (!(await adminCanUseFeature(request, 'ads'))) {
@@ -18,6 +19,12 @@ export async function GET(request: Request) {
   }
 
   const campaigns = await res.json()
+
+  await logAdminActivity({
+    action: 'View Ads Campaigns',
+    pageName: 'Ads',
+  })
+
   return NextResponse.json({ campaigns })
 }
 
@@ -47,6 +54,13 @@ export async function POST(request: Request) {
         body: JSON.stringify(body)
       })
       if (!res.ok) throw new Error(await res.text())
+
+      await logAdminActivity({
+        action: 'Update Ads Campaign',
+        pageName: 'Ads',
+        details: { id: body.id, name: body.name },
+      })
+
       return NextResponse.json({ success: true, message: 'Campaign updated' })
     } else {
       const res = await supabaseRest('ads_campaigns', {
@@ -54,6 +68,13 @@ export async function POST(request: Request) {
         body: JSON.stringify(body)
       })
       if (!res.ok) throw new Error(await res.text())
+
+      await logAdminActivity({
+        action: 'Create Ads Campaign',
+        pageName: 'Ads',
+        details: { name: body.name },
+      })
+
       return NextResponse.json({ success: true, message: 'Campaign created' })
     }
 
@@ -75,6 +96,12 @@ export async function DELETE(request: Request) {
 
     const res = await supabaseRest(`ads_campaigns?id=eq.${id}`, { method: 'DELETE' })
     if (!res.ok) throw new Error(await res.text())
+
+    await logAdminActivity({
+      action: 'Delete Ads Campaign',
+      pageName: 'Ads',
+      details: { id },
+    })
 
     return NextResponse.json({ success: true })
   } catch (error: any) {

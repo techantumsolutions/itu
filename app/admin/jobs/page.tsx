@@ -79,6 +79,7 @@ interface Job {
   is_active: boolean
   created_at: string
   about_role?: string | null
+  contact_email?: string | null
 }
 
 interface Application {
@@ -225,10 +226,11 @@ export default function AdminJobsPage() {
   const [formType, setFormType] = useState('Full-Time')
   const [formBudget, setFormBudget] = useState('')
   const [formAboutRole, setFormAboutRole] = useState('')
-  const [formResponsibilities, setFormResponsibilities] = useState<string[]>([''])
-  const [formSkills, setFormSkills] = useState<string[]>([''])
-  const [formOptionalSkills, setFormOptionalSkills] = useState<string[]>([''])
-  const [formWhatWeOffer, setFormWhatWeOffer] = useState<string[]>([''])
+  const [formContactEmail, setFormContactEmail] = useState('')
+  const [formResponsibilities, setFormResponsibilities] = useState<string[]>([])
+  const [formSkills, setFormSkills] = useState<string[]>([])
+  const [formOptionalSkills, setFormOptionalSkills] = useState<string[]>([])
+  const [formWhatWeOffer, setFormWhatWeOffer] = useState<string[]>([])
   const [formJdUrl, setFormJdUrl] = useState<string | null>(null)
   const [formIsActive, setFormIsActive] = useState(true)
 
@@ -284,10 +286,11 @@ export default function AdminJobsPage() {
     setFormType('Full-Time')
     setFormBudget('')
     setFormAboutRole('')
-    setFormResponsibilities([''])
-    setFormSkills([''])
-    setFormOptionalSkills([''])
-    setFormWhatWeOffer([''])
+    setFormContactEmail('')
+    setFormResponsibilities([])
+    setFormSkills([])
+    setFormOptionalSkills([])
+    setFormWhatWeOffer([])
     setFormJdUrl(null)
     setFormIsActive(true)
     setJobModalOpen(true)
@@ -304,10 +307,11 @@ export default function AdminJobsPage() {
     setFormType(job.type || 'Full-Time')
     setFormBudget(job.budget)
     setFormAboutRole(job.about_role || '')
-    setFormResponsibilities(job.responsibilities && job.responsibilities.length > 0 ? job.responsibilities : [''])
-    setFormSkills(job.skills && job.skills.length > 0 ? job.skills : [''])
-    setFormOptionalSkills(job.optional_skills && job.optional_skills.length > 0 ? job.optional_skills : [''])
-    setFormWhatWeOffer(job.what_we_offer && job.what_we_offer.length > 0 ? job.what_we_offer : [''])
+    setFormContactEmail(job.contact_email || '')
+    setFormResponsibilities(job.responsibilities && job.responsibilities.length > 0 ? job.responsibilities : [])
+    setFormSkills(job.skills && job.skills.length > 0 ? job.skills : [])
+    setFormOptionalSkills(job.optional_skills && job.optional_skills.length > 0 ? job.optional_skills : [])
+    setFormWhatWeOffer(job.what_we_offer && job.what_we_offer.length > 0 ? job.what_we_offer : [])
     setFormJdUrl(job.jd_url)
     setFormIsActive(job.is_active)
     setJobModalOpen(true)
@@ -353,6 +357,7 @@ export default function AdminJobsPage() {
       what_we_offer: formWhatWeOffer.map((l) => l.trim()).filter(Boolean),
       jd_url: formJdUrl,
       is_active: formIsActive,
+      contact_email: formContactEmail.trim() || null,
     }
 
     try {
@@ -631,12 +636,12 @@ export default function AdminJobsPage() {
                       <TableCell className="px-4 py-4">
                         <span
                           className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider ${app.status === 'accepted'
-                              ? 'bg-green-50 text-green-700 border border-green-200'
-                              : app.status === 'rejected'
-                                ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                                : app.status === 'reviewed'
-                                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+                            ? 'bg-green-50 text-green-700 border border-green-200'
+                            : app.status === 'rejected'
+                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                              : app.status === 'reviewed'
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                : 'bg-amber-50 text-amber-700 border border-amber-200'
                             }`}
                         >
                           {app.status}
@@ -718,7 +723,7 @@ export default function AdminJobsPage() {
               <div className="space-y-1">
                 <Label htmlFor="type" className="text-xs font-bold text-neutral-700">Job Type *</Label>
                 <Select value={formType} onValueChange={setFormType}>
-                  <SelectTrigger id="type" className="rounded-xl">
+                  <SelectTrigger id="type" className="rounded-xl w-[100%]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -748,7 +753,7 @@ export default function AdminJobsPage() {
                   value={formIsActive ? 'active' : 'draft'}
                   onValueChange={(val) => setFormIsActive(val === 'active')}
                 >
-                  <SelectTrigger id="postingStatus" className="rounded-xl">
+                  <SelectTrigger id="postingStatus" className="rounded-xl w-[100%]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -764,6 +769,20 @@ export default function AdminJobsPage() {
                   value={formBudget}
                   onChange={(e) => setFormBudget(e.target.value)}
                   placeholder="e.g. ₹6L - ₹10L"
+                />
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label htmlFor="contactEmail" className="text-xs font-bold text-neutral-700">Contact Email *</Label>
+                <Input
+                  id="contactEmail"
+                  type="email"
+                  value={formContactEmail}
+                  onChange={(e) => setFormContactEmail(e.target.value)}
+                  placeholder="e.g. hiring@company.com"
+                  required
                 />
               </div>
             </div>
@@ -889,12 +908,12 @@ export default function AdminJobsPage() {
                   </div>
                   <span
                     className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold uppercase tracking-wider ${selectedApp.status === 'accepted'
-                        ? 'bg-green-50 text-green-700 border border-green-200'
-                        : selectedApp.status === 'rejected'
-                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                          : selectedApp.status === 'reviewed'
-                            ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                      ? 'bg-green-50 text-green-700 border border-green-200'
+                      : selectedApp.status === 'rejected'
+                        ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                        : selectedApp.status === 'reviewed'
+                          ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200'
                       }`}
                   >
                     {selectedApp.status}

@@ -56,6 +56,11 @@ export const ADMIN_PERMISSION_KEYS = [
   'statistics.view',
   'settings.view',
   'settings.edit',
+  'jobs.view',
+  'jobs.create',
+  'jobs.edit',
+  'leads.view',
+  'leads.edit',
   'help.view',
 ] as const
 
@@ -81,6 +86,8 @@ export type AdminPermissionModule =
   | 'analytics'
   | 'statistics'
   | 'settings'
+  | 'jobs'
+  | 'leads'
   | 'help'
 
 export const ADMIN_PERMISSION_LABELS: Record<AdminPermissionKey, string> = {
@@ -136,6 +143,11 @@ export const ADMIN_PERMISSION_LABELS: Record<AdminPermissionKey, string> = {
   'statistics.view': 'Statistics — View',
   'settings.view': 'Settings — View',
   'settings.edit': 'Settings — Edit',
+  'jobs.view': 'Jobs & Applications — View',
+  'jobs.create': 'Jobs & Applications — Create',
+  'jobs.edit': 'Jobs & Applications — Update',
+  'leads.view': 'Contact Leads — View',
+  'leads.edit': 'Contact Leads — Update Status',
   'help.view': 'Help — View',
 }
 
@@ -180,6 +192,8 @@ export const ADMIN_PERMISSION_GROUPS: { module: string; keys: AdminPermissionKey
   { module: 'Transactions', keys: ['transactions.view'] },
   { module: 'Reports', keys: ['reports.view'] },
   { module: 'Settings', keys: ['settings.view', 'settings.edit'] },
+  { module: 'Jobs & Applications', keys: ['jobs.view', 'jobs.create', 'jobs.edit'] },
+  { module: 'Contact Leads', keys: ['leads.view', 'leads.edit'] },
 ]
 
 const LEGACY_KEYS = new Set([
@@ -281,8 +295,14 @@ export function migrateLegacyPermissions(raw: unknown): Record<AdminPermissionKe
     )
   }
 
-  if (on('cms')) grant(out, 'cms.view', 'cms.create', 'cms.edit', 'cms.delete')
-  if (on('customers')) grant(out, 'customers.view', 'customers.edit')
+  if (on('cms')) {
+    grant(out, 'cms.view', 'cms.create', 'cms.edit', 'cms.delete')
+    grant(out, 'jobs.view', 'jobs.create', 'jobs.edit')
+  }
+  if (on('customers')) {
+    grant(out, 'customers.view', 'customers.edit')
+    grant(out, 'leads.view', 'leads.edit')
+  }
   if (on('tickets')) grant(out, 'tickets.view', 'tickets.edit')
   if (on('ads')) grant(out, 'ads.view', 'ads.create', 'ads.edit', 'ads.delete')
   if (on('reconciliation')) grant(out, 'reconciliation.view', 'reconciliation.edit')
@@ -373,6 +393,8 @@ export function getRequiredViewPermissionForPath(pathname: string): AdminPermiss
   if (pathname.startsWith('/admin/routing/logs')) return 'routing_logs.view'
   if (pathname.startsWith('/admin/routing')) return 'routing_rules.view'
   if (pathname.startsWith('/admin/cms')) return 'cms.view'
+  if (pathname.startsWith('/admin/jobs')) return 'jobs.view'
+  if (pathname.startsWith('/admin/leads')) return 'leads.view'
   if (pathname.startsWith('/admin/customers')) return 'customers.view'
   if (pathname.startsWith('/admin/support-tickets')) return 'tickets.view'
   if (pathname.startsWith('/admin/ads')) return 'ads.view'

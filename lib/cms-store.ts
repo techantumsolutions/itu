@@ -249,6 +249,110 @@ export interface CareersPageContent {
   openPositionsSubtitle: string
 }
 
+export interface PrivacyFaqItem {
+  id: string
+  question: string
+  answer: string
+  order: number
+  isActive: boolean
+}
+
+export interface PrivacyPageContent {
+  title: string
+  subtitle: string
+  introText: string
+  sections: PrivacyFaqItem[]
+}
+
+export interface TermsSectionItem {
+  id: string
+  title: string
+  content: string
+  order: number
+  isActive: boolean
+}
+
+export interface TermsPageContent {
+  title: string
+  subtitle: string
+  introText: string
+  sections: TermsSectionItem[]
+}
+
+export interface ContactPageContent {
+  heroTitle: string
+  heroSubtitle: string
+  heroBgImage: string
+  addressTitle: string
+  addressLine1: string
+  addressLine2: string
+  addressLine3: string
+  phoneTitle: string
+  phoneLine1: string
+  phoneLine2: string
+  emailTitle: string
+  emailLine1: string
+  emailLine2: string
+  formTitle: string
+  formButtonText: string
+  mapEmbedUrl: string
+}
+
+export interface TeamQuoteItem {
+  id: string
+  name: string
+  role: string
+  quote: string
+  image: string
+}
+
+export interface AboutPageContent {
+  heroTitle: string
+  heroSubtitle: string
+  heroBgImage: string
+  whoWeAreTitle: string
+  whoWeArePara1: string
+  whoWeArePara2: string
+  whoWeArePara3: string
+  whoWeAreImage: string
+  pill1Title: string
+  pill1Desc: string
+  pill1Icon: string
+  pill2Title: string
+  pill2Desc: string
+  pill2Icon: string
+  pill3Title: string
+  pill3Desc: string
+  pill3Icon: string
+  pill4Title: string
+  pill4Desc: string
+  pill4Icon: string
+  stat1Count: string
+  stat1Label: string
+  stat2Count: string
+  stat2Label: string
+  stat3Icon: string
+  stat3Label: string
+  networkTitle: string
+  networkSubtitle: string
+  networkDesc: string
+  operatorsTitle: string
+  operatorLogo1: string
+  operatorLogo2: string
+  operatorLogo3: string
+  operatorLogo4: string
+  operatorLogo5: string
+  operatorLogo6: string
+  teamTitle: string
+  teamSubtitle: string
+  teamQuotes: TeamQuoteItem[]
+  appStoreImage: string
+  googlePlayImage: string
+  promoTitle: string
+  promoSubtitle: string
+  promoDesc: string
+}
+
 export interface SiteContent {
   header: HeaderContent
   hero: HeroContent
@@ -268,6 +372,10 @@ export interface SiteContent {
   footer: FooterContent
   helpPage: HelpPageContent
   careersPage: CareersPageContent
+  contactPage?: ContactPageContent
+  aboutPage?: AboutPageContent
+  privacyPage?: PrivacyPageContent
+  termsPage?: TermsPageContent
 }
 
 export interface CountriesGridItem {
@@ -622,6 +730,197 @@ const defaultContent: SiteContent = {
     openPositionsTitle: 'Open Positions',
     openPositionsSubtitle: 'Find your next opportunity and help shape the future of collective data.'
   },
+  contactPage: {
+    heroTitle: 'Recharge Mobile Phones Anywhere\nIn The World',
+    heroSubtitle: '',
+    heroBgImage: '',
+    addressTitle: 'Address Line',
+    addressLine1: 'ITU GmbH',
+    addressLine2: 'Friedrichstraße 123, 10117 Berlin',
+    addressLine3: 'Germany',
+    phoneTitle: 'Phone Number',
+    phoneLine1: '+49 30 1234 5678',
+    phoneLine2: '+49 89 5678 5432',
+    emailTitle: 'Mail Address',
+    emailLine1: 'www.support@itu.com',
+    emailLine2: 'www.info@itu.com',
+    formTitle: 'Book An Appointment',
+    formButtonText: 'SEND A MESSAGE',
+    mapEmbedUrl: 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d155452.3789069389!2d13.259929283733005!3d52.506970146039535!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x47a84e373f035901%3A0x42120465b5e3b70!2sBerlin%2C%20Germany!5e0!3m2!1sen!2sin!4v1700000000000!5m2!1sen!2sin',
+  },
+  aboutPage: {
+    heroTitle: 'Connecting Families Across Borders Through\nInstant Mobile Recharge',
+    heroSubtitle: 'From Germany to over 180+ countries, ITU makes it simple, secure, and instant to recharge mobile phones worldwide through trusted telecom partners.',
+    heroBgImage: '',
+    whoWeAreTitle: 'Who we are',
+    whoWeArePara1: 'ITU is a global digital platform that enables customers to instantly recharge prepaid mobile phones across the world.',
+    whoWeArePara2: "Whether you're supporting family, helping friends stay connected, or sending airtime internationally, ITU provides a fast, secure, and reliable experience backed by trusted telecom operators worldwide.",
+    whoWeArePara3: 'Built in Germany and serving customers globally, we focus on making international mobile recharge effortless.',
+    whoWeAreImage: '',
+    pill1Title: 'Fast',
+    pill1Desc: 'Instant top-ups in seconds',
+    pill1Icon: '',
+    pill2Title: 'Secure',
+    pill2Desc: 'Safe and encrypted transactions',
+    pill2Icon: '',
+    pill3Title: 'Global',
+    pill3Desc: '180+ countries worldwide',
+    pill3Icon: '',
+    pill4Title: 'Reliable',
+    pill4Desc: 'Trusted by millions everyday',
+    pill4Icon: '',
+    stat1Count: '180',
+    stat1Label: 'COUNTRIES',
+    stat2Count: '700+',
+    stat2Label: 'MOBILE OPERATORS',
+    stat3Icon: '',
+    stat3Label: '24/7 SUPPORT',
+    networkTitle: 'Our Global network',
+    networkSubtitle: 'PARTNERING WITH TRUSTED TELECOM OPERATORS ACROSS THE GLOBE',
+    networkDesc: 'Delivering seamless international mobile recharge services through a reliable network of leading telecom operators across Germany, India, USA, UK, Canada, Nigeria, Brazil, Philippines, Mexico, Australia, and major regions including the Middle East, Africa, Asia, Europe, and South America.',
+    operatorsTitle: 'Trusted by leading telecom operators',
+    operatorLogo1: '',
+    operatorLogo2: '',
+    operatorLogo3: '',
+    operatorLogo4: '',
+    operatorLogo5: '',
+    operatorLogo6: '',
+    teamTitle: 'What Our Team Says',
+    teamSubtitle: 'Hear from the people who make our company great',
+    teamQuotes: [
+      {
+        id: 'team-1',
+        name: 'Tosin',
+        role: 'Senior Product Manager',
+        quote: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Cursus nibh mauris, nec turpis orci lectus maecenas. Suspendisse sed magna eget nibh in turpis. Consequat duis diam lacus arcu. Fauclbus venenatis felis id augue sit cursus pellentesque enim arcu.',
+        image: ''
+      },
+      {
+        id: 'team-2',
+        name: 'Tosin',
+        role: 'Senior Product Manager',
+        quote: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Cursus nibh mauris, nec turpis orci lectus maecenas. Suspendisse sed magna eget nibh in turpis. Consequat duis diam lacus arcu. Fauclbus venenatis felis id augue sit cursus pellentesque enim arcu.',
+        image: ''
+      }
+    ],
+    appStoreImage: '',
+    googlePlayImage: '',
+    promoTitle: 'Download the ITU App',
+    promoSubtitle: 'Top-up wherever, whenever',
+    promoDesc: 'Recharge anytime, anywhere with just a few taps.'
+  },
+  privacyPage: {
+    title: 'Privacy Notice',
+    subtitle: 'Learn how we collect, use, and protect your personal data.',
+    introText: 'ITU associated Ding mobile applications, present or future (each the "Applications"), are operated by, and the top-up services and prepaid products available on the Applications from time to time ("Services"), are provided by, Ezetop Unlimited Company t/a Ding ("Ding", "we" or "us"). We are registered in Ireland with registered number 422514 and we have our registered office at 3 Shelbourne Buildings, Crampton Avenue, Shelbourne Road, Ballsbridge, Dublin 4, D04C2Y6, Ireland. Our VAT number is 9576713i. Ding is a registered business name of Ezetop Unlimited Company. All correspondence in relation to any Ding company should be sent to 3 Shelbourne Buildings, Crampton Avenue, Shelbourne Road, Ballsbridge, Dublin 4, D04C2Y6, Ireland.',
+    sections: [
+      {
+        id: 'p1',
+        question: 'About us',
+        answer: '<strong>About Us</strong><br/>We are Ezetop Unlimited Company, trading as Ding. We provide international mobile top-up and other prepaid services through our applications and website.',
+        order: 1,
+        isActive: true
+      },
+      {
+        id: 'p2',
+        question: 'How can you get in contact with Ding?',
+        answer: '<strong>Your Privacy Matters</strong><br/><h3>Information We Collect</h3><ul><li><strong>Overview:</strong> Business Central is a cloud-based ERP solution designed for small to medium-sized businesses, offering comprehensive financial management tools. It is one of the ERP examples that allow businesses to manage their finances from anywhere, with real-time data accessible across devices.</li><li><strong>Example Use Case:</strong> A small business automates its invoicing process using Business Central, reducing the time spent on manual data entry and minimizing errors. This cloud-based solution also enables the business to access financial data on the go, improving...</li></ul>',
+        order: 2,
+        isActive: true
+      },
+      {
+        id: 'p3',
+        question: 'What data does Ding collect?',
+        answer: '<strong>Data Collection</strong><br/>We collect personal data that you provide directly to us when registering for an account or using our top-up services.',
+        order: 3,
+        isActive: true
+      },
+      {
+        id: 'p4',
+        question: 'How does Ding collect your personal data?',
+        answer: '<strong>How We Collect Personal Data</strong><br/>We collect data through cookies, account registration forms, and transaction details when you buy top-ups.',
+        order: 4,
+        isActive: true
+      },
+      {
+        id: 'p5',
+        question: 'Why do we process your personal data and what is our legal basis for doing so?',
+        answer: '<strong>Processing & Legal Basis</strong><br/>We process your data to fulfill our contract with you, comply with legal obligations, and pursue legitimate business interests.',
+        order: 5,
+        isActive: true
+      },
+      {
+        id: 'p6',
+        question: 'Do we carry out any automated processing of your personal data?',
+        answer: '<strong>Automated Processing</strong><br/>We do not perform automated decision-making or profiling that significantly affects you, except for security and fraud prevention checks.',
+        order: 6,
+        isActive: true
+      },
+      {
+        id: 'p7',
+        question: 'What happens if you do not provide us with your personal data?',
+        answer: '<strong>Providing Personal Data</strong><br/>If you do not provide required personal data, we may not be able to provide our mobile top-up services or process your transactions.',
+        order: 7,
+        isActive: true
+      },
+      {
+        id: 'p8',
+        question: 'Who do we disclose your personal data to?',
+        answer: '<strong>Data Disclosure</strong><br/>We may share your data with payment processors, mobile operators, and regulatory bodies as required by law or contract.',
+        order: 8,
+        isActive: true
+      }
+    ]
+  },
+  termsPage: {
+    title: 'Terms & Conditions',
+    subtitle: 'Please read these terms and conditions carefully before using our services.',
+    introText: 'These terms and conditions govern your use of the mobile top-up and prepaid recharge services provided by ITU ("we", "us", or "our"). By accessing our applications or website, you agree to be bound by these terms. If you do not agree, please do not use our services.',
+    sections: [
+      {
+        id: 't1',
+        title: 'Acceptance of Terms',
+        content: 'By creating an account or placing a mobile top-up order, you acknowledge that you have read, understood, and agreed to these Terms and Conditions, as well as our Privacy Notice.',
+        order: 0,
+        isActive: true
+      },
+      {
+        id: 't2',
+        title: 'User Accounts & Registration',
+        content: 'To use certain features, you must register for an account. You represent and warrant that all registration information is truthful and accurate, and you agree to maintain the security of your password and login credentials.',
+        order: 1,
+        isActive: true
+      },
+      {
+        id: 't3',
+        title: 'Top-Up Deliveries & Transactions',
+        content: 'All top-up recharges are processed immediately upon payment. Please ensure you enter the correct mobile number and operator. <strong>Due to the instant nature of digital recharges, top-ups cannot be reversed or refunded once successfully delivered by the network operator.</strong>',
+        order: 2,
+        isActive: true
+      },
+      {
+        id: 't4',
+        title: 'Payment & Service Fees',
+        content: 'We support multiple payment methods, including credit cards, debit cards, and local gateways. Some transactions may incur small service processing fees, which will be calculated and clearly displayed at checkout before you authorize payment.',
+        order: 3,
+        isActive: true
+      },
+      {
+        id: 't5',
+        title: 'Prohibited Use & Security Checks',
+        content: 'You agree not to use our top-up services for any fraudulent or unauthorized activities. We reserve the right to flag transactions, perform identity validation checks, or suspend accounts violating local anti-money laundering regulations.',
+        order: 4,
+        isActive: true
+      },
+      {
+        id: 't6',
+        title: 'Limitation of Liability',
+        content: 'To the maximum extent permitted by applicable law, we shall not be liable for any indirect, incidental, or consequential damages resulting from network delivery delays, incorrect operator routing, or temporary service outages.',
+        order: 5,
+        isActive: true
+      }
+    ]
+  }
 }
 
 interface CMSStore {
@@ -663,6 +962,10 @@ interface CMSStore {
   deleteCountriesGridItem: (id: string) => void
   updateHelpPage: (helpPage: Partial<HelpPageContent>) => void
   updateCareersPage: (careersPage: Partial<CareersPageContent>) => void
+  updateContactPage: (contactPage: Partial<ContactPageContent>) => void
+  updateAboutPage: (aboutPage: Partial<AboutPageContent>) => void
+  updatePrivacyPage: (privacyPage: Partial<PrivacyPageContent>) => void
+  updateTermsPage: (termsPage: Partial<TermsPageContent>) => void
   resetToDefault: () => void
   markClean: () => void
 }
@@ -738,6 +1041,25 @@ function mergeSiteContent(partial: Partial<SiteContent> | undefined): SiteConten
       quickLinks: p.helpPage?.quickLinks ?? defaultContent.helpPage.quickLinks,
       faqs: p.helpPage?.faqs ?? defaultContent.helpPage.faqs,
     },
+    contactPage: {
+      ...defaultContent.contactPage,
+      ...p.contactPage,
+    },
+    aboutPage: {
+      ...defaultContent.aboutPage,
+      ...p.aboutPage,
+      teamQuotes: p.aboutPage?.teamQuotes ?? defaultContent.aboutPage.teamQuotes,
+    },
+    privacyPage: p.privacyPage ? {
+      ...defaultContent.privacyPage,
+      ...p.privacyPage,
+      sections: p.privacyPage.sections ?? defaultContent.privacyPage.sections,
+    } : defaultContent.privacyPage,
+    termsPage: p.termsPage ? {
+      ...defaultContent.termsPage,
+      ...p.termsPage,
+      sections: p.termsPage.sections ?? defaultContent.termsPage.sections,
+    } : defaultContent.termsPage,
   }
 }
 
@@ -883,6 +1205,54 @@ export const useCMSStore = create<CMSStore>()(
             careersPage: {
               ...(state.content.careersPage ?? {}),
               ...careersPage,
+            },
+          },
+          isDirty: true,
+        })),
+
+      updateContactPage: (contactPage) =>
+        set((state) => ({
+          content: {
+            ...state.content,
+            contactPage: {
+              ...(state.content.contactPage ?? defaultContent.contactPage),
+              ...contactPage,
+            },
+          },
+          isDirty: true,
+        })),
+
+      updateAboutPage: (aboutPage) =>
+        set((state) => ({
+          content: {
+            ...state.content,
+            aboutPage: {
+              ...(state.content.aboutPage ?? defaultContent.aboutPage),
+              ...aboutPage,
+            },
+          },
+          isDirty: true,
+        })),
+
+      updatePrivacyPage: (privacyPage) =>
+        set((state) => ({
+          content: {
+            ...state.content,
+            privacyPage: {
+              ...(state.content.privacyPage ?? defaultContent.privacyPage),
+              ...privacyPage,
+            },
+          },
+          isDirty: true,
+        })),
+
+      updateTermsPage: (termsPage) =>
+        set((state) => ({
+          content: {
+            ...state.content,
+            termsPage: {
+              ...(state.content.termsPage ?? defaultContent.termsPage),
+              ...termsPage,
             },
           },
           isDirty: true,

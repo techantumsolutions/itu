@@ -59,7 +59,7 @@ function LoginForm() {
   const [loginTab, setLoginTab] = useState<'email' | 'mobile'>('email')
   const [requires2FA, setRequires2FA] = useState(false)
   const [tempToken, setTempToken] = useState<string | null>(null)
-  
+
   const handleTabChange = (tab: 'email' | 'mobile') => {
     setLoginTab(tab)
     setIdentifier('')
@@ -101,7 +101,7 @@ function LoginForm() {
       return
     }
     const result = await login(identifier, password, fingerprint || undefined, loginCaptcha.captchaToken)
-    
+
     if (result.ok && result.requires_2fa) {
       setRequires2FA(true)
       setTempToken(result.temp_token || null)
@@ -160,7 +160,7 @@ function LoginForm() {
           <div className="flex w-full max-w-md flex-col">
             <div className="relative flex-1 overflow-hidden rounded-3xl bg-[#f6c84c] shadow-[0_24px_70px_-34px_rgba(15,23,42,0.45)]">
               <Image
-                src={(hasHydrated && content.authPages.leftImage) || '/auth/auth-hero.png'}
+                src={(hasHydrated && content.authPages.leftImage) || '/auth/auth-hero.jpg'}
                 alt=""
                 fill
                 className="object-cover"
@@ -172,8 +172,8 @@ function LoginForm() {
           </div>
         </div>
 
-        <Card className="w-full overflow-hidden rounded-2xl border-neutral-200 shadow-[0_22px_70px_-44px_rgba(15,23,42,0.35)]">
-          <CardHeader className="space-y-2 text-center">
+        <Card className="w-full py-0 overflow-hidden rounded-2xl border-neutral-200 shadow-[0_22px_70px_-44px_rgba(15,23,42,0.35)]">
+          <CardHeader className="space-y-0 text-center">
             {authView === 'forgot' ? (
               <>
                 <div className="mx-auto mt-2">
@@ -285,22 +285,20 @@ function LoginForm() {
                   <button
                     type="button"
                     onClick={() => handleTabChange('email')}
-                    className={`py-2.5 text-sm font-semibold rounded-lg transition-all ${
-                      loginTab === 'email'
-                        ? 'bg-white text-neutral-900 shadow-sm border border-neutral-200/30'
-                        : 'text-neutral-500 hover:text-neutral-800'
-                    }`}
+                    className={`py-2.5 text-sm font-semibold rounded-lg transition-all ${loginTab === 'email'
+                      ? 'bg-white text-neutral-900 shadow-sm border border-neutral-200/30'
+                      : 'text-neutral-500 hover:text-neutral-800'
+                      }`}
                   >
                     Email Login
                   </button>
                   <button
                     type="button"
                     onClick={() => handleTabChange('mobile')}
-                    className={`py-2.5 text-sm font-semibold rounded-lg transition-all ${
-                      loginTab === 'mobile'
-                        ? 'bg-white text-neutral-900 shadow-sm border border-neutral-200/30'
-                        : 'text-neutral-500 hover:text-neutral-800'
-                    }`}
+                    className={`py-2.5 text-sm font-semibold rounded-lg transition-all ${loginTab === 'mobile'
+                      ? 'bg-white text-neutral-900 shadow-sm border border-neutral-200/30'
+                      : 'text-neutral-500 hover:text-neutral-800'
+                      }`}
                   >
                     Mobile Login
                   </button>
@@ -570,7 +568,7 @@ function LoginForm() {
                   disabled={isLoading || otpValue.length !== 6}
                   onClick={async () => {
                     setError('')
-                    
+
                     if (requires2FA) {
                       // Email 2FA Verify
                       try {

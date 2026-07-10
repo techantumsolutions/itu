@@ -38,7 +38,7 @@ function RegisterForm() {
   const redirectVal = searchParams.get('redirect')
   const { content, hasHydrated } = useCMSStore()
   const { setSession } = useAuthStore()
-  
+
   const [step, setStep] = useState<'form' | 'otp' | 'success'>('form')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -116,17 +116,17 @@ function RegisterForm() {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email: email.trim().toLowerCase(), 
-          password: password.trim(), 
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password: password.trim(),
           name: name.trim(),
           captchaToken: registerCaptcha.captchaToken,
           ...(phone.trim()
             ? {
-                phone: phoneValidation?.digits || phone.replace(/\D/g, ''),
-                countryCode: selectedCountryCode,
-                dialCode: selectedDialCode,
-              }
+              phone: phoneValidation?.digits || phone.replace(/\D/g, ''),
+              countryCode: selectedCountryCode,
+              dialCode: selectedDialCode,
+            }
             : {}),
         }),
       })
@@ -153,9 +153,9 @@ function RegisterForm() {
       const res = await fetch('/api/auth/register/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email: email.trim().toLowerCase(), 
-          otp: otpValue 
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          otp: otpValue
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -201,9 +201,9 @@ function RegisterForm() {
       <div className="mx-auto grid w-full max-w-5xl items-stretch gap-10 lg:grid-cols-2">
         <div className="flex justify-center lg:justify-start">
           <div className="flex w-full max-w-md flex-col">
-            <div className="relative flex-1 overflow-hidden rounded-3xl bg-[#f6c84c] shadow-[0_24px_70px_-34px_rgba(15,23,42,0.45)]">
+            <div className="relative flex-1 overflow-hidden  rounded-3xl bg-[#f6c84c] shadow-[0_24px_70px_-34px_rgba(15,23,42,0.45)]">
               <Image
-                src={(hasHydrated && content.authPages.leftImage) || '/auth/auth-hero.png'}
+                src={(hasHydrated && content.authPages.leftImage) || '/auth/auth-hero.jpg'}
                 alt=""
                 fill
                 className="object-cover"

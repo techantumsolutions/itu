@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { loadAdminTransactions } from '@/lib/admin/admin-transactions'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function GET(request: Request) {
   if (!(await adminCanUseFeature(request, 'transactions'))) {
@@ -16,6 +17,12 @@ export async function GET(request: Request) {
 
   try {
     const result = await loadAdminTransactions({ page, pageSize, status, date, search })
+
+    await logAdminActivity({
+      action: 'View Transactions',
+      pageName: 'Transactions',
+    })
+
     return NextResponse.json({
       transactions: result.transactions,
       pagination: result.pagination,
