@@ -23,6 +23,17 @@ import { countriesList, getFlagEmoji } from '@/lib/country-codes'
 import { parsePhoneNumberFromString } from 'libphonenumber-js'
 import { validatePassword } from '@/lib/validators/password'
 import { PasswordRequirementsHint } from '@/components/password-requirements-hint'
+import { toast } from 'sonner'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Label } from '@/components/ui/label'
+import { Edit2 } from 'lucide-react'
 
 export default function AccountProfilePage() {
   const { user, setSession } = useAuthStore()
@@ -65,6 +76,151 @@ export default function AccountProfilePage() {
   const [selectedDialCode, setSelectedDialCode] = useState('91')
   const [openCountry, setOpenCountry] = useState(false)
 
+  interface SavedContact {
+    id?: string
+    phone: string
+    name: string
+  }
+
+  const [savedContacts, setSavedContacts] = useState<SavedContact[]>([])
+
+  const [editContactOpen, setEditContactOpen] = useState(false)
+  const [editingContactId, setEditingContactId] = useState('')
+  const [editPhone, setEditPhone] = useState('')
+  const [editName, setEditName] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
+
+  const handleEditContactClick = (contact: SavedContact) => {
+    setEditingContactId(contact.id || '')
+    setEditPhone(contact.phone)
+    setEditName(contact.name)
+    setEditContactOpen(true)
+  }
+
+  const handleEditContactSubmit = async () => {
+    if (!editingContactId) return
+    const trimmedPhone = editPhone.trim()
+    const trimmedName = editName.trim()
+    if (!trimmedPhone) {
+      toast.error('Mobile number is required')
+      return
+    }
+    if (!trimmedName) {
+      toast.error('Full name is required')
+      return
+    }
+
+    setSavingEdit(true)
+    try {
+      const res = await fetch('/api/profile/contacts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingContactId, phone: trimmedPhone, name: trimmedName }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'Failed to update contact')
+      }
+      toast.success('Contact updated successfully')
+      setEditContactOpen(false)
+      void fetchContacts()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to update contact')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  const [rechargesCount, setRechargesCount] = useState(0)
+
+  useEffect(() => {
+    if (!user) return
+    const fetchTransactions = async () => {
+      try {
+        const res = await fetch('/api/profile/transactions')
+        if (res.ok) {
+          const data = await res.json()
+          const txns = data?.transactions
+          if (Array.isArray(txns)) {
+            const recharges = txns.filter((t: any) => {
+              if (t.type !== 'recharge') return false
+              if (t.status === 'pending_payment') return false
+              if (t.metadata?.hide_from_user === true || t.metadata?.hide_from_user === 'true') return false
+              return true
+            })
+            setRechargesCount(recharges.length)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch transactions:', err)
+      }
+    }
+    void fetchTransactions()
+  }, [user])
+
+  const fetchContacts = async () => {
+    if (!user) return []
+    try {
+      const res = await fetch('/api/profile/contacts')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.ok && Array.isArray(data.contacts)) {
+          setSavedContacts(data.contacts)
+          return data.contacts as SavedContact[]
+        }
+      }
+    } catch (err) {
+      console.error('[fetchContacts] error:', err)
+    }
+    return []
+  }
+
+  useEffect(() => {
+    if (!user) return
+    void (async () => {
+      // 1. Fetch current DB contacts
+      await fetchContacts()
+
+      // 2. Check and migrate local storage contacts
+      try {
+        const rawContacts = window.localStorage.getItem('itu-saved-contacts')
+        if (rawContacts) {
+          const parsed = JSON.parse(rawContacts)
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const formatted: SavedContact[] = parsed.map((item) => {
+              if (typeof item === 'string') {
+                return { phone: item, name: '' }
+              }
+              if (item && typeof item === 'object' && 'phone' in item) {
+                return { phone: String(item.phone), name: String(item.name || '') }
+              }
+              return null
+            }).filter((x): x is SavedContact => x !== null)
+
+            // If there are contacts to migrate
+            if (formatted.length > 0) {
+              const syncRes = await fetch('/api/profile/contacts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formatted),
+              })
+              if (syncRes.ok) {
+                // Successfully migrated, clear local storage
+                window.localStorage.removeItem('itu-saved-contacts')
+                // Refresh list from DB
+                await fetchContacts()
+              }
+            }
+          } else {
+            window.localStorage.removeItem('itu-saved-contacts')
+          }
+        }
+      } catch (err) {
+        console.error('[Migrate contacts] error:', err)
+      }
+    })()
+  }, [user])
+
   const resetPhoneFields = (userObj: any) => {
     const userPhone = userObj?.phone || ''
     if (userPhone.startsWith('+')) {
@@ -78,13 +234,13 @@ export default function AccountProfilePage() {
         return
       }
     }
-    
+
     const profileCountry = userObj?.country || 'IN'
     setSelectedCountryCode(profileCountry)
     const foundCountry = countriesList.find(c => c.code === profileCountry)
     const dCode = foundCountry?.dialCode || userObj?.countryCode || '91'
     setSelectedDialCode(dCode)
-    
+
     let displayVal = userPhone
     if (displayVal.startsWith(`+${dCode}`)) {
       displayVal = displayVal.slice(dCode.length + 1)
@@ -123,9 +279,9 @@ export default function AccountProfilePage() {
 
   const memberSince = user.createdAt
     ? new Date(user.createdAt).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'long',
-      })
+      year: 'numeric',
+      month: 'long',
+    })
     : 'N/A'
 
   const saveNameOnly = async () => {
@@ -412,15 +568,15 @@ export default function AccountProfilePage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
+    <div className="space-y-3">
+      {/* <div>
         <h1 className="text-2xl font-bold">My Profile</h1>
         <p className="text-muted-foreground">Manage your account information</p>
-      </div>
+      </div> */}
 
       {/* Profile Card */}
       <Card>
-        <CardContent className="pt-6">
+        <CardContent className="pt-0">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6">
             <div className="relative">
               <input
@@ -480,162 +636,290 @@ export default function AccountProfilePage() {
         </CardContent>
       </Card>
 
-      {/* Account Details */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Account Details</CardTitle>
-          <CardDescription>Your personal information</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {!user.is_registered_with_email && (
-            <div className="rounded-xl bg-amber-50 border border-amber-200/50 px-4 py-3 text-sm font-medium text-amber-800 flex items-start gap-2.5">
-              <Shield className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-              <span>
-                Please complete your email &amp; password setup below to unlock profile editing, rewards, and security preferences.
-              </span>
-            </div>
-          )}
+      {/* Account Details  &&& Quick Stats*/}
+      <div className='grid grid-cols-1 md:grid-cols-2 gap-4'>
+        {/* Account Details */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Account Details</CardTitle>
+            <CardDescription>Your personal information</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-0">
+            {!user.is_registered_with_email && (
+              <div className="rounded-xl bg-amber-50 border border-amber-200/50 px-4 py-3 text-sm font-medium text-amber-800 flex items-start gap-2.5">
+                <Shield className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <span>
+                  Please complete your email &amp; password setup below to unlock profile editing, rewards, and security preferences.
+                </span>
+              </div>
+            )}
 
-          {error ? (
-            <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
-              {error}
-            </div>
-          ) : null}
+            {error ? (
+              <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                {error}
+              </div>
+            ) : null}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Full Name</label>
-              {isEditing ? (
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Enter your name"
-                />
-              ) : (
-                <p className="text-sm text-muted-foreground">{user.name}</p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Email Address</label>
-              {isEditing ? (
-                <Input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Enter your email"
-                  className="h-10 rounded-xl"
-                />
-              ) : (
-                <div className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">
-                    {user.email || 'Not set'}
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Phone Number</label>
-              {isEditing ? (
-                <div className="flex items-center gap-2">
-                  <Popover open={openCountry} onOpenChange={setOpenCountry}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        role="combobox"
-                        aria-expanded={openCountry}
-                        className="flex h-10 items-center gap-1 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-100 shrink-0 min-w-[110px] justify-between shadow-none"
-                      >
-                        <span className="truncate">
-                          {selectedCountryCode ? `${getFlagEmoji(selectedCountryCode)} +${selectedDialCode}` : `+${selectedDialCode}`}
-                        </span>
-                        <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[300px] p-0" align="start">
-                      <Command>
-                        <CommandInput placeholder="Search country or code..." />
-                        <CommandList>
-                          <CommandEmpty>No country found.</CommandEmpty>
-                          <CommandGroup className="max-h-[200px] overflow-y-auto">
-                            {countriesList.map((c) => (
-                              <CommandItem
-                                key={c.code}
-                                value={`${c.name} ${c.code} ${c.dialCode}`}
-                                onSelect={() => {
-                                  setSelectedDialCode(c.dialCode)
-                                  setSelectedCountryCode(c.code)
-                                  setOpenCountry(false)
-                                }}
-                                className="flex items-center justify-between py-2 cursor-pointer"
-                              >
-                                <div className="flex items-center gap-2">
-                                  <span className="text-base">{c.flag}</span>
-                                  <span className="font-medium text-neutral-900">{c.name}</span>
-                                  <span className="text-neutral-400 font-normal">(+{c.dialCode})</span>
-                                </div>
-                                {selectedCountryCode === c.code && (
-                                  <Check className="h-4 w-4 text-[var(--hero-cta-orange)]" />
-                                )}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Full Name</label>
+                {isEditing ? (
                   <Input
-                    type="text"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    placeholder="Enter your phone number"
-                    className="h-10 rounded-xl flex-1"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Enter your name"
                   />
-                </div>
-              ) : (
+                ) : (
+                  <p className="text-sm text-muted-foreground">{user.name}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Email Address</label>
+                {isEditing ? (
+                  <Input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="Enter your email"
+                    className="h-10 rounded-xl"
+                  />
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      {user.email || 'Not set'}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Phone Number</label>
+                {isEditing ? (
+                  <div className="flex items-center gap-2">
+                    <Popover open={openCountry} onOpenChange={setOpenCountry}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          role="combobox"
+                          aria-expanded={openCountry}
+                          className="flex h-10 items-center gap-1 rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-sm font-semibold text-neutral-700 hover:bg-neutral-100 shrink-0 min-w-[110px] justify-between shadow-none"
+                        >
+                          <span className="truncate">
+                            {selectedCountryCode ? `${getFlagEmoji(selectedCountryCode)} +${selectedDialCode}` : `+${selectedDialCode}`}
+                          </span>
+                          <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[300px] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Search country or code..." />
+                          <CommandList>
+                            <CommandEmpty>No country found.</CommandEmpty>
+                            <CommandGroup className="max-h-[200px] overflow-y-auto">
+                              {countriesList.map((c) => (
+                                <CommandItem
+                                  key={c.code}
+                                  value={`${c.name} ${c.code} ${c.dialCode}`}
+                                  onSelect={() => {
+                                    setSelectedDialCode(c.dialCode)
+                                    setSelectedCountryCode(c.code)
+                                    setOpenCountry(false)
+                                  }}
+                                  className="flex items-center justify-between py-2 cursor-pointer"
+                                >
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-base">{c.flag}</span>
+                                    <span className="font-medium text-neutral-900">{c.name}</span>
+                                    <span className="text-neutral-400 font-normal">(+{c.dialCode})</span>
+                                  </div>
+                                  {selectedCountryCode === c.code && (
+                                    <Check className="h-4 w-4 text-[var(--hero-cta-orange)]" />
+                                  )}
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                    <Input
+                      type="text"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="Enter your phone number"
+                      className="h-10 rounded-xl flex-1"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-4 w-4 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      {user.phone || 'Not set'}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Member Since</label>
                 <div className="flex items-center gap-2">
-                  <Phone className="h-4 w-4 text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">
-                    {user.phone || 'Not set'}
-                  </p>
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">{memberSince}</p>
                 </div>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Member Since</label>
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">{memberSince}</p>
               </div>
             </div>
-          </div>
 
-          {isEditing && (
-            <>
-              <Separator />
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={handleCancel} disabled={updating}>
-                  Cancel
-                </Button>
-                <Button onClick={handleSaveChanges} disabled={updating}>
-                  {updating ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    'Save Changes'
-                  )}
-                </Button>
+            {isEditing && (
+              <>
+                <Separator />
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={handleCancel} disabled={updating}>
+                    Cancel
+                  </Button>
+                  <Button onClick={handleSaveChanges} disabled={updating}>
+                    {updating ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      'Save Changes'
+                    )}
+                  </Button>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Quick Stats */}
+        <div className="grid gap-4 grid-cols-1">
+
+          <Card>
+            <CardContent className="pt-0">
+              <div className="text-center">
+                <p className="text-3xl font-bold text-primary">{rechargesCount}</p>
+                <p className="text-sm text-muted-foreground">Total Recharges</p>
               </div>
-            </>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-0">
+              <div className="text-center">
+                <p className="text-3xl font-bold text-primary">{savedContacts.length}</p>
+                <p className="text-sm text-muted-foreground">Saved Contacts</p>
+              </div>
+            </CardContent>
+          </Card>
+
+
+        </div>
+
+      </div>
+      <Card className="flex flex-col border-neutral-100 shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-bold flex items-center gap-2 text-neutral-800">
+            <Phone className="h-4 w-4 text-[#1d2d5b]" />
+            <span>Saved Contacts</span>
+          </CardTitle>
+          <CardDescription className="text-xs">Numbers saved for quick top-ups</CardDescription>
+        </CardHeader>
+        <CardContent className="flex-1 overflow-y-auto max-h-[220px] space-y-3 pt-0">
+          {savedContacts.length === 0 ? (
+            <div className="text-center py-6 text-muted-foreground text-xs">
+              No saved contacts yet.
+            </div>
+          ) : (
+            <div className="divide-y divide-neutral-100">
+              {savedContacts.map((contact, idx) => (
+                <div key={idx} className="flex justify-between items-center py-2 first:pt-0 last:pb-0">
+                  <div>
+                    <p className="font-semibold text-xs text-neutral-800">{contact.name || 'Unnamed Contact'}</p>
+                    <p className="text-[11px] text-muted-foreground font-mono">{contact.phone}</p>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 text-neutral-500 hover:text-[#1d2d5b] hover:bg-neutral-50 rounded-lg"
+                      onClick={() => handleEditContactClick(contact)}
+                    >
+                      <Edit2 className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-7 px-2 rounded-lg text-[#1d2d5b] hover:bg-[#1d2d5b]/5"
+                      onClick={() => {
+                        navigator.clipboard.writeText(contact.phone)
+                        toast.success('Number copied to clipboard!')
+                      }}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </CardContent>
       </Card>
+
+      {/* Edit Contact Dialog */}
+      {editContactOpen && (
+        <Dialog open={editContactOpen} onOpenChange={setEditContactOpen}>
+          <DialogContent className="sm:max-w-md rounded-2xl">
+            <DialogHeader>
+              <DialogTitle>Edit Saved Contact</DialogTitle>
+              <DialogDescription>
+                Update the name and mobile number for this contact.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-contact-name">Full Name</Label>
+                <Input
+                  id="edit-contact-name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="e.g. John Doe"
+                  className="rounded-xl border-neutral-200"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-contact-phone">Mobile Number</Label>
+                <Input
+                  id="edit-contact-phone"
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  placeholder="e.g. +1234567890"
+                  className="rounded-xl border-neutral-200"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setEditContactOpen(false)}
+                className="rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={savingEdit || !editName.trim() || !editPhone.trim()}
+                onClick={handleEditContactSubmit}
+                className="rounded-xl bg-[#1d2d5b] text-white hover:bg-[#1d2d5b]/90"
+              >
+                {savingEdit ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+
 
       {/* Complete Registration Card */}
       {!user.is_registered_with_email && (
@@ -816,33 +1100,7 @@ export default function AccountProfilePage() {
         </Card>
       )}
 
-      {/* Quick Stats */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <p className="text-3xl font-bold text-primary">{user.rewardPoints || 0}</p>
-              <p className="text-sm text-muted-foreground">Reward Points</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <p className="text-3xl font-bold text-primary">12</p>
-              <p className="text-sm text-muted-foreground">Total Recharges</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <div className="text-center">
-              <p className="text-3xl font-bold text-primary">3</p>
-              <p className="text-sm text-muted-foreground">Saved Contacts</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+
 
       {/* Verification Overlay Modal */}
       {showVerifyModal && (

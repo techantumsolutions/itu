@@ -37,6 +37,22 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="font-sans antialiased bg-background">
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function() {
+            function setCookie(ip) {
+              document.cookie = "client-real-ip=" + ip + "; path=/; max-age=86400; SameSite=Lax";
+            }
+            fetch('https://api64.ipify.org?format=json')
+              .then(function(r) { return r.json(); })
+              .then(function(d) { if (d && d.ip) setCookie(d.ip); })
+              .catch(function() {
+                fetch('https://api.ipify.org?format=json')
+                  .then(function(r) { return r.json(); })
+                  .then(function(d) { if (d && d.ip) setCookie(d.ip); })
+                  .catch(function() {});
+              });
+          })();
+        ` }} />
         {children}
         <Toaster position="top-center" richColors />
         {process.env.NODE_ENV === 'production' && <Analytics />}

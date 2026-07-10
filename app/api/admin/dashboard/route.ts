@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { loadAdminDashboardMetrics } from '@/lib/admin/dashboard-metrics'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function GET(request: Request) {
   if (!(await adminCanUseFeature(request, 'dashboard'))) {
@@ -9,6 +10,12 @@ export async function GET(request: Request) {
 
   try {
     const metrics = await loadAdminDashboardMetrics()
+
+    await logAdminActivity({
+      action: 'View Reports',
+      pageName: 'Reports',
+    })
+
     return NextResponse.json({
       summary: metrics.summary,
       sales: metrics.sales,

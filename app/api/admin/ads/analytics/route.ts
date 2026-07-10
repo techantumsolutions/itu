@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { adminCanUseFeature } from '@/lib/auth/require-admin-feature'
 import { supabaseRest } from '@/lib/db/supabase-rest'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function GET(request: Request) {
   if (!(await adminCanUseFeature(request, 'ads'))) {
@@ -42,6 +43,11 @@ export async function GET(request: Request) {
   }
 
   const analytics = Object.values(performanceMap)
+
+  await logAdminActivity({
+    action: 'View Ads Performance',
+    pageName: 'Ads',
+  })
 
   return NextResponse.json({ analytics })
 }

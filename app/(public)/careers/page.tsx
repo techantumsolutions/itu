@@ -125,7 +125,7 @@ export default function CareersPage() {
           </div>
 
           {/* High-fidelity collage grid */}
-          <div className="max-w-7xl mx-auto space-y-6">
+          <div className="max-w-6xl mx-auto space-y-6">
             {/* Top row - 3 columns */}
             <div className="grid gap-6 sm:grid-cols-3">
               {[0, 1, 2].map((idx) => (
@@ -173,7 +173,7 @@ export default function CareersPage() {
             </p>
           </div>
 
-          <div className="max-w-4xl mx-auto space-y-6">
+          <div className="max-w-6xl mx-auto space-y-6">
             {loadingJobs ? (
               <div className="flex flex-col items-center justify-center py-16 text-neutral-500">
                 <Loader2 className="size-8 animate-spin text-neutral-400" />
@@ -187,7 +187,7 @@ export default function CareersPage() {
               jobs.map((job) => (
                 <div
                   key={job.id}
-                  className="flex flex-col md:flex-row md:items-center justify-between p-6 md:p-8 bg-white border border-neutral-100/80 rounded-2xl shadow-[0_4px_25px_-5px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_35px_-5px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-300 gap-6"
+                  className="flex flex-col md:flex-row md:items-center justify-between px-6 py-4 bg-white border border-neutral-100/80 rounded-2xl shadow-[0_4px_25px_-5px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_35px_-5px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 transition-all duration-300 gap-3"
                 >
                   <div className="space-y-3 flex-1">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-purple-700 bg-purple-50 px-2.5 py-1 rounded-md border border-purple-100">
@@ -196,7 +196,7 @@ export default function CareersPage() {
                     <h3 className="text-xl font-bold text-neutral-900 hover:text-purple-900 transition-colors">
                       {job.title}
                     </h3>
-                    <p className="text-sm text-neutral-500 leading-relaxed max-w-2xl">
+                    <p className="text-xs text-neutral-500 leading-relaxed ">
                       {job.description}
                     </p>
 

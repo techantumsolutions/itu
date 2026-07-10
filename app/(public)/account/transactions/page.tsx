@@ -60,6 +60,11 @@ import { useAuthStore } from '@/lib/stores'
 import { toast } from 'sonner'
 import { getCountryName, getFlagEmoji } from '@/lib/country-codes'
 
+interface SavedContact {
+  phone: string
+  name: string
+}
+
 type RecurringSchedule = {
   id: string
   transactionId: string
@@ -90,7 +95,7 @@ export default function TransactionsPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailModel, setDetailModel] = useState<TransactionDetailModel | null>(null)
-  const [savedContacts, setSavedContacts] = useState<string[]>([])
+  const [savedContacts, setSavedContacts] = useState<SavedContact[]>([])
   const [schedules, setSchedules] = useState<RecurringSchedule[]>([])
   const [recurringOpen, setRecurringOpen] = useState(false)
   const [recurringTxnId, setRecurringTxnId] = useState<string | null>(null)
@@ -110,28 +115,81 @@ export default function TransactionsPage() {
     [user],
   )
 
+  const fetchContacts = async () => {
+    if (!user) return []
+    try {
+      const res = await fetch('/api/profile/contacts')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.ok && Array.isArray(data.contacts)) {
+          setSavedContacts(data.contacts)
+          return data.contacts as SavedContact[]
+        }
+      }
+    } catch (err) {
+      console.error('[fetchContacts] error:', err)
+    }
+    return []
+  }
+
+  useEffect(() => {
+    if (!user) return
+    void (async () => {
+      // 1. Fetch current DB contacts
+      await fetchContacts()
+
+      // 2. Check and migrate local storage contacts
+      try {
+        const rawContacts = window.localStorage.getItem('itu-saved-contacts')
+        if (rawContacts) {
+          const parsed = JSON.parse(rawContacts)
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const formatted: SavedContact[] = parsed.map((item) => {
+              if (typeof item === 'string') {
+                return { phone: item, name: '' }
+              }
+              if (item && typeof item === 'object' && 'phone' in item) {
+                return { phone: String(item.phone), name: String(item.name || '') }
+              }
+              return null
+            }).filter((x): x is SavedContact => x !== null)
+
+            // If there are contacts to migrate
+            if (formatted.length > 0) {
+              const syncRes = await fetch('/api/profile/contacts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formatted),
+              })
+              if (syncRes.ok) {
+                // Successfully migrated, clear local storage
+                window.localStorage.removeItem('itu-saved-contacts')
+                // Refresh list from DB
+                await fetchContacts()
+              }
+            }
+          } else {
+            window.localStorage.removeItem('itu-saved-contacts')
+          }
+        }
+      } catch (err) {
+        console.error('[Migrate contacts] error:', err)
+      }
+    })()
+  }, [user])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     try {
-      const rawContacts = window.localStorage.getItem('itu-saved-contacts')
       const rawSchedules = window.localStorage.getItem(RECURRING_STORAGE_KEY)
-      if (rawContacts) {
-        const parsed = JSON.parse(rawContacts)
-        if (Array.isArray(parsed)) setSavedContacts(parsed.filter((x) => typeof x === 'string'))
-      }
       if (rawSchedules) {
         const parsed = JSON.parse(rawSchedules)
         if (Array.isArray(parsed)) setSchedules(parsed as RecurringSchedule[])
       }
     } catch {
-      // ignore localStorage parsing issues
+      // ignore
     }
   }, [])
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return
-    window.localStorage.setItem('itu-saved-contacts', JSON.stringify(savedContacts))
-  }, [savedContacts])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -152,11 +210,14 @@ export default function TransactionsPage() {
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
+      const phone = txn.metadata?.mobile_number || txn.metadata?.phoneNumber || ''
+      const contact = savedContacts.find((c) => c.phone === phone)
+      const contactName = contact ? contact.name.toLowerCase() : ''
       const matchesSearch =
         txn.description.toLowerCase().includes(query) ||
         txn.id.toLowerCase().includes(query) ||
-        txn.metadata?.phoneNumber?.includes(query) ||
-        txn.metadata?.mobile_number?.includes(query) ||
+        phone.includes(query) ||
+        contactName.includes(query) ||
         txn.metadata?.carrierName?.toLowerCase().includes(query) ||
         txn.metadata?.operator_id?.toLowerCase().includes(query)
       if (!matchesSearch) return false
@@ -300,17 +361,45 @@ export default function TransactionsPage() {
     setDetailOpen(true)
   }
 
+  const [saveContactOpen, setSaveContactOpen] = useState(false)
+  const [contactPhone, setContactPhone] = useState('')
+  const [contactName, setContactName] = useState('')
+
   const saveAsContact = (phone?: string) => {
     if (!phone) {
       toast.error('No mobile number available')
       return
     }
-    if (savedContacts.includes(phone)) {
-      toast.message('Number already saved')
+    const exists = savedContacts.find((c) => c.phone === phone)
+    setContactPhone(phone)
+    setContactName(exists ? exists.name : '')
+    setSaveContactOpen(true)
+  }
+
+  const handleSaveContactSubmit = async () => {
+    if (!contactPhone) return
+    const trimmedName = contactName.trim()
+    if (!trimmedName) {
+      toast.error('Full name is required')
       return
     }
-    setSavedContacts((prev) => [phone, ...prev])
-    toast.success('Number saved as contact')
+
+    try {
+      const res = await fetch('/api/profile/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: contactPhone, name: trimmedName }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.ok) {
+        throw new Error(data.error || 'Failed to save contact')
+      }
+      toast.success('Contact saved successfully')
+      setSaveContactOpen(false)
+      void fetchContacts()
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save contact')
+    }
   }
 
   const openRecurringSetup = (txnId: string) => {
@@ -540,8 +629,19 @@ export default function TransactionsPage() {
                             {getTypeIcon(txn.type)}
                           </div>
                           <div>
-                            <p className="font-medium">{txn.metadata?.mobile_number || txn.metadata?.phoneNumber || '—'}</p>
-                            {/* <p className="text-xs text-muted-foreground font-mono">{txn.id}</p> */}
+                            {(() => {
+                              const phone = txn.metadata?.mobile_number || txn.metadata?.phoneNumber
+                              const contact = phone ? savedContacts.find((c) => c.phone === phone) : null
+                              if (contact) {
+                                return (
+                                  <div>
+                                    <p className="font-medium text-neutral-900">{contact.name}</p>
+                                    <p className="text-xs text-muted-foreground font-mono">{phone}</p>
+                                  </div>
+                                )
+                              }
+                              return <p className="font-medium">{phone || '—'}</p>
+                            })()}
                           </div>
                         </div>
                       </TableCell>
@@ -582,12 +682,17 @@ export default function TransactionsPage() {
                                 </Link>
                               </DropdownMenuItem>
                             )}
-                            {txn.type === 'recharge' && (
-                              <DropdownMenuItem onClick={() => saveAsContact(txn.metadata?.mobile_number || txn.metadata?.phoneNumber)}>
-                                <UserPlus className="mr-2 h-4 w-4" />
-                                Save Number as Contact
-                              </DropdownMenuItem>
-                            )}
+                            {txn.type === 'recharge' && (() => {
+                              const phone = txn.metadata?.mobile_number || txn.metadata?.phoneNumber
+                              const isAlreadySaved = phone ? savedContacts.some((c) => c.phone === phone) : false
+                              if (isAlreadySaved) return null
+                              return (
+                                <DropdownMenuItem onClick={() => saveAsContact(phone)}>
+                                  <UserPlus className="mr-2 h-4 w-4" />
+                                  Save Number as Contact
+                                </DropdownMenuItem>
+                              )
+                            })()}
                             {txn.type === 'recharge' && (
                               <DropdownMenuItem onClick={() => openRecurringSetup(txn.id)}>
                                 <Repeat className="mr-2 h-4 w-4" />
@@ -818,6 +923,58 @@ export default function TransactionsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Save Contact Dialog */}
+      {saveContactOpen && (
+        <Dialog open={saveContactOpen} onOpenChange={setSaveContactOpen}>
+          <DialogContent className="sm:max-w-md rounded-2xl">
+            <DialogHeader>
+              <DialogTitle>Save Number as Contact</DialogTitle>
+              <DialogDescription>
+                Assign a friendly name to this mobile number for quick access.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="contact-phone">Mobile Number</Label>
+                <Input
+                  id="contact-phone"
+                  value={contactPhone}
+                  disabled
+                  className="bg-muted text-muted-foreground rounded-xl"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="contact-name">Full Name</Label>
+                <Input
+                  id="contact-name"
+                  value={contactName}
+                  onChange={(e) => setContactName(e.target.value)}
+                  placeholder="e.g. John Doe"
+                  className="rounded-xl border-neutral-200"
+                  autoFocus
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setSaveContactOpen(false)}
+                className="rounded-xl"
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={!contactName.trim()}
+                onClick={handleSaveContactSubmit}
+                className="rounded-xl bg-[#1d2d5b] text-white hover:bg-[#1d2d5b]/90"
+              >
+                Save Contact
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }
