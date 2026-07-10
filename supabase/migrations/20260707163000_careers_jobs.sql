@@ -39,3 +39,6 @@ alter table careers_applications enable row level security;
 create index if not exists idx_careers_applications_job_id on careers_applications(job_id);
 create index if not exists idx_careers_jobs_created_at on careers_jobs(created_at desc);
 create index if not exists idx_careers_applications_created_at on careers_applications(created_at desc);
+
+grant all on table public.careers_jobs to postgres, service_role, authenticated, anon;
+grant all on table public.careers_applications to postgres, service_role, authenticated, anon;

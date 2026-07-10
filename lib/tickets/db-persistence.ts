@@ -111,6 +111,38 @@ async function isTableMissing(res: Response): Promise<boolean> {
   return false
 }
 
+async function ticketQueryError(res: Response, fallback: string): Promise<Error> {
+  let body = ''
+  try {
+    body = await res.clone().text()
+  } catch {
+    body = ''
+  }
+  if (body.includes('42501') || body.toLowerCase().includes('permission denied')) {
+    return new Error('TICKETS_PERMISSION_DENIED')
+  }
+  if (await isTableMissing(res)) {
+    return new Error('Table support_tickets not found')
+  }
+  if (body.includes('PGRST200') || body.toLowerCase().includes('relationship')) {
+    return new Error('support_tickets ↔ profiles relationship missing; using profile enrichment fallback')
+  }
+  return new Error(body ? `${fallback}: ${body.slice(0, 300)}` : fallback)
+}
+
+function shouldFallbackToFile(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? '')
+  return (
+    msg.includes('SUPABASE_URL') ||
+    msg.includes('not found') ||
+    msg.includes('TICKETS_PERMISSION_DENIED') ||
+    msg.toLowerCase().includes('permission denied')
+  )
+}
+
+const TICKET_SELECT =
+  'id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at'
+
 async function enrichTicketsWithProfiles(tickets: Ticket[]): Promise<Ticket[]> {
   if (tickets.length === 0) return tickets
   const userIds = Array.from(new Set(tickets.map((t) => t.userId).filter(Boolean)))
@@ -183,16 +215,13 @@ async function enrichTicketWithProfile<T extends Ticket>(ticket: T | null): Prom
   return ticket
 }
 
-async function selectTicketById(ticketId: string): Promise<(TicketRow & { profiles?: { name: string | null; email: string | null; phone: string | null; country_code: string | null } | null }) | null> {
+async function selectTicketById(ticketId: string): Promise<TicketRow | null> {
   const res = await supabaseRest(
-    `support_tickets?id=eq.${encode(ticketId)}&select=id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at,profiles(name,email,phone,country_code)&limit=1`,
+    `support_tickets?id=eq.${encode(ticketId)}&select=${TICKET_SELECT}&limit=1`,
     { cache: 'no-store' },
   )
   if (!res.ok) {
-    if (await isTableMissing(res)) {
-      throw new Error('Table support_tickets not found')
-    }
-    throw new Error('Failed to load ticket')
+    throw await ticketQueryError(res, 'Failed to load ticket')
   }
   const rows = (await res.json()) as TicketRow[]
   return rows[0] ?? null
@@ -204,10 +233,7 @@ async function selectMessages(ticketId: string): Promise<TicketMessage[]> {
     { cache: 'no-store' },
   )
   if (!res.ok) {
-    if (await isTableMissing(res)) {
-      throw new Error('Table ticket_messages not found')
-    }
-    throw new Error('Failed to load ticket messages')
+    throw await ticketQueryError(res, 'Failed to load ticket messages')
   }
   return ((await res.json()) as MessageRow[]).map(toMessage)
 }
@@ -218,10 +244,7 @@ async function selectNotes(ticketId: string): Promise<TicketNote[]> {
     { cache: 'no-store' },
   )
   if (!res.ok) {
-    if (await isTableMissing(res)) {
-      throw new Error('Table ticket_notes not found')
-    }
-    throw new Error('Failed to load ticket notes')
+    throw await ticketQueryError(res, 'Failed to load ticket notes')
   }
   return ((await res.json()) as NoteRow[]).map(toNote)
 }
@@ -253,16 +276,17 @@ export async function createTicket(input: {
       ]),
     })
     if (!res.ok) {
-      if (await isTableMissing(res)) {
+      const err = await ticketQueryError(res, 'Failed to create ticket')
+      if (shouldFallbackToFile(err)) {
+        console.warn('[tickets] DB unavailable, using file fallback:', err.message)
         return filePersistence.createTicket(input)
       }
-      throw new Error('Failed to create ticket')
+      throw err
     }
     const rows = (await res.json()) as TicketRow[]
     return toTicket(rows[0]!)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : ''
-    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+    if (shouldFallbackToFile(err)) {
       return filePersistence.createTicket(input)
     }
     throw err
@@ -272,19 +296,21 @@ export async function createTicket(input: {
 export async function listTicketsForUser(userId: string): Promise<Ticket[]> {
   try {
     const res = await supabaseRest(
-      `support_tickets?user_id=eq.${encode(userId)}&select=id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at,profiles(name,email,phone,country_code)&order=updated_at.desc`,
+      `support_tickets?user_id=eq.${encode(userId)}&select=${TICKET_SELECT}&order=updated_at.desc`,
       { cache: 'no-store' },
     )
     if (!res.ok) {
-      if (await isTableMissing(res)) {
+      const err = await ticketQueryError(res, 'Failed to load tickets')
+      if (shouldFallbackToFile(err)) {
+        console.warn('[tickets] DB unavailable, using file fallback:', err.message)
         return filePersistence.listTicketsForUser(userId)
       }
-      throw new Error('Failed to load tickets')
+      throw err
     }
-    return ((await res.json()) as TicketRow[]).map(toTicket)
+    const tickets = ((await res.json()) as TicketRow[]).map(toTicket)
+    return enrichTicketsWithProfiles(tickets)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : ''
-    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+    if (shouldFallbackToFile(err)) {
       return filePersistence.listTicketsForUser(userId)
     }
     throw err
@@ -295,10 +321,10 @@ export async function getTicketForUser(ticketId: string, userId: string): Promis
   try {
     const row = await selectTicketById(ticketId)
     if (!row || row.user_id !== userId) return null
-    return { ...toTicket(row), messages: await selectMessages(ticketId) }
+    const ticket = await enrichTicketWithProfile({ ...toTicket(row), messages: await selectMessages(ticketId) })
+    return ticket
   } catch (err) {
-    const msg = err instanceof Error ? err.message : ''
-    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+    if (shouldFallbackToFile(err)) {
       return filePersistence.getTicketForUser(ticketId, userId)
     }
     throw err
@@ -321,20 +347,22 @@ export async function listTicketsAdmin(filters: { status?: TicketStatus | 'all';
   try {
     const status = filters.status && filters.status !== 'all' ? `status=eq.${encode(filters.status)}&` : ''
     const res = await supabaseRest(
-      `support_tickets?${status}select=id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at,profiles(name,email,phone,country_code)&order=updated_at.desc`,
+      `support_tickets?${status}select=${TICKET_SELECT}&order=updated_at.desc`,
       { cache: 'no-store' },
     )
     if (!res.ok) {
-      if (await isTableMissing(res)) {
+      const err = await ticketQueryError(res, 'Failed to load tickets')
+      if (shouldFallbackToFile(err)) {
+        console.warn('[tickets] DB unavailable, using file fallback:', err.message)
         return enrichTicketsWithProfiles(await filePersistence.listTicketsAdmin(filters))
       }
-      throw new Error('Failed to load tickets')
+      throw err
     }
     const dbTickets = applySearchFilter(((await res.json()) as TicketRow[]).map(toTicket), filters.q)
     return enrichTicketsWithProfiles(dbTickets)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : ''
-    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+    if (shouldFallbackToFile(err)) {
+      console.warn('[tickets] DB unavailable, using file fallback:', err instanceof Error ? err.message : err)
       return enrichTicketsWithProfiles(await filePersistence.listTicketsAdmin(filters))
     }
     throw err
@@ -392,8 +420,7 @@ export async function getTicketAdmin(ticketId: string): Promise<TicketAdminDetai
     }
     return enrichTicketWithProfile(ticket)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : ''
-    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+    if (shouldFallbackToFile(err)) {
       const fileTicket = await filePersistence.getTicketAdmin(ticketId)
       return enrichTicketWithProfile(fileTicket)
     }
@@ -431,8 +458,7 @@ export async function addMessage(input: {
     const rows = (await res.json()) as MessageRow[]
     return toMessage(rows[0]!)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : ''
-    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+    if (shouldFallbackToFile(err)) {
       return filePersistence.addMessage(input)
     }
     throw err
@@ -458,8 +484,7 @@ export async function setTicketStatus(ticketId: string, status: TicketStatus): P
     const rows = (await res.json()) as TicketRow[]
     return rows[0] ? toTicket(rows[0]) : null
   } catch (err) {
-    const msg = err instanceof Error ? err.message : ''
-    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+    if (shouldFallbackToFile(err)) {
       return filePersistence.setTicketStatus(ticketId, status)
     }
     throw err
@@ -473,8 +498,7 @@ export async function bumpToInProgressIfNeeded(ticketId: string): Promise<void> 
     if (!row || row.status === 'resolved') return
     await setTicketStatus(ticketId, 'in_progress')
   } catch (err) {
-    const msg = err instanceof Error ? err.message : ''
-    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+    if (shouldFallbackToFile(err)) {
       return filePersistence.bumpToInProgressIfNeeded(ticketId)
     }
     throw err
@@ -507,8 +531,7 @@ export async function addNote(input: { ticketId: string; note: string; createdBy
     const rows = (await res.json()) as NoteRow[]
     return toNote(rows[0]!)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : ''
-    if (msg.includes('SUPABASE_URL') || msg.includes('not found')) {
+    if (shouldFallbackToFile(err)) {
       return filePersistence.addNote(input)
     }
     throw err
