@@ -5,7 +5,9 @@ import { supabaseGetUser, supabaseAdminUpdateUser } from '@/lib/supabase/auth-re
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
 import { buildUserFromProfile } from '@/lib/auth/build-auth-user'
-import { parsePhoneNumberFromString } from 'libphonenumber-js'
+import { parsePhoneNumberFromString } from 'libphonenumber-js/core'
+import metadata from 'libphonenumber-js/metadata.min.json'
+const actualMetadata = (metadata as any).default || metadata
 
 function getIp(req: Request): string {
   const fwd = req.headers.get('x-forwarded-for') ?? ''
@@ -91,9 +93,9 @@ export async function POST(req: Request) {
       const currentProfile = await fetchProfileForUser(userId)
       const defaultCountry = (currentProfile?.country || 'IN') as any
       
-      const parsedGlobal = value.startsWith('+') 
-        ? parsePhoneNumberFromString(value) 
-        : parsePhoneNumberFromString(value, defaultCountry)
+      const parsedGlobal = value.startsWith('+')
+        ? parsePhoneNumberFromString(value, undefined, actualMetadata)
+        : parsePhoneNumberFromString(value, defaultCountry, actualMetadata)
         
       let nationalNumber = value
       let dialCode = currentProfile?.country_code || '91'
