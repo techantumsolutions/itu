@@ -70,9 +70,9 @@ export function StatCards({ summary }: StatCardsProps) {
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <StatCard
-        title="Total Revenue (Margin)"
-        value={formatCurrency(summary.total_margin)}
-        subtitle="Completed recharges: customer paid − provider cost"
+        title="ITU Revenue"
+        value={formatCurrency(summary.itu_revenue ?? summary.total_margin)}
+        subtitle="Gross − Refunds − Provider Cost"
       />
       <CatalogStatCard
         operators={summary.total_operators}

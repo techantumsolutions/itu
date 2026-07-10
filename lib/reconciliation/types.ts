@@ -84,6 +84,10 @@ export interface ReconciliationDetails {
     recharge_status: string;
     recorded_cost: number;
     recorded_currency: string;
+    /** Customer payment amount (what was charged / may need refund). */
+    paid_amount?: number;
+    /** Currency of customer payment / refund_amount. */
+    paid_currency?: string;
     timestamp: string;
   };
   comparison: {
@@ -99,6 +103,8 @@ export interface ReconciliationDetails {
   financial: {
     difference_amount: number;
     refund_amount: number;
+    /** ISO currency for refund_amount (usually customer paid currency, e.g. INR). */
+    refund_currency?: string;
     supplier_cost_difference: number;
     customer_amount_difference: number;
   };

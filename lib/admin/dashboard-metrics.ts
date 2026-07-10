@@ -1,10 +1,14 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import {
-  convertWithRateMap,
   getFallbackExchangeRates,
-  LCR_BASE_CURRENCY,
   loadCatalogExchangeRates,
 } from '@/lib/routing/exchange-rates'
+import {
+  computeItuRevenue,
+  loadRoutingCostsForItuRows,
+  resolveItuAmountsForRow,
+  unwrapTransaction,
+} from '@/lib/admin/itu-revenue'
 import { translatePlanTextToEnglish } from '@/lib/catalog/plan-text-english'
 
 /** Admin dashboard always reports in EUR with English labels. */
@@ -30,8 +34,14 @@ export type DashboardDailySale = {
 }
 
 export type DashboardSummary = {
+  /** ITU Revenue = Gross − Refunds − Provider Cost (EUR) */
   total_revenue: number
+  /** Alias of total_revenue for older UI bindings */
   total_margin: number
+  gross_revenue: number
+  refunds: number
+  provider_cost: number
+  itu_revenue: number
   total_orders: number
   completed_orders: number
   failed_orders: number
@@ -160,145 +170,9 @@ async function resolvePlanNameMap(planIds: string[]): Promise<Map<string, string
   return map
 }
 
-function normalizeCurrency(currency: string | null | undefined): string {
-  return (currency ?? LCR_BASE_CURRENCY).trim().toUpperCase() || LCR_BASE_CURRENCY
-}
-
 function numberFrom(value: unknown): number {
   const n = Number(value)
   return Number.isFinite(n) ? n : 0
-}
-
-function unwrapTransaction(row: RechargeRow): TransactionEmbed | null {
-  if (!row.transactions) return null
-  return Array.isArray(row.transactions) ? row.transactions[0] ?? null : row.transactions
-}
-
-function extractProviderCost(meta: Record<string, unknown> | null | undefined): {
-  cost: number | null
-  currency: string | null
-} {
-  if (!meta) return { cost: null, currency: null }
-
-  if (typeof meta.selected_provider_cost === 'number' && Number.isFinite(meta.selected_provider_cost)) {
-    return {
-      cost: meta.selected_provider_cost,
-      currency: typeof meta.selected_provider_currency === 'string' ? meta.selected_provider_currency : null,
-    }
-  }
-
-  const lcr = meta.lcr_result as Record<string, unknown> | undefined
-  if (lcr && typeof lcr.selectedProviderCost === 'number' && Number.isFinite(lcr.selectedProviderCost)) {
-    return {
-      cost: lcr.selectedProviderCost,
-      currency: typeof lcr.selectedProviderCurrency === 'string' ? lcr.selectedProviderCurrency : null,
-    }
-  }
-
-  const routing = meta.routing_result as Record<string, unknown> | undefined
-  if (routing) {
-    if (typeof routing.selected_provider_cost === 'number') {
-      return {
-        cost: routing.selected_provider_cost,
-        currency:
-          typeof routing.selected_provider_currency === 'string' ? routing.selected_provider_currency : null,
-      }
-    }
-    const evaluated = routing.evaluated_providers
-    const selectedId = routing.selected_provider
-    if (Array.isArray(evaluated) && selectedId) {
-      const match = evaluated.find(
-        (p) =>
-          p &&
-          typeof p === 'object' &&
-          ((p as { providerId?: string }).providerId === selectedId ||
-            (p as { provider_id?: string }).provider_id === selectedId),
-      ) as { provider_wholesale_amount?: number; provider_wholesale_currency?: string; price?: number; currency?: string } | undefined
-      if (match) {
-        const cost = match.provider_wholesale_amount ?? match.price
-        if (typeof cost === 'number' && Number.isFinite(cost)) {
-          return {
-            cost,
-            currency: match.provider_wholesale_currency ?? match.currency ?? null,
-          }
-        }
-      }
-    }
-  }
-
-  return { cost: null, currency: null }
-}
-
-function toReportingAmount(
-  amount: number,
-  currency: string,
-  reportingCurrency: string,
-  rateMap: Map<string, number>,
-  fallbackRates: Record<string, number>,
-): number {
-  const { converted } = convertWithRateMap(amount, currency, reportingCurrency, rateMap, fallbackRates)
-  return Number.isFinite(converted) ? converted : 0
-}
-
-function fromReportingAmount(
-  amountInReporting: number,
-  targetCurrency: string,
-  reportingCurrency: string,
-  rateMap: Map<string, number>,
-  fallbackRates: Record<string, number>,
-): number | null {
-  const target = normalizeCurrency(targetCurrency)
-  if (target === reportingCurrency) return amountInReporting
-  const { converted: oneUnitInReporting } = convertWithRateMap(
-    1,
-    target,
-    reportingCurrency,
-    rateMap,
-    fallbackRates,
-  )
-  if (!Number.isFinite(oneUnitInReporting) || oneUnitInReporting <= 0) return null
-  return amountInReporting / oneUnitInReporting
-}
-
-function convertAmountBetweenCurrencies(
-  amount: number,
-  fromCurrency: string,
-  toCurrency: string,
-  reportingCurrency: string,
-  rateMap: Map<string, number>,
-  fallbackRates: Record<string, number>,
-): number | null {
-  const from = normalizeCurrency(fromCurrency)
-  const to = normalizeCurrency(toCurrency)
-  if (from === to) return amount
-  const inReporting = toReportingAmount(amount, from, reportingCurrency, rateMap, fallbackRates)
-  if (inReporting <= 0) return null
-  return fromReportingAmount(inReporting, to, reportingCurrency, rateMap, fallbackRates)
-}
-
-function computeMargin(
-  paidAmount: number,
-  paidCurrency: string,
-  providerCost: number,
-  providerCurrency: string | null,
-  reportingCurrency: string,
-  rateMap: Map<string, number>,
-  fallbackRates: Record<string, number>,
-): number {
-  const costCurrency = normalizeCurrency(providerCurrency ?? paidCurrency)
-  const costInPaidCurrency =
-    costCurrency === normalizeCurrency(paidCurrency)
-      ? providerCost
-      : convertAmountBetweenCurrencies(
-          providerCost,
-          costCurrency,
-          paidCurrency,
-          reportingCurrency,
-          rateMap,
-          fallbackRates,
-        )
-  if (costInPaidCurrency == null || !Number.isFinite(costInPaidCurrency)) return 0
-  return Math.max(0, paidAmount - costInPaidCurrency)
 }
 
 async function fetchExactCount(table: string, filter = ''): Promise<number> {
@@ -395,7 +269,7 @@ async function fetchAllRechargeRows(): Promise<RechargeRow[]> {
 
   while (true) {
     const res = await supabaseRest(
-      `recharge_orders?select=id,status,product_name,operator_name,sku_code,plan_id,created_at,transaction_id,transactions(amount,currency,status,metadata)&order=created_at.asc&limit=${pageSize}&offset=${offset}`,
+      `recharge_orders?select=id,status,product_name,operator_name,sku_code,plan_id,created_at,transaction_id,transactions(amount,currency,status,metadata)&status=neq.pending_payment&order=created_at.asc&limit=${pageSize}&offset=${offset}`,
       { cache: 'no-store' },
     )
     if (!res.ok) break
@@ -406,36 +280,6 @@ async function fetchAllRechargeRows(): Promise<RechargeRow[]> {
   }
 
   return rows
-}
-
-async function fetchRoutingCosts(transactionIds: string[]): Promise<Map<string, { cost: number; currency: string | null }>> {
-  const map = new Map<string, { cost: number; currency: string | null }>()
-  if (transactionIds.length === 0) return map
-
-  const chunkSize = 80
-  for (let i = 0; i < transactionIds.length; i += chunkSize) {
-    const chunk = transactionIds.slice(i, i + chunkSize)
-    const res = await supabaseRest(
-      `routing_logs?transaction_id=in.(${chunk.map(encodeURIComponent).join(',')})&select=transaction_id,provider_cost,status,created_at&order=created_at.desc`,
-      { cache: 'no-store' },
-    )
-    if (!res.ok) continue
-    const logs = (await res.json()) as Array<{
-      transaction_id: string
-      provider_cost: number | string | null
-      status: string
-      created_at: string
-    }>
-
-    for (const log of logs) {
-      if (!log.transaction_id || map.has(log.transaction_id)) continue
-      const cost = log.provider_cost != null ? Number(log.provider_cost) : NaN
-      if (!Number.isFinite(cost) || cost <= 0) continue
-      map.set(log.transaction_id, { cost, currency: null })
-    }
-  }
-
-  return map
 }
 
 function dayKey(iso: string): string {
@@ -453,88 +297,52 @@ export async function loadAdminDashboardMetrics(): Promise<DashboardMetrics> {
   const fallbackRates = getFallbackExchangeRates()
   const reportingCurrency = ADMIN_REPORTING_CURRENCY
 
-  const missingCostTxIds = rechargeRows
-    .filter((row) => {
-      const txn = unwrapTransaction(row)
-      if (!txn || row.status !== 'completed') return false
-      const metaCost = extractProviderCost(txn.metadata)
-      return metaCost.cost == null && row.transaction_id
-    })
-    .map((row) => row.transaction_id!)
-    .filter(Boolean)
-
-  const routingCosts = await fetchRoutingCosts(missingCostTxIds)
+  const routingCosts = await loadRoutingCostsForItuRows(rechargeRows)
 
   let completedOrders = 0
   let failedOrders = 0
   let pendingOrders = 0
-  let totalMarginReporting = 0
+  let grossReporting = 0
+  let refundsReporting = 0
+  let providerCostReporting = 0
   const marginByCurrency: Record<string, number> = {}
   const dailyMap = new Map<string, DashboardDailySale>()
   const productMap = new Map<string, DashboardTopProduct>()
 
-  for (const row of rechargeRows) {
+  // Match Financial / Transactions / Reports: unpaid checkouts are not recharges.
+  const countedRows = rechargeRows.filter(
+    (row) => (row.status ?? '').toLowerCase() !== 'pending_payment',
+  )
+
+  for (const row of countedRows) {
     const status = (row.status ?? '').toLowerCase()
     if (status === 'completed') completedOrders += 1
     else if (status === 'failed') failedOrders += 1
     else pendingOrders += 1
 
-    const txn = unwrapTransaction(row)
-    const paidAmount = txn ? numberFrom(txn.amount) : 0
-    const paidCurrency = normalizeCurrency(txn?.currency)
+    const itu = resolveItuAmountsForRow(
+      row,
+      reportingCurrency,
+      rateMap,
+      fallbackRates,
+      routingCosts,
+    )
 
-    let providerCost: number | null = null
-    let providerCurrency: string | null = null
+    grossReporting += itu.grossReporting
+    refundsReporting += itu.refundReporting
+    providerCostReporting += itu.costReporting
 
-    if (txn?.metadata) {
-      const fromMeta = extractProviderCost(txn.metadata)
-      providerCost = fromMeta.cost
-      providerCurrency = fromMeta.currency
-    }
-
-    if ((providerCost == null || providerCost <= 0) && row.transaction_id) {
-      const fromLog = routingCosts.get(row.transaction_id)
-      if (fromLog) {
-        providerCost = fromLog.cost
-        providerCurrency = fromLog.currency
-      }
-    }
-
-    if (providerCost != null && providerCurrency == null) {
-      providerCurrency = paidCurrency
-    }
-
-    const marginNative =
-      status === 'completed' && paidAmount > 0 && providerCost != null
-        ? computeMargin(
-            paidAmount,
-            paidCurrency,
-            providerCost,
-            providerCurrency,
-            reportingCurrency,
-            rateMap,
-            fallbackRates,
-          )
-        : 0
-
-    if (marginNative > 0) {
-      marginByCurrency[paidCurrency] = (marginByCurrency[paidCurrency] ?? 0) + marginNative
-      totalMarginReporting += toReportingAmount(
-        marginNative,
-        paidCurrency,
-        reportingCurrency,
-        rateMap,
-        fallbackRates,
-      )
+    if (itu.marginNative > 0) {
+      marginByCurrency[itu.paidCurrency] = (marginByCurrency[itu.paidCurrency] ?? 0) + itu.marginNative
     }
 
     const day = dayKey(row.created_at)
-    const dailyKey = `${day}:${paidCurrency}`
+    const dailyKey = `${day}:${itu.paidCurrency}`
     const dailyExisting =
       dailyMap.get(dailyKey) ??
       ({
         day,
-        currency: paidCurrency,
+        currency: itu.paidCurrency,
         revenue: 0,
         margin: 0,
         orders: 0,
@@ -544,8 +352,8 @@ export async function loadAdminDashboardMetrics(): Promise<DashboardMetrics> {
     dailyExisting.orders += 1
     if (status === 'completed') {
       dailyExisting.completed_orders += 1
-      dailyExisting.revenue += paidAmount
-      dailyExisting.margin += marginNative
+      dailyExisting.revenue += itu.paidAmount
+      dailyExisting.margin += itu.marginNative
     }
     dailyMap.set(dailyKey, dailyExisting)
 
@@ -561,25 +369,13 @@ export async function loadAdminDashboardMetrics(): Promise<DashboardMetrics> {
         orders: 0,
         revenue: 0,
         margin: 0,
-        currency: paidCurrency,
+        currency: itu.paidCurrency,
       } satisfies DashboardTopProduct)
 
     if (status === 'completed') {
       productExisting.orders += 1
-      productExisting.revenue += toReportingAmount(
-        paidAmount,
-        paidCurrency,
-        reportingCurrency,
-        rateMap,
-        fallbackRates,
-      )
-      productExisting.margin += toReportingAmount(
-        marginNative,
-        paidCurrency,
-        reportingCurrency,
-        rateMap,
-        fallbackRates,
-      )
+      productExisting.revenue += itu.grossReporting
+      productExisting.margin += itu.marginReporting
     }
     productExisting.currency = reportingCurrency
     productMap.set(productKey, productExisting)
@@ -604,10 +400,20 @@ export async function loadAdminDashboardMetrics(): Promise<DashboardMetrics> {
     currency: reportingCurrency,
   }))
 
+  const ituRevenue = computeItuRevenue({
+    grossReporting,
+    refundsReporting,
+    providerCostReporting,
+  })
+
   const summary: DashboardSummary = {
-    total_revenue: totalMarginReporting,
-    total_margin: totalMarginReporting,
-    total_orders: rechargeRows.length,
+    total_revenue: ituRevenue,
+    total_margin: ituRevenue,
+    gross_revenue: parseFloat(grossReporting.toFixed(2)),
+    refunds: parseFloat(refundsReporting.toFixed(2)),
+    provider_cost: parseFloat(providerCostReporting.toFixed(2)),
+    itu_revenue: ituRevenue,
+    total_orders: countedRows.length,
     completed_orders: completedOrders,
     failed_orders: failedOrders,
     pending_orders: pendingOrders,

@@ -1,6 +1,7 @@
 import { NormalizedSupplierRow, ReconciliationDetails, ReconciliationItemStatus } from '../types';
 import { PlatformLookups } from './04-matching-engine';
 import { RECONCILIATION_CONFIG } from '../config';
+import { extractProviderCost } from '@/lib/admin/margin-utils';
 
 export interface VerificationResult {
   matchedTx: any | null;
@@ -161,13 +162,37 @@ export class VerificationEngine {
       };
     }
 
-    // Process matched transaction records
+    // Process matched transaction records — use same cost resolution as Financial / Dashboard
     const ro = matchedTx.recharge_orders?.[0] ?? null;
-    const metaProviderCost = ro?.metadata && typeof ro.metadata === 'object' ? (ro.metadata as any).provider_cost : null;
-    const metaProviderCostCurrency = ro?.metadata && typeof ro.metadata === 'object' ? (ro.metadata as any).provider_cost_currency : null;
+    const txnMeta = matchedTx.metadata && typeof matchedTx.metadata === 'object'
+      ? (matchedTx.metadata as Record<string, unknown>)
+      : null;
+    const roMeta = ro?.metadata && typeof ro.metadata === 'object'
+      ? (ro.metadata as Record<string, unknown>)
+      : null;
 
-    const recordedCost = ro ? parseFloat(ro.receive_amount ?? metaProviderCost ?? ro.send_amount ?? matchedTx.amount) : parseFloat(matchedTx.amount);
-    const recordedCurrency = ro ? (ro.receive_currency || metaProviderCostCurrency || ro.send_currency || matchedTx.currency) : matchedTx.currency;
+    const fromTxn = extractProviderCost(txnMeta)
+    const fromRo = extractProviderCost(roMeta)
+    const metaCost = fromTxn.cost != null && fromTxn.cost > 0 ? fromTxn : fromRo
+    const metaProviderCost = metaCost.cost
+      ?? (roMeta && typeof roMeta.provider_cost === 'number' ? roMeta.provider_cost : null)
+    const metaProviderCostCurrency = metaCost.currency
+      ?? (typeof roMeta?.provider_cost_currency === 'string' ? roMeta.provider_cost_currency : null)
+      ?? (typeof txnMeta?.selected_provider_currency === 'string' ? txnMeta.selected_provider_currency : null)
+
+    // Never fall back to customer payment (tx.amount) for wholesale cost.
+    const fromMetaNum = Number(metaProviderCost)
+    const fromReceive = Number(ro?.receive_amount)
+    const recordedCost = ro
+      ? (Number.isFinite(fromMetaNum) && fromMetaNum > 0
+          ? fromMetaNum
+          : Number.isFinite(fromReceive) && fromReceive > 0
+            ? fromReceive
+            : 0)
+      : 0
+    const recordedCurrency = ro
+      ? (metaProviderCostCurrency || ro.receive_currency || ro.send_currency || matchedTx.currency)
+      : matchedTx.currency
     const roStatus = ro ? ro.status : matchedTx.status;
     const txCreated = matchedTx.created_at;
 
@@ -226,6 +251,10 @@ export class VerificationEngine {
 
     timeline.push({ timestamp: ro?.updated_at || txCreated, event: `Recharge Order Final Status: ${roStatus}` });
 
+    const paidAmountRaw = parseFloat(String(matchedTx.amount ?? 0))
+    const paidAmount = Number.isFinite(paidAmountRaw) ? paidAmountRaw : 0
+    const paidCurrency = String(matchedTx.currency || recordedCurrency || 'EUR').toUpperCase()
+
     const platformSnapshot = {
       transaction_id: matchedTx.id,
       order_id: ro?.id || '',
@@ -233,6 +262,8 @@ export class VerificationEngine {
       recharge_status: roStatus,
       recorded_cost: isNaN(recordedCost) ? 0 : recordedCost,
       recorded_currency: recordedCurrency || 'USD',
+      paid_amount: paidAmount,
+      paid_currency: paidCurrency,
       timestamp: txCreated,
     };
 

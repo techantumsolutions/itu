@@ -2,9 +2,13 @@ import { resolveCustomerDisplay } from '@/lib/auth/customer-display'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { resolveTransactionDisplayStatus } from '@/lib/transactions/display-status'
 import {
-  computeMargin,
+  computeItuRevenue,
+  loadRoutingCostsForItuRows,
+  resolveItuAmountsForRow,
+  unwrapTransaction,
+} from '@/lib/admin/itu-revenue'
+import {
   loadMarginRateContext,
-  marginToReporting,
   normalizeCurrency,
 } from '@/lib/admin/margin-utils'
 import {
@@ -23,7 +27,7 @@ import { resolveAdminTransactionDateRange } from '@/lib/admin/admin-transaction-
 import { matchesAdminTransactionSearch } from '@/lib/admin/admin-transaction-search'
 
 const RO_SELECT =
-  'id,user_id,transaction_id,lcr_attempt_id,country_iso,operator_code,operator_name,plan_id,sku_code,product_name,phone_number,send_amount,send_currency,receive_amount,receive_currency,status,payment_status,provider,provider_ref,failure_reason,metadata,created_at,updated_at,service_fee,tax,profiles(name,email,phone,country_code,country)'
+  'id,user_id,transaction_id,lcr_attempt_id,country_iso,operator_code,operator_name,plan_id,sku_code,product_name,phone_number,send_amount,send_currency,receive_amount,receive_currency,status,payment_status,provider,provider_ref,failure_reason,metadata,created_at,updated_at,service_fee,tax,profiles(name,email,phone,country_code,country),transactions(amount,currency,status,metadata)'
 
 type RechargeOrderRow = {
   id: string
@@ -58,6 +62,17 @@ type RechargeOrderRow = {
     country_code: string | null
     country: string | null
   } | null
+  transactions?: {
+    amount: number | string | null
+    currency: string | null
+    status: string | null
+    metadata: Record<string, unknown> | null
+  } | Array<{
+    amount: number | string | null
+    currency: string | null
+    status: string | null
+    metadata: Record<string, unknown> | null
+  }> | null
 }
 
 export type AdminTransactionRecord = {
@@ -97,7 +112,12 @@ export type AdminTransactionsSummary = {
   completed_orders: number
   failed_orders: number
   pending_orders: number
+  /** @deprecated use itu_revenue — kept for UI compatibility */
   total_margin: number
+  gross_revenue: number
+  refunds: number
+  provider_cost: number
+  itu_revenue: number
   reporting_currency: string
 }
 
@@ -171,12 +191,17 @@ function mapBaseRechargeOrder(row: RechargeOrderRow) {
     rechargeOrderStatus: row.status || 'completed',
   })
 
+  // Prefer linked transaction amount (same as Dashboard) for display amount
+  const txn = unwrapTransaction(row)
+  const amount = txn ? numberFrom(txn.amount) : numberFrom(row.send_amount)
+  const currency = normalizeCurrency(txn?.currency ?? row.send_currency)
+
   return {
     id: row.transaction_id || row.id, // transaction ID is used for client actions / refunds
     userId: row.user_id ?? '',
     type: 'recharge',
-    amount: numberFrom(row.send_amount),
-    currency: row.send_currency || 'USD',
+    amount,
+    currency,
     status: row.payment_status || 'completed',
     displayStatus,
     description: `Recharge ${row.phone_number || '—'}`,
@@ -199,47 +224,6 @@ function mapBaseRechargeOrder(row: RechargeOrderRow) {
   }
 }
 
-function resolveMarginForRow(
-  row: RechargeOrderRow,
-  reportingCurrency: string,
-  rateMap: Map<string, number>,
-  fallbackRates: Record<string, number>,
-): { marginNative: number; marginReporting: number } {
-  const paidAmount = numberFrom(row.send_amount)
-  const paidCurrency = normalizeCurrency(row.send_currency || 'USD')
-
-  // Only calculate margin on successful top-ups
-  if (row.status !== 'completed' || paidAmount <= 0) {
-    return { marginNative: 0, marginReporting: 0 }
-  }
-
-  const providerCost = numberFrom(row.receive_amount)
-  let providerCurrency = row.receive_currency || paidCurrency
-
-  if (providerCost <= 0) {
-    return { marginNative: 0, marginReporting: 0 }
-  }
-
-  const marginNative = computeMargin(
-    paidAmount,
-    paidCurrency,
-    providerCost,
-    providerCurrency,
-    reportingCurrency,
-    rateMap,
-    fallbackRates,
-  )
-  const marginReporting = marginToReporting(
-    marginNative,
-    paidCurrency,
-    reportingCurrency,
-    rateMap,
-    fallbackRates,
-  )
-
-  return { marginNative, marginReporting }
-}
-
 export async function loadAdminTransactions(query: AdminTransactionsQuery): Promise<AdminTransactionsResult> {
   const page = Math.max(1, Number(query.page) || 1)
   const pageSize = Math.min(Math.max(Number(query.pageSize) || 25, 10), 100)
@@ -249,6 +233,8 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
     loadMarginRateContext(),
     fetchAllMatchingRows(filters),
   ])
+
+  const routingCosts = await loadRoutingCostsForItuRows(allRows)
 
   const planIds = allRows.map((row) => {
     return extractPlanIdFromSources({
@@ -278,11 +264,12 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
       planNameMap,
     )
 
-    const { marginReporting } = resolveMarginForRow(
+    const itu = resolveItuAmountsForRow(
       row,
       reportingCurrency,
       rateMap,
       fallbackRates,
+      routingCosts,
     )
 
     let routingType = resolveRoutingTypeLabel(base.metadata)
@@ -314,8 +301,11 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
           metadata: row.metadata,
         },
       }),
-      margin: marginReporting,
+      margin: itu.marginReporting,
       marginCurrency: reportingCurrency,
+      _grossReporting: itu.grossReporting,
+      _costReporting: itu.costReporting,
+      _refundReporting: itu.refundReporting,
     }
   })
 
@@ -333,7 +323,9 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
   let completedOrders = 0
   let failedOrders = 0
   let pendingOrders = 0
-  let totalMargin = 0
+  let grossRevenue = 0
+  let refundsTotal = 0
+  let providerCostTotal = 0
 
   for (const row of filtered) {
     const ds = row.displayStatus
@@ -341,16 +333,25 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
     else if (ds === 'failed') failedOrders += 1
     else pendingOrders += 1
 
-    if (ds === 'completed') {
-      totalMargin += row.margin
-    }
+    grossRevenue += numberFrom(row._grossReporting)
+    refundsTotal += numberFrom(row._refundReporting)
+    providerCostTotal += numberFrom(row._costReporting)
   }
+
+  const ituRevenue = computeItuRevenue({
+    grossReporting: grossRevenue,
+    refundsReporting: refundsTotal,
+    providerCostReporting: providerCostTotal,
+  })
 
   const total = filtered.length
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
   const safePage = Math.min(page, totalPages)
   const start = (safePage - 1) * pageSize
-  const pageRows = filtered.slice(start, start + pageSize)
+  const pageRows = filtered.slice(start, start + pageSize).map((row) => {
+    const { _grossReporting, _costReporting, _refundReporting, ...rest } = row
+    return rest
+  })
 
   return {
     transactions: pageRows,
@@ -365,7 +366,11 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
       completed_orders: completedOrders,
       failed_orders: failedOrders,
       pending_orders: pendingOrders,
-      total_margin: totalMargin,
+      total_margin: ituRevenue,
+      gross_revenue: parseFloat(grossRevenue.toFixed(2)),
+      refunds: parseFloat(refundsTotal.toFixed(2)),
+      provider_cost: parseFloat(providerCostTotal.toFixed(2)),
+      itu_revenue: ituRevenue,
       reporting_currency: reportingCurrency,
     },
   }
