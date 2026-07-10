@@ -42,7 +42,7 @@ export function SalesReport({ summary }: SalesReportProps) {
     <Card className="rounded-2xl border-border/70 shadow-elevated-sm">
       <CardHeader className="border-b border-border/60 pb-4">
         <CardTitle className="text-xl font-semibold tracking-tight">Sales Report</CardTitle>
-        <p className="text-sm text-muted-foreground">Recharge outcomes and margin summary</p>
+        <p className="text-sm text-muted-foreground">Recharge outcomes and ITU revenue</p>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="relative flex h-[220px] items-center justify-center">
@@ -72,8 +72,8 @@ export function SalesReport({ summary }: SalesReportProps) {
           )}
           {salesData.length > 0 ? (
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center pb-8">
-              <span className="text-xl font-bold">{formatCurrency(summary.total_margin)}</span>
-              <span className="text-xs text-muted-foreground">Total margin</span>
+              <span className="text-xl font-bold">{formatCurrency(summary.itu_revenue ?? summary.total_margin)}</span>
+              <span className="text-xs text-muted-foreground">ITU Revenue</span>
             </div>
           ) : null}
         </div>

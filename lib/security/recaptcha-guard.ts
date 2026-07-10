@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isRecaptchaEnabled } from '@/lib/security/recaptcha-config'
 import {
   resolveAllowedRecaptchaHostnames,
   verifyRecaptchaToken,
@@ -96,6 +97,10 @@ export async function requireCaptcha(
   captchaToken: string | undefined | null,
   remoteIp?: string,
 ): Promise<{ ok: true } | { ok: false; response: NextResponse }> {
+  if (!isRecaptchaEnabled()) {
+    return { ok: true }
+  }
+
   if (!captchaToken?.trim()) {
     return { ok: false, response: captchaDeniedResponse('Please verify that you are not a robot.', 403) }
   }

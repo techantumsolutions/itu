@@ -3,6 +3,7 @@
 import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Loader2 } from 'lucide-react'
+import { isRecaptchaEnabled } from '@/lib/security/recaptcha-config'
 import { cn } from '@/lib/utils'
 import type ReCAPTCHA from 'react-google-recaptcha'
 
@@ -57,6 +58,10 @@ export const RecaptchaCheckbox = forwardRef<RecaptchaCheckboxHandle, RecaptchaCh
     }, [clearToken])
 
     useImperativeHandle(ref, () => ({ reset, clearToken }), [reset, clearToken])
+
+    if (!isRecaptchaEnabled()) {
+      return null
+    }
 
     if (!siteKey) {
       return (

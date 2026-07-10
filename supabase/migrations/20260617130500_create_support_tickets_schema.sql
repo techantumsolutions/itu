@@ -50,3 +50,7 @@ CREATE TRIGGER trg_support_tickets_updated_at BEFORE UPDATE ON support_tickets F
 ALTER TABLE support_tickets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ticket_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ticket_notes ENABLE ROW LEVEL SECURITY;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.support_tickets TO postgres, service_role, authenticated, anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ticket_messages TO postgres, service_role, authenticated, anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.ticket_notes TO postgres, service_role, authenticated, anon;

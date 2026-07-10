@@ -92,6 +92,10 @@ type TransactionsSummary = {
   failed_orders: number
   pending_orders: number
   total_margin: number
+  gross_revenue?: number
+  refunds?: number
+  provider_cost?: number
+  itu_revenue?: number
   reporting_currency: string
 }
 
@@ -380,8 +384,11 @@ export default function AdminTransactionsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Total Revenue (Margin)</CardDescription>
-            <CardTitle className="text-2xl">{formatCurrency(summary.total_margin, reportingCurrency)}</CardTitle>
+            <CardDescription>ITU Revenue</CardDescription>
+            <CardTitle className="text-2xl">
+              {formatCurrency(summary.itu_revenue ?? summary.total_margin, reportingCurrency)}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground pt-1">Gross − Refunds − Provider Cost</p>
           </CardHeader>
         </Card>
         <Card>

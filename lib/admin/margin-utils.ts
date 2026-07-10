@@ -144,6 +144,16 @@ export function computeMargin(
   return Math.max(0, paidAmount - costInPaidCurrency)
 }
 
+export function amountToReporting(
+  amount: number,
+  currency: string,
+  reportingCurrency: string,
+  rateMap: Map<string, number>,
+  fallbackRates: Record<string, number>,
+): number {
+  return toReportingAmount(amount, currency, reportingCurrency, rateMap, fallbackRates)
+}
+
 export function marginToReporting(
   marginNative: number,
   paidCurrency: string,
@@ -152,6 +162,17 @@ export function marginToReporting(
   fallbackRates: Record<string, number>,
 ): number {
   return toReportingAmount(marginNative, paidCurrency, reportingCurrency, rateMap, fallbackRates)
+}
+
+/** ITU Revenue = Gross (completed) − Refunds − Provider Cost, all in reporting currency. */
+export function computeItuRevenue(input: {
+  grossReporting: number
+  refundsReporting: number
+  providerCostReporting: number
+}): number {
+  return parseFloat(
+    (input.grossReporting - input.refundsReporting - input.providerCostReporting).toFixed(2),
+  )
 }
 
 export async function loadMarginRateContext(): Promise<{

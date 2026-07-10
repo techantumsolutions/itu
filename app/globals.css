@@ -261,4 +261,24 @@
   .operators-marquee-track:hover {
     animation-play-state: paused;
   }
+
+  /* Hide scrollbar utility */
+  .scrollbar-none {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  /* Hide scrollbar everywhere in reports page */
+  .reports-page-container,
+  .reports-page-container * {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+  .reports-page-container::-webkit-scrollbar,
+  .reports-page-container *::-webkit-scrollbar {
+    display: none !important;
+  }
 }
