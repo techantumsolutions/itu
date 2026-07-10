@@ -474,12 +474,13 @@ export default function HomePage() {
     return mapped.length ? mapped : FALLBACK_OPERATOR_LOGOS
   }, [content.operatorsSlider])
 
-  const titleParts = (content.hero.title || 'Instant International Top-Up\nanytime anywhere')
+  const rawTitle = content.hero.title || ''
+  const titleParts = (rawTitle || 'Instant International Top-Up\nanytime anywhere')
     .split('\n')
     .map((t) => t.trim())
     .filter(Boolean)
   const heroLine1 = welcomeHero ? `Welcome back, ${user?.name}` : (titleParts[0] ?? 'Instant International Top-Up')
-  const heroLine2 = welcomeHero ? '' : (titleParts[1] ?? 'anytime anywhere')
+  const heroLine2 = welcomeHero ? '' : (titleParts[1] ?? (rawTitle ? '' : 'anytime anywhere'))
 
   const goRechargeWithCountry = (code: string) => {
     const normalized = code.trim().toUpperCase()
@@ -504,9 +505,6 @@ export default function HomePage() {
 
   return (
     <div className="flex flex-col">
-      <div className="container mx-auto px-4 max-w-6xl mt-4">
-        <AdManager placement="home_hero" />
-      </div>
       {/* Hero — CMS background, overlay, copy; nav reads transparent until scroll */}
       <section
         className={cn(
@@ -544,6 +542,7 @@ export default function HomePage() {
         </div>
 
         <div className="container relative z-[1] mx-auto px-4 max-w-6xl">
+          <AdManager placement="home_hero" className="mb-6" />
           <div className="grid items-center gap-3 lg:grid-cols-2">
             <div className="mx-auto w-full max-w-xl space-y-6 text-center lg:mx-0 lg:text-left">
               <h1 className="font-sans text-balance text-4xl font-bold leading-[1.08] tracking-tight text-white md:text-5xl lg:text-[3.1rem]">

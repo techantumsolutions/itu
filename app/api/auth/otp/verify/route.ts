@@ -4,7 +4,10 @@ import { rateLimit } from '@/lib/security/rate-limit'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import crypto from 'crypto'
 import { createAdminNotification } from '@/lib/notifications/admin-notifications'
-import { parsePhoneNumberFromString, CountryCode } from 'libphonenumber-js'
+import { parsePhoneNumberFromString } from 'libphonenumber-js/core'
+import { CountryCode } from 'libphonenumber-js'
+import metadata from 'libphonenumber-js/metadata.min.json'
+const actualMetadata = (metadata as any).default || metadata
 
 export const runtime = 'nodejs'
 
@@ -34,7 +37,7 @@ export async function POST(req: Request) {
 
     // Persist OTP user in DB (profiles) so it works across browsers/devices.
     let userId: string = crypto.randomUUID()
-    const parsed = parsePhoneNumberFromString(phone)
+    const parsed = parsePhoneNumberFromString(phone, undefined, actualMetadata)
     let nationalNumber = phone.replace(/[^\d]/g, '')
     let dialCode = '91'
     let countryIso = 'IN'

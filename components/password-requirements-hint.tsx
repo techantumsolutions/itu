@@ -27,7 +27,9 @@ export function PasswordRequirementsHint({
           <li
             key={check.key}
             className={cn(
-              highlight && !check.satisfied ? 'text-red-600 font-medium' : 'text-neutral-500',
+              check.satisfied
+                ? 'text-green-600 font-medium'
+                : (highlight ? 'text-red-600 font-medium' : 'text-neutral-500'),
             )}
           >
             {check.label}

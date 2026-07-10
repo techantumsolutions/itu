@@ -275,7 +275,7 @@ export default function CMSPage() {
 
   const savePrivacyItem = (updatedItem: PrivacyFaqItem) => {
     const currentSections = content.privacyPage?.sections ?? []
-    const updatedSections = currentSections.map((sec) => 
+    const updatedSections = currentSections.map((sec) =>
       sec.id === updatedItem.id ? updatedItem : sec
     )
     updatePrivacyPage({ sections: updatedSections })
@@ -302,7 +302,7 @@ export default function CMSPage() {
     const otherItems = [...currentSections].sort((a, b) => a.order - b.order)
     const targetOrder = Math.max(0, newItem.order)
     const updatedSections: TermsSectionItem[] = []
-    
+
     let inserted = false
     for (let i = 0; i < otherItems.length; i++) {
       if (i === targetOrder) {
@@ -326,14 +326,14 @@ export default function CMSPage() {
 
   const saveTermsItem = (updatedItem: TermsSectionItem) => {
     const currentSections = content.termsPage?.sections ?? []
-    
+
     const otherItems = currentSections
       .filter((sec) => sec.id !== updatedItem.id)
       .sort((a, b) => a.order - b.order)
-    
+
     const targetOrder = Math.max(0, updatedItem.order)
     const updatedSections: TermsSectionItem[] = []
-    
+
     let inserted = false
     for (let i = 0; i < otherItems.length; i++) {
       if (i === targetOrder) {
@@ -376,6 +376,50 @@ export default function CMSPage() {
     if (hasEmptyField) {
       alert("Please fill in Name, Role/Title, and Quote Text for all team quote cards before saving.")
       return
+    }
+
+    // Validate operator slider items (must have imageSrc)
+    const operatorItems = content.operatorsSlider?.items ?? []
+    const missingLogo = operatorItems.some((op) => !op.imageSrc || !op.imageSrc.trim())
+    if (missingLogo) {
+      alert("Please upload a logo image for all operator items before saving.")
+      return
+    }
+
+    // Validate Mission & Features Section
+    const s3 = content.sectionThree
+    if (!s3.headlineLine1?.trim() || !s3.description?.trim()) {
+      alert("Please fill in Headline line 1 and Description in the Mission & Features section before saving.")
+      return
+    }
+    const s3Features = s3.features ?? []
+    for (const feat of s3Features) {
+      if (!feat.iconImageSrc || !feat.iconImageSrc.trim()) {
+        alert("Please upload an icon for all columns in the Mission & Features section before saving.")
+        return
+      }
+      if (!feat.titleAccent?.trim() && !feat.titleRest?.trim()) {
+        alert("Please fill in at least one title field for all columns in the Mission & Features section before saving.")
+        return
+      }
+    }
+
+    // Validate How it works Section
+    const how = content.howItWorks
+    if (!how.title?.trim()) {
+      alert("Please fill in the Title in the How it works section before saving.")
+      return
+    }
+    const howSteps = how.steps ?? []
+    for (const step of howSteps) {
+      if (!step.imageSrc || !step.imageSrc.trim()) {
+        alert("Please upload an image for all steps in the How it works section before saving.")
+        return
+      }
+      if (!step.titleLine1?.trim()) {
+        alert("Please fill in Line 1 title for all steps in the How it works section before saving.")
+        return
+      }
     }
 
     setSaveStatus('saving')
@@ -483,14 +527,14 @@ export default function CMSPage() {
                 <ImageIcon className="h-4 w-4" />
                 <span>Hero</span>
               </TabsTrigger>
-              <TabsTrigger value="topup" className="gap-2">
+              {/* <TabsTrigger value="topup" className="gap-2">
                 <Smartphone className="h-4 w-4" />
                 <span>Top-up Card</span>
-              </TabsTrigger>
-              <TabsTrigger value="countries" className="gap-2">
+              </TabsTrigger> */}
+              {/* <TabsTrigger value="countries" className="gap-2">
                 <Globe className="h-4 w-4" />
                 <span>Popular Countries</span>
-              </TabsTrigger>
+              </TabsTrigger> */}
 
               <TabsTrigger value="help" className="gap-2">
                 <LifeBuoy className="h-4 w-4" />
@@ -645,6 +689,17 @@ export default function CMSPage() {
                   />
                   <p className="text-xs text-muted-foreground">Styles the second line of the title.</p>
                 </div>
+                <div className="flex items-center gap-2 pt-2">
+                  <Switch
+                    id="hero-show-welcome-back"
+                    checked={content.hero.showWelcomeBack}
+                    onCheckedChange={(checked) => updateHero({ showWelcomeBack: checked })}
+                  />
+                  <div className="space-y-0.5">
+                    <Label htmlFor="hero-show-welcome-back" className="text-sm font-medium">Show welcome back message</Label>
+                    <p className="text-xs text-muted-foreground">Displays a personalized greeting to logged-in users instead of the hero title.</p>
+                  </div>
+                </div>
               </div>
 
               {/* Top-up Card Settings */}
@@ -781,7 +836,7 @@ export default function CMSPage() {
               </div> */}
 
               {/* 5. Settings */}
-              <div className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
+              {/* <div className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
                 <h3 className="font-semibold tracking-tight border-b pb-2">5. General Settings</h3>
                 <div className="flex items-center justify-between rounded-lg border border-border/80 bg-muted/20 px-4 py-3">
                   <div className="space-y-0.5 pr-4">
@@ -794,10 +849,10 @@ export default function CMSPage() {
                     onCheckedChange={(checked) => updateHero({ showWelcomeBack: checked })}
                   />
                 </div>
-              </div>
+              </div> */}
 
               {/* 6. Auth Pages */}
-              <div className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
+              {/* <div className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
                 <h3 className="font-semibold tracking-tight border-b pb-2">6. Auth Pages Configuration</h3>
                 <div className="space-y-2">
                   <Label>Auth pages left image (Login / Register)</Label>
@@ -824,18 +879,18 @@ export default function CMSPage() {
                     </div>
                   ) : null}
                 </div>
-              </div>
+              </div> */}
 
               {/* Operators Section */}
               <div className="space-y-4 rounded-xl border bg-card p-5 shadow-sm">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between border-b pb-2">
                   <div>
                     <h3 className="font-semibold tracking-tight">Operators Section</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
+                    {/* <p className="text-sm text-muted-foreground mt-1">
                       Logos scroll on the home page (navy strip under hero + framed strip next to the phone). Title and
                       body are kept for accessibility/SEO (sr-only on the site). Upload PNG/SVG/WebP per row; clearing an
                       upload uses the default bundled logo for that slot when available.
-                    </p>
+                    </p> */}
                   </div>
                   <Button
                     type="button"
@@ -850,7 +905,7 @@ export default function CMSPage() {
                   </Button>
                 </div>
                 <div className="space-y-6 pt-2">
-                  <div className="grid gap-4 md:grid-cols-2">
+                  {/* <div className="grid gap-4 md:grid-cols-2">
                     <div className="space-y-2">
                       <Label htmlFor="op-section-title">Section title (screen reader / SEO)</Label>
                       <Input
@@ -883,7 +938,7 @@ export default function CMSPage() {
                       value={content.operatorsSlider.sectionBody}
                       onChange={(e) => updateOperatorsSlider({ sectionBody: e.target.value })}
                     />
-                  </div>
+                  </div> */}
 
                   <Table>
                     <TableHeader>
@@ -987,10 +1042,10 @@ export default function CMSPage() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between border-b pb-2">
                   <div>
                     <h3 className="font-semibold tracking-tight">Mission & Features Section</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
+                    {/* <p className="text-sm text-muted-foreground mt-1">
                       Centered headline, supporting paragraph, and three columns with uploadable icons. Each title has an
                       accent segment (brand colour) and a neutral segment.
-                    </p>
+                    </p> */}
                   </div>
                   <Button
                     type="button"
@@ -1159,9 +1214,9 @@ export default function CMSPage() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between border-b pb-2">
                   <div>
                     <h3 className="font-semibold tracking-tight">How it works Section</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
+                    {/* <p className="text-sm text-muted-foreground mt-1">
                       The light-blue section showing 5 steps. Update the title/subtitle and upload an image per step.
-                    </p>
+                    </p> */}
                   </div>
                   <Button
                     type="button"
@@ -1306,10 +1361,10 @@ export default function CMSPage() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between border-b pb-2">
                   <div>
                     <h3 className="font-semibold tracking-tight">Countries Grid Section</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
+                    {/* <p className="text-sm text-muted-foreground mt-1">
                       Matches the “Where can you send mobile top-ups?” section. Upload flags and control the CTA label.
                       Operator counts on the site come from the live providers API per country code.
-                    </p>
+                    </p> */}
                   </div>
                   <Button
                     type="button"
@@ -1472,10 +1527,10 @@ export default function CMSPage() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between border-b pb-2">
                   <div>
                     <h3 className="font-semibold tracking-tight">App Promo Section</h3>
-                    <p className="text-sm text-muted-foreground mt-1">
+                    {/* <p className="text-sm text-muted-foreground mt-1">
                       Last section on the home page: heading, orange accent line, body copy, store links, and the phone
                       graphic on the right. Leave the main image empty to use a simple built-in placeholder.
-                    </p>
+                    </p> */}
                   </div>
                 </div>
                 <div className="space-y-6 pt-2">
@@ -1935,7 +1990,7 @@ export default function CMSPage() {
 
 
         {/* Popular Countries */}
-        <TabsContent value="countries" className="space-y-4">
+        {/* <TabsContent value="countries" className="space-y-4">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
@@ -2095,7 +2150,7 @@ export default function CMSPage() {
               </Table>
             </CardContent>
           </Card>
-        </TabsContent>
+        </TabsContent> */}
 
 
 
@@ -3093,7 +3148,7 @@ export default function CMSPage() {
               {/* 4 Pills Editors */}
               <div className="border border-border/70 p-4 rounded-xl space-y-4 bg-muted/10">
                 <h4 className="font-bold text-sm text-[#1e3a8a]">Feature Pills (4 Items)</h4>
-                
+
                 <div className="grid gap-4 md:grid-cols-2">
                   {/* Pill 1 */}
                   <div className="space-y-2 border p-3 rounded-lg bg-white shadow-sm">

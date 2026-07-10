@@ -2,7 +2,9 @@ import { NextResponse } from 'next/server'
 import { supabaseGetUser } from '@/lib/supabase/auth-rest'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
-import { parsePhoneNumberFromString } from 'libphonenumber-js'
+import { parsePhoneNumberFromString } from 'libphonenumber-js/core'
+import metadata from 'libphonenumber-js/metadata.min.json'
+const actualMetadata = (metadata as any).default || metadata
 
 export async function POST(req: Request) {
   try {
@@ -65,7 +67,9 @@ export async function POST(req: Request) {
     // 2. Verify phone number uniqueness if changed
     if (phone && phone !== (currentProfile?.phone ?? '')) {
       const defaultCountry = (currentProfile?.country || 'IN') as any
-      const parsed = phone.startsWith('+') ? parsePhoneNumberFromString(phone) : parsePhoneNumberFromString(phone, defaultCountry)
+      const parsed = phone.startsWith('+')
+        ? parsePhoneNumberFromString(phone, undefined, actualMetadata)
+        : parsePhoneNumberFromString(phone, defaultCountry, actualMetadata)
       let nationalNumber = phone
       let dialCode = currentProfile?.country_code || '91'
       if (parsed) {

@@ -3,7 +3,10 @@ import { supabaseGetUser } from '@/lib/supabase/auth-rest'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
 import { buildUserFromProfile } from '@/lib/auth/build-auth-user'
-import { parsePhoneNumberFromString, CountryCode } from 'libphonenumber-js'
+import { parsePhoneNumberFromString } from 'libphonenumber-js/core'
+import { CountryCode } from 'libphonenumber-js'
+import metadata from 'libphonenumber-js/metadata.min.json'
+const actualMetadata = (metadata as any).default || metadata
 
 export async function POST(req: Request) {
   try {
@@ -49,7 +52,9 @@ export async function POST(req: Request) {
     }
     const defaultCountry = (currentProfile?.country || 'IN') as any
 
-    const parsedGlobal = phone.startsWith('+') ? parsePhoneNumberFromString(phone) : parsePhoneNumberFromString(phone, defaultCountry)
+    const parsedGlobal = phone.startsWith('+')
+      ? parsePhoneNumberFromString(phone, undefined, actualMetadata)
+      : parsePhoneNumberFromString(phone, defaultCountry, actualMetadata)
     let nationalNumber = phone
     let dialCode = currentProfile?.country_code || '91'
     let countryIso = currentProfile?.country || 'IN'

@@ -14,6 +14,7 @@ import { useAuthStore } from '@/lib/stores'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { validatePassword } from '@/lib/validators/password'
 import { PasswordRequirementsHint } from '@/components/password-requirements-hint'
+import { toast } from 'sonner'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import {
   Command,
@@ -78,6 +79,33 @@ function RegisterForm() {
     const t = setInterval(() => setOtpTimer((s) => Math.max(0, s - 1)), 1000)
     return () => clearInterval(t)
   }, [step, otpTimer])
+
+  // Show toast error message when error state changes
+  useEffect(() => {
+    if (error) {
+      toast.error(error)
+    }
+  }, [error])
+
+  // Form validation checks for enabling the register button
+  const isPasswordValid = useMemo(() => validatePassword(password).valid, [password])
+  const isPhoneValid = useMemo(() => {
+    if (!phone.trim()) return true
+    return phoneValidation?.valid ?? false
+  }, [phone, phoneValidation])
+
+  const isFormValid = useMemo(() => {
+    return (
+      name.trim() !== '' &&
+      email.trim() !== '' &&
+      password.trim() !== '' &&
+      confirmPassword.trim() !== '' &&
+      password === confirmPassword &&
+      isPasswordValid &&
+      acceptTerms &&
+      isPhoneValid
+    )
+  }, [name, email, password, confirmPassword, isPasswordValid, acceptTerms, isPhoneValid])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -201,7 +229,7 @@ function RegisterForm() {
       <div className="mx-auto grid w-full max-w-5xl items-stretch gap-10 lg:grid-cols-2">
         <div className="flex justify-center lg:justify-start">
           <div className="flex w-full max-w-md flex-col">
-            <div className="relative flex-1 overflow-hidden  rounded-3xl bg-[#f6c84c] shadow-[0_24px_70px_-34px_rgba(15,23,42,0.45)]">
+            <div className="relative flex-1 overflow-hidden  rounded-3xl shadow-[0_24px_70px_-34px_rgba(15,23,42,0.45)]">
               <Image
                 src={(hasHydrated && content.authPages.leftImage) || '/auth/auth-hero.jpg'}
                 alt=""
@@ -380,7 +408,7 @@ function RegisterForm() {
                   <Button
                     type="submit"
                     className="h-12 w-full rounded-xl bg-[var(--hero-cta-orange)] text-base font-semibold text-white hover:brightness-105"
-                    disabled={isLoading || !registerCaptcha.hasCaptcha}
+                    disabled={!isFormValid || !registerCaptcha.hasCaptcha || isLoading}
                   >
                     {isLoading ? (
                       <>
