@@ -21,7 +21,14 @@ function headers(user: TicketUserHeaders) {
 
 export async function apiCreateTicket(
   user: TicketUserHeaders,
-  body: { subject: string; description: string; transactionId?: string; transactionCreatedAt?: string; attachmentUrl?: string },
+  body: {
+    subject: string
+    description: string
+    transactionId?: string
+    transactionCreatedAt?: string
+    attachmentUrl?: string
+    category?: string
+  },
 ) {
   const res = await fetch('/api/tickets', {
     method: 'POST',
@@ -58,6 +65,22 @@ export async function apiPostTicketMessage(user: TicketUserHeaders, ticketId: st
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error ?? 'Failed to send message')
   return data.message as TicketMessage
+}
+
+export async function apiApplyTicketSuggestion(
+  user: TicketUserHeaders,
+  ticketId: string,
+  qaId: string,
+) {
+  const res = await fetch(`/api/tickets/${ticketId}/apply-suggestion`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: headers(user),
+    body: JSON.stringify({ qaId }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error ?? 'Failed to apply suggestion')
+  return data.messages as TicketMessage[]
 }
 
 export async function apiAdminListTickets(admin: TicketUserHeaders, params: { status?: TicketStatus | 'all'; q?: string }) {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { User, Bell, Shield, Save, Settings, ArrowRight, LayoutDashboard, Clock, Eye, EyeOff, Lock, Camera, Loader2, Mail, Phone, CheckCircle2, Check, ChevronDown, History, Search, RefreshCw, FileJson, Receipt, Plus, Trash2 } from "lucide-react"
+import { User, Bell, Shield, Save, Settings, ArrowRight, LayoutDashboard, Clock, Eye, EyeOff, Lock, Camera, Loader2, Mail, Phone, CheckCircle2, Check, ChevronDown, History, Search, RefreshCw, FileJson, Receipt, Plus, Trash2, MessageSquareText } from "lucide-react"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils"
 import { validatePassword, PASSWORD_API_ERROR_MESSAGE } from '@/lib/validators/password'
 import { PasswordRequirementsHint } from '@/components/password-requirements-hint'
 import { TrustedDevicesPanel } from '@/components/admin/trusted-devices-panel'
+import { SupportBotQaPanel } from '@/components/admin/support-bot-qa-panel'
 import {
   createEmptyFeeRange,
   DEFAULT_RECHARGE_PROCESSING_FEE_CONFIG,
@@ -702,7 +703,7 @@ function SettingsContent() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className={cn("grid w-full", canEditSettings ? "grid-cols-5" : "grid-cols-4")}>
+        <TabsList className={cn("grid w-full", canEditSettings ? "grid-cols-6" : "grid-cols-5")}>
           <TabsTrigger value="profile" className="gap-2">
             <User className="h-4 w-4" />
             <span className="hidden sm:inline">Profile</span>
@@ -722,6 +723,10 @@ function SettingsContent() {
           <TabsTrigger value="system" className="gap-2">
             <Settings className="h-4 w-4" />
             <span className="hidden sm:inline">System</span>
+          </TabsTrigger>
+          <TabsTrigger value="support-bot" className="gap-2">
+            <MessageSquareText className="h-4 w-4" />
+            <span className="hidden sm:inline">Support Bot</span>
           </TabsTrigger>
           <TabsTrigger value="activity" className="gap-2">
             <History className="h-4 w-4" />
@@ -1431,6 +1436,10 @@ function SettingsContent() {
               ) : null}
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="support-bot" className="space-y-6">
+          <SupportBotQaPanel canEdit={canEditSettings} />
         </TabsContent>
 
         <TabsContent value="activity">

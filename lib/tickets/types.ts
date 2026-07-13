@@ -1,6 +1,6 @@
 export type TicketStatus = 'open' | 'in_progress' | 'resolved'
 
-export type SenderType = 'admin' | 'user'
+export type SenderType = 'admin' | 'user' | 'bot'
 
 export interface Ticket {
   id: string
@@ -8,6 +8,7 @@ export interface Ticket {
   userEmail: string
   userName: string
   transactionId?: string
+  category?: string
   transactionDetails?: {
     amount: number
     currency: string
