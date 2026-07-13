@@ -1,5 +1,6 @@
 import { supabaseGetUser } from '@/lib/supabase/auth-rest'
 import { runtimeEnv } from '@/lib/env/runtime'
+import { isAccessTokenInvalidated } from '@/lib/auth/trusted-devices'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -28,7 +29,10 @@ export async function getUserIdFromRequest(request: Request): Promise<string | n
   if (token) {
     try {
       const user = await supabaseGetUser(token)
-      if (user?.id) return user.id
+      if (user?.id) {
+        if (await isAccessTokenInvalidated(user.id, token)) return null
+        return user.id
+      }
     } catch {
       // ignore invalid/expired token
     }

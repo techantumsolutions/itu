@@ -28,6 +28,11 @@ import {
   assertAuthoritativeProviderForRecharge,
 } from '@/lib/recharge-orchestration/validate-orchestration-provider'
 import { resolveSystemPlanFromInternalPlan } from '@/lib/recharge-orchestration/resolve-system-plan-from-internal-plan'
+import { loadRechargeProcessingFeeConfig } from '@/lib/settings/recharge-processing-fees'
+import {
+  assertWithinMonthlyRechargeLimit,
+  getMonthlyRechargeLimitEur,
+} from '@/lib/settings/recharge-monthly-limit'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -426,6 +431,38 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
     ...input,
     countryId: normalizedCountryId,
     operatorId: operatorInfo.id,
+  }
+
+  // Rolling 30-day EUR recharge cap from fee-range max amounts
+  const planFace =
+    typeof input.planPrice === 'number' && Number.isFinite(input.planPrice) && input.planPrice > 0
+      ? input.planPrice
+      : input.amount
+  try {
+    const feeConfig = await loadRechargeProcessingFeeConfig()
+    const limitCheck = await assertWithinMonthlyRechargeLimit({
+      config: feeConfig,
+      planPrice: planFace,
+      planCurrency: input.currency || 'INR',
+      userId: input.userId,
+      phoneNumber: input.mobileNumber,
+    })
+    if (!limitCheck.ok) {
+      return { ok: false, error: limitCheck.error }
+    }
+  } catch (e) {
+    console.error('[prepareCheckout] monthly limit check failed:', e)
+    try {
+      const feeConfig = await loadRechargeProcessingFeeConfig()
+      if (getMonthlyRechargeLimitEur(feeConfig) != null) {
+        return {
+          ok: false,
+          error: 'Unable to verify monthly recharge limit. Please try again shortly.',
+        }
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   const transactionId = await createPendingTransaction({

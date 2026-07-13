@@ -3,8 +3,16 @@ import { supabaseGetUser } from '@/lib/supabase/auth-rest'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
 import { buildUserFromProfile } from '@/lib/auth/build-auth-user'
+import { isAccessTokenInvalidated } from '@/lib/auth/trusted-devices'
 
 export const dynamic = 'force-dynamic'
+
+function clearAuthCookies(res: NextResponse) {
+  res.cookies.set('sb-access-token', '', { httpOnly: true, path: '/', maxAge: 0 })
+  res.cookies.set('sb-refresh-token', '', { httpOnly: true, path: '/', maxAge: 0 })
+  res.cookies.set('itu-user-id', '', { httpOnly: true, path: '/', maxAge: 0 })
+  return res
+}
 
 export async function GET(req: Request) {
   const cookie = req.headers.get('cookie') ?? ''
@@ -54,6 +62,10 @@ export async function GET(req: Request) {
   const user = await supabaseGetUser(token)
   console.log('[auth/me] supabaseGetUser result:', !!user?.id)
   if (!user?.id) return NextResponse.json({ ok: true, user: null })
+
+  if (await isAccessTokenInvalidated(user.id, token)) {
+    return clearAuthCookies(NextResponse.json({ ok: true, user: null, session_revoked: true }))
+  }
 
   const profile = await fetchProfileForUser(user.id)
   console.log('[auth/me] fetchProfileForUser result:', !!profile, 'app_role:', profile?.app_role)

@@ -35,7 +35,7 @@ const SECURITY_HEADERS = [
       `img-src ${MEDIA_SOURCES}`,
       `media-src ${MEDIA_SOURCES}`,
       "font-src 'self' data:",
-      `connect-src 'self' https: wss:${SUPABASE_ORIGIN ? ` ${SUPABASE_ORIGIN}` : ''}`,
+      `connect-src 'self' http: https: ws: wss:${SUPABASE_ORIGIN ? ` ${SUPABASE_ORIGIN}` : ''}`,
       'frame-src https://www.google.com https://www.recaptcha.net https://api.razorpay.com https://checkout.razorpay.com',
       "base-uri 'self'",
       "form-action 'self' https://api.razorpay.com",
@@ -47,7 +47,17 @@ const nextConfig = {
   // Razorpay uses axios + native Node HTTPS; bundling it breaks outbound API calls in dev/prod.
   serverExternalPackages: ['razorpay'],
   poweredByHeader: false,
-  allowedDevOrigins: ['194.164.150.223'],
+  // Next 16 blocks cross-origin HMR/dev assets unless the host is listed.
+  // Include LAN IPs so phones/other PCs can open http://192.168.x.x:3000 in development.
+  allowedDevOrigins: [
+    'localhost',
+    '127.0.0.1',
+    '192.168.1.13',
+    '194.164.150.223',
+    ...(process.env.ALLOWED_DEV_ORIGINS
+      ? process.env.ALLOWED_DEV_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+      : []),
+  ],
   typescript: {
     ignoreBuildErrors: true,
   },

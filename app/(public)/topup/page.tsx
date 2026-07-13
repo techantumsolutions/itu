@@ -20,7 +20,6 @@ import { formatPlanRechargeValue } from '@/lib/catalog/plan-recharge-value'
 import {
   computeRechargeProcessingFeeAmount,
   DEFAULT_RECHARGE_PROCESSING_FEES,
-  parseRechargeProcessingFees,
   type RechargeProcessingFees,
 } from '@/lib/settings/recharge-processing-fees'
 import { englishPlanDisplayFields } from '@/lib/catalog/plan-text-english'
@@ -300,7 +299,14 @@ function TopupPlanSelectionContent() {
         const res = await fetch('/api/settings/recharge-processing-fees', { cache: 'no-store' })
         if (!res.ok) return
         const data = await res.json()
-        setProcessingFeePercents(parseRechargeProcessingFees(data))
+        // Keep a flat default until a plan amount is known (resolved per-plan below)
+        if (typeof data.platformFeePercent === 'number') {
+          setProcessingFeePercents({
+            taxPercent: Number(data.taxPercent) || 0,
+            platformFeePercent: Number(data.platformFeePercent) || 0,
+            paymentGatewayFeePercent: Number(data.paymentGatewayFeePercent) || 0,
+          })
+        }
       } catch {
         // keep default
       }
@@ -524,12 +530,32 @@ function TopupPlanSelectionContent() {
         : Number(plan.price_inr) > 0
           ? Number(plan.price_inr)
           : 0
-    const feeParts = computeRechargeProcessingFeeAmount(subtotal, processingFeePercents)
+    const rechargeCurrency = (plan.recharge_currency || 'INR').trim().toUpperCase() || 'INR'
+    let feePercents = processingFeePercents
+    try {
+      const feeRes = await fetch(
+        `/api/settings/recharge-processing-fees?amount=${encodeURIComponent(String(subtotal))}&currency=${encodeURIComponent(rechargeCurrency)}`,
+        { cache: 'no-store', credentials: 'include' },
+      )
+      if (feeRes.ok) {
+        const feeData = await feeRes.json()
+        // Prefer explicit resolved band (amount already converted to EUR server-side)
+        const resolved = feeData.resolved ?? feeData
+        feePercents = {
+          taxPercent: Number(resolved.taxPercent) || 0,
+          platformFeePercent: Number(resolved.platformFeePercent) || 0,
+          paymentGatewayFeePercent: Number(resolved.paymentGatewayFeePercent) || 0,
+        }
+      }
+    } catch {
+      /* use cached defaults */
+    }
+
+    const feeParts = computeRechargeProcessingFeeAmount(subtotal, feePercents)
     const processingFee = feeParts.total
     const serviceFee = feeParts.platformFee + feeParts.paymentGatewayFee
     const tax = feeParts.tax
     const payableAmount = subtotal + processingFee
-    const rechargeCurrency = (plan.recharge_currency || 'INR').trim().toUpperCase()
 
     setBuyingPlanId(plan.id)
     try {
