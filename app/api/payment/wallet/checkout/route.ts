@@ -97,12 +97,25 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Insufficient reward points balance' }, { status: 400 })
       }
 
-      let pointUSDValue = 0.01
-      const usdValRes = await supabaseRest('app_settings?key=eq.reward_point_usd_value&select=value&limit=1', { cache: 'no-store' })
-      if (usdValRes.ok) {
-        const rows = await usdValRes.json()
+      let minBalanceToRedeem = 0
+      const minBalRes = await supabaseRest('app_settings?key=eq.reward_min_balance_to_redeem&select=value&limit=1', { cache: 'no-store' })
+      if (minBalRes.ok) {
+        const rows = await minBalRes.json()
         if (rows[0]?.value != null) {
-          pointUSDValue = Number(rows[0].value) || 0.01
+          minBalanceToRedeem = Number(rows[0].value) ?? 0
+        }
+      }
+
+      if (pointsBalance < minBalanceToRedeem) {
+        return NextResponse.json({ error: `You must have a balance of at least ${minBalanceToRedeem} points to redeem` }, { status: 400 })
+      }
+
+      let pointEURValue = 0.01
+      const eurValRes = await supabaseRest('app_settings?key=eq.reward_point_eur_value&select=value&limit=1', { cache: 'no-store' })
+      if (eurValRes.ok) {
+        const rows = await eurValRes.json()
+        if (rows[0]?.value != null) {
+          pointEURValue = Number(rows[0].value) || 0.01
         }
       }
 
@@ -115,17 +128,16 @@ export async function POST(request: Request) {
         }
       }
 
-      const pointsUSDWorth = usedRewardPoints * pointUSDValue
-      pointsWorthInPayCurrency = pointsUSDWorth
-      if (currency !== 'USD') {
+      const pointsEURWorth = usedRewardPoints * pointEURValue
+      pointsWorthInPayCurrency = pointsEURWorth
+      if (currency !== 'EUR') {
         const rateRes = await fetch('https://open.er-api.com/v6/latest/EUR', { cache: 'no-store' })
         if (rateRes.ok) {
           const data = await rateRes.json()
           const rates = data?.rates
-          if (rates && rates['USD'] && rates[currency]) {
-            const rateToEUR = 1 / rates['USD']
+          if (rates && rates[currency]) {
             const rateFromEUR = rates[currency]
-            pointsWorthInPayCurrency = pointsUSDWorth * rateToEUR * rateFromEUR
+            pointsWorthInPayCurrency = pointsEURWorth * rateFromEUR
           }
         }
       }

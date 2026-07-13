@@ -111,10 +111,10 @@ export default function RewardsPage() {
               <div className="mt-2 flex items-center gap-2">
                 <Coins className="h-4 w-4 text-amber-500" />
                 <span className="text-sm font-semibold text-amber-600">
-                  Worth ${displayWorth.toFixed(2)} USD
+                  Worth €{displayWorth.toFixed(2)} EUR
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  (1 pt = ${pointValue} USD)
+                  (1 pt = €{pointValue} EUR)
                 </span>
               </div>
             </div>
@@ -158,7 +158,7 @@ export default function RewardsPage() {
               <div>
                 <p className="font-medium">Points Have Value</p>
                 <p className="text-sm text-muted-foreground">
-                  Each point is worth real money (${pointValue} USD)
+                  Each point is worth real money (€{pointValue} EUR)
                 </p>
               </div>
             </div>
@@ -325,7 +325,7 @@ export default function RewardsPage() {
                                   +{entry.points}
                                 </p>
                                 <p className="text-[11px] text-muted-foreground">
-                                  pts (${(entry.points * pointValue).toFixed(2)})
+                                  pts (€{(entry.points * pointValue).toFixed(2)})
                                 </p>
                               </div>
                             </div>
@@ -425,7 +425,7 @@ export default function RewardsPage() {
                                   {entry.points}
                                 </p>
                                 <p className="text-[11px] text-muted-foreground">
-                                  pts (-${(Math.abs(entry.points) * pointValue).toFixed(2)})
+                                  pts (-€{(Math.abs(entry.points) * pointValue).toFixed(2)})
                                 </p>
                               </div>
                             </div>

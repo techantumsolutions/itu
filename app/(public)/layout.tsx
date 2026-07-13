@@ -485,12 +485,14 @@ export default function PublicLayout({
                       Transaction History
                     </Link>
                   </DropdownMenuItem>
-                  <DropdownMenuItem asChild className="rounded-xl">
-                    <Link href="/account/rewards" className="flex items-center">
-                      <Gift className="mr-2 h-4 w-4" />
-                      Rewards ({user.rewardPoints || 0} pts)
-                    </Link>
-                  </DropdownMenuItem>
+                  {user.is_registered_with_email && (
+                    <DropdownMenuItem asChild className="rounded-xl">
+                      <Link href="/account/rewards" className="flex items-center">
+                        <Gift className="mr-2 h-4 w-4" />
+                        Rewards ({user.rewardPoints || 0} pts)
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem asChild className="rounded-xl">
                     <Link href="/account/settings" className="flex items-center">
                       <Settings className="mr-2 h-4 w-4" />

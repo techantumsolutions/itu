@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 
     // Fetch point valuation from app_settings
     const settingsRes = await supabaseRest(
-      'app_settings?key=eq.reward_point_usd_value&select=value&limit=1',
+      'app_settings?key=eq.reward_point_eur_value&select=value&limit=1',
       { cache: 'no-store' }
     )
     let pointValue = 0.01 // default
@@ -61,12 +61,25 @@ export async function GET(request: Request) {
       }
     }
 
+    const minBalRes = await supabaseRest(
+      'app_settings?key=eq.reward_min_balance_to_redeem&select=value&limit=1',
+      { cache: 'no-store' }
+    )
+    let minBalanceToRedeem = 0 // default
+    if (minBalRes.ok) {
+      const rows = await minBalRes.json()
+      if (rows[0]?.value != null) {
+        minBalanceToRedeem = Number(rows[0].value) ?? 0
+      }
+    }
+
     return NextResponse.json({
       entries,
       pointValue,
       balance,
       balanceWorth: +(balance * pointValue).toFixed(2),
       maxRedemptionPercentage,
+      minBalanceToRedeem,
     })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
