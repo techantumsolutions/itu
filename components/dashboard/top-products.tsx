@@ -31,7 +31,7 @@ export function TopProducts({ products, reportingCurrency, locale = 'en-US' }: T
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="text-xl font-semibold tracking-tight">Top Sales Plans</CardTitle>
-            <p className="mt-1 text-sm text-muted-foreground">By margin on completed recharges</p>
+            <p className="mt-1 text-sm text-muted-foreground">By ITU profit on completed recharges</p>
           </div>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -64,7 +64,7 @@ export function TopProducts({ products, reportingCurrency, locale = 'en-US' }: T
               <p className="truncate text-sm font-medium">{product.product_name}</p>
               <p className="truncate text-xs text-muted-foreground">{product.operator_name}</p>
               <p className="text-xs text-primary">
-                Margin {formatCurrency(product.margin, product.currency)}
+                Profit {formatCurrency(product.margin, product.currency)}
               </p>
             </div>
             <div className="shrink-0 text-right">

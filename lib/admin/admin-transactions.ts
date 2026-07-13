@@ -13,6 +13,7 @@ import {
 } from '@/lib/admin/margin-utils'
 import {
   extractPlanIdFromSources,
+  isSyntheticPlanProductName,
   resolvePlanNameMap,
   resolveProductDisplayName,
 } from '@/lib/admin/plan-name-resolver'
@@ -22,12 +23,18 @@ import {
 } from '@/lib/admin/recharge-checkout-summary'
 import {
   resolveRoutingTypeLabel,
+  formatRoutingType,
 } from '@/lib/transactions/routing-type'
 import { resolveAdminTransactionDateRange } from '@/lib/admin/admin-transaction-date-range'
 import { matchesAdminTransactionSearch } from '@/lib/admin/admin-transaction-search'
 
-const RO_SELECT =
+const RO_SELECT_BASE =
   'id,user_id,transaction_id,lcr_attempt_id,country_iso,operator_code,operator_name,plan_id,sku_code,product_name,phone_number,send_amount,send_currency,receive_amount,receive_currency,status,payment_status,provider,provider_ref,failure_reason,metadata,created_at,updated_at,service_fee,tax,profiles(name,email,phone,country_code,country),transactions(amount,currency,status,metadata)'
+
+const RO_SELECT_PRICING =
+  'plan_price,plan_price_currency,service_fee_currency,tax_currency,total_payable,payment_currency,provider_cost,provider_cost_currency,routing_type,platform_fee,payment_gateway_fee,fx_rate,fx_from_currency,fx_to_currency'
+
+const RO_SELECT = `${RO_SELECT_BASE.replace(',profiles(', `,${RO_SELECT_PRICING},profiles(`)}`
 
 type RechargeOrderRow = {
   id: string
@@ -55,6 +62,20 @@ type RechargeOrderRow = {
   updated_at: string
   service_fee: number | string | null
   tax: number | string | null
+  plan_price?: number | string | null
+  plan_price_currency?: string | null
+  service_fee_currency?: string | null
+  tax_currency?: string | null
+  total_payable?: number | string | null
+  payment_currency?: string | null
+  provider_cost?: number | string | null
+  provider_cost_currency?: string | null
+  routing_type?: string | null
+  platform_fee?: number | string | null
+  payment_gateway_fee?: number | string | null
+  fx_rate?: number | string | null
+  fx_from_currency?: string | null
+  fx_to_currency?: string | null
   profiles: {
     name: string | null
     email: string | null
@@ -116,7 +137,9 @@ export type AdminTransactionsSummary = {
   total_margin: number
   gross_revenue: number
   refunds: number
+  payment_gateway_fees: number
   provider_cost: number
+  /** ITU Profit = Gross − Refunds − Payment Gateway − Provider Cost */
   itu_revenue: number
   reporting_currency: string
 }
@@ -161,13 +184,25 @@ async function fetchAllMatchingRows(filters: string): Promise<RechargeOrderRow[]
   const pageSize = 500
   const rows: RechargeOrderRow[] = []
   let offset = 0
+  let select = RO_SELECT
+  let triedFallback = false
 
   while (true) {
     const res = await supabaseRest(
-      `recharge_orders?${filters}&select=${RO_SELECT}&order=created_at.desc&limit=${pageSize}&offset=${offset}`,
+      `recharge_orders?${filters}&select=${select}&order=created_at.desc&limit=${pageSize}&offset=${offset}`,
       { cache: 'no-store' },
     )
-    if (!res.ok) break
+    if (!res.ok) {
+      // Older DBs may not have checkout pricing columns yet — fall back once.
+      if (!triedFallback && select === RO_SELECT) {
+        triedFallback = true
+        select = RO_SELECT_BASE
+        offset = 0
+        rows.length = 0
+        continue
+      }
+      break
+    }
     const batch = (await res.json()) as RechargeOrderRow[]
     rows.push(...batch)
     if (batch.length < pageSize) break
@@ -236,30 +271,55 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
 
   const routingCosts = await loadRoutingCostsForItuRows(allRows)
 
-  const planIds = allRows.map((row) => {
-    return extractPlanIdFromSources({
+  const planIds = allRows.flatMap((row) => {
+    const ids: string[] = []
+    const primary = extractPlanIdFromSources({
       planId: row.plan_id || undefined,
       skuCode: row.sku_code || undefined,
       productName: row.product_name || undefined,
       metadata: row.metadata,
     })
+    if (primary) ids.push(primary)
+    const meta = row.metadata ?? {}
+    for (const key of ['system_plan_id', 'internal_plan_id', 'plan_id'] as const) {
+      const v = meta[key]
+      if (typeof v === 'string' && v.trim()) ids.push(v.trim())
+    }
+    const txn = unwrapTransaction(row)
+    const txnMeta = txn?.metadata ?? {}
+    for (const key of ['system_plan_id', 'internal_plan_id', 'plan_id'] as const) {
+      const v = txnMeta[key]
+      if (typeof v === 'string' && v.trim()) ids.push(v.trim())
+    }
+    return ids
   })
 
   const planNameMap = await resolvePlanNameMap(planIds)
 
   const enriched = allRows.map((row) => {
     const base = mapBaseRechargeOrder(row)
+    const txn = unwrapTransaction(row)
+    const txnMeta = (txn?.metadata ?? {}) as Record<string, unknown>
+    const orderMeta = (row.metadata ?? {}) as Record<string, unknown>
+    const mergedMeta = { ...orderMeta, ...txnMeta }
+
     const planId = extractPlanIdFromSources({
       planId: row.plan_id || undefined,
       skuCode: row.sku_code || undefined,
       productName: row.product_name || undefined,
-      metadata: row.metadata,
+      metadata: mergedMeta,
     })
 
-    const metaProductName =
-      typeof base.metadata?.productName === 'string' ? base.metadata.productName : null
+    const metaPlanName =
+      (typeof mergedMeta.plan_name === 'string' && mergedMeta.plan_name.trim()) ||
+      (typeof mergedMeta.productName === 'string' && mergedMeta.productName.trim()) ||
+      (typeof mergedMeta.product_name === 'string' && mergedMeta.product_name.trim()) ||
+      null
+
     const planName = resolveProductDisplayName(
-      row.product_name ?? metaProductName,
+      metaPlanName && !isSyntheticPlanProductName(metaPlanName, planId)
+        ? metaPlanName
+        : row.product_name ?? metaPlanName,
       planId,
       planNameMap,
     )
@@ -272,40 +332,75 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
       routingCosts,
     )
 
-    let routingType = resolveRoutingTypeLabel(base.metadata)
+    const routingTypeFromColumn =
+      typeof row.routing_type === 'string' && row.routing_type.trim()
+        ? formatRoutingType(row.routing_type)
+        : null
+    const routingType =
+      routingTypeFromColumn && routingTypeFromColumn !== '—'
+        ? routingTypeFromColumn
+        : resolveRoutingTypeLabel(mergedMeta)
+
+    const rechargeSummary = buildRechargeCheckoutSummary({
+      type: 'recharge',
+      amount: base.amount,
+      currency: base.currency,
+      metadata: mergedMeta,
+      planName,
+      rechargeOrder: {
+        product_name: row.product_name,
+        sku_code: row.sku_code,
+        plan_id: row.plan_id,
+        service_fee: row.service_fee,
+        tax: row.tax,
+        send_amount: row.send_amount,
+        send_currency: row.send_currency,
+        receive_amount: row.receive_amount,
+        receive_currency: row.receive_currency,
+        plan_price: row.plan_price,
+        plan_price_currency: row.plan_price_currency,
+        service_fee_currency: row.service_fee_currency,
+        tax_currency: row.tax_currency,
+        total_payable: row.total_payable,
+        payment_currency: row.payment_currency,
+        provider_cost: row.provider_cost,
+        provider_cost_currency: row.provider_cost_currency,
+        routing_type: row.routing_type,
+        platform_fee: row.platform_fee,
+        payment_gateway_fee: row.payment_gateway_fee,
+        fx_rate: row.fx_rate,
+        fx_from_currency: row.fx_from_currency,
+        fx_to_currency: row.fx_to_currency,
+        metadata: orderMeta,
+      },
+    })
+
+    // Prefer DB provider_cost; fall back to ITU cost resolution.
+    if (rechargeSummary && (rechargeSummary.providerCost == null || rechargeSummary.providerCost <= 0)) {
+      if (itu.providerCost != null && itu.providerCost > 0) {
+        rechargeSummary.providerCost = itu.providerCost
+        rechargeSummary.providerCostCurrency = normalizeCurrency(
+          itu.providerCurrency ?? row.receive_currency ?? row.send_currency,
+        )
+      }
+    }
 
     return {
       ...base,
+      metadata: mergedMeta,
       planName,
       routingType,
-      rechargeSummary: buildRechargeCheckoutSummary({
-        type: 'recharge',
-        amount: base.amount,
-        currency: base.currency,
-        metadata: base.metadata,
-        planName,
-        rechargeOrder: {
-          product_name: row.product_name,
-          sku_code: row.sku_code,
-          plan_id: row.plan_id,
-          provider: row.provider,
-          operator_name: row.operator_name,
-          status: row.status,
-          phone_number: row.phone_number,
-          service_fee: row.service_fee,
-          tax: row.tax,
-          send_amount: row.send_amount,
-          send_currency: row.send_currency,
-          receive_amount: row.receive_amount,
-          receive_currency: row.receive_currency,
-          metadata: row.metadata,
-        },
-      }),
+      rechargeSummary,
+      rechargeDetails: {
+        ...base.rechargeDetails,
+        productName: planName,
+      },
       margin: itu.marginReporting,
       marginCurrency: reportingCurrency,
       _grossReporting: itu.grossReporting,
       _costReporting: itu.costReporting,
       _refundReporting: itu.refundReporting,
+      _gatewayFeeReporting: itu.gatewayFeeReporting,
     }
   })
 
@@ -325,6 +420,7 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
   let pendingOrders = 0
   let grossRevenue = 0
   let refundsTotal = 0
+  let gatewayFeesTotal = 0
   let providerCostTotal = 0
 
   for (const row of filtered) {
@@ -335,13 +431,15 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
 
     grossRevenue += numberFrom(row._grossReporting)
     refundsTotal += numberFrom(row._refundReporting)
+    gatewayFeesTotal += numberFrom(row._gatewayFeeReporting)
     providerCostTotal += numberFrom(row._costReporting)
   }
 
-  const ituRevenue = computeItuRevenue({
+  const ituProfit = computeItuRevenue({
     grossReporting: grossRevenue,
     refundsReporting: refundsTotal,
     providerCostReporting: providerCostTotal,
+    gatewayFeesReporting: gatewayFeesTotal,
   })
 
   const total = filtered.length
@@ -349,7 +447,7 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
   const safePage = Math.min(page, totalPages)
   const start = (safePage - 1) * pageSize
   const pageRows = filtered.slice(start, start + pageSize).map((row) => {
-    const { _grossReporting, _costReporting, _refundReporting, ...rest } = row
+    const { _grossReporting, _costReporting, _refundReporting, _gatewayFeeReporting, ...rest } = row
     return rest
   })
 
@@ -366,11 +464,12 @@ export async function loadAdminTransactions(query: AdminTransactionsQuery): Prom
       completed_orders: completedOrders,
       failed_orders: failedOrders,
       pending_orders: pendingOrders,
-      total_margin: ituRevenue,
+      total_margin: ituProfit,
       gross_revenue: parseFloat(grossRevenue.toFixed(2)),
       refunds: parseFloat(refundsTotal.toFixed(2)),
+      payment_gateway_fees: parseFloat(gatewayFeesTotal.toFixed(2)),
       provider_cost: parseFloat(providerCostTotal.toFixed(2)),
-      itu_revenue: ituRevenue,
+      itu_revenue: ituProfit,
       reporting_currency: reportingCurrency,
     },
   }

@@ -23,8 +23,11 @@ import { buildInternationalMobile, getDialCode } from '@/lib/lcr/countries'
 import { validateRazorpayPaymentAmount } from '@/lib/payments/razorpay-amount'
 import {
   computeRechargeProcessingFeeAmount,
+  DEFAULT_RECHARGE_PROCESSING_FEE_CONFIG,
   DEFAULT_RECHARGE_PROCESSING_FEES,
-  parseRechargeProcessingFees,
+  parseRechargeProcessingFeeConfig,
+  resolveRechargeProcessingFeesForLocalAmount,
+  type RechargeProcessingFeeConfig,
   type RechargeProcessingFees,
 } from '@/lib/settings/recharge-processing-fees'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -629,8 +632,7 @@ export default function TopupSummaryPage() {
     checkoutSessionId,
     selectedPlan,
     pricing,
-    fees,
-    totalAmount,
+    calculatePricing,
     setTransactionResult,
   } = useTopupStore()
   const { user, isAuthenticated } = useAuthStore()
@@ -662,9 +664,20 @@ export default function TopupSummaryPage() {
   const [isLoadingBalance, setIsLoadingBalance] = useState<boolean>(false)
   const [selectedPayableCurrency, setSelectedPayableCurrency] = useState<string | null>(null)
   const [detectedGeoCurrency, setDetectedGeoCurrency] = useState<string | null>(null)
-  const [processingFeePercents, setProcessingFeePercents] = useState<RechargeProcessingFees>(
-    DEFAULT_RECHARGE_PROCESSING_FEES,
+  const [processingFeeConfig, setProcessingFeeConfig] = useState<RechargeProcessingFeeConfig>(
+    () => ({
+      ranges: DEFAULT_RECHARGE_PROCESSING_FEE_CONFIG.ranges.map((r) => ({ ...r })),
+    }),
   )
+  const [feeRangeMeta, setFeeRangeMeta] = useState<{
+    amountEur: number | null
+    rangeId: string | null
+    monthlyLimitEur: number | null
+  }>({ amountEur: null, rangeId: null, monthlyLimitEur: null })
+  /** Server-resolved percents when client FX rates are not ready yet. */
+  const [serverFeePercents, setServerFeePercents] = useState<RechargeProcessingFees | null>(null)
+  const [serverAmountEur, setServerAmountEur] = useState<number | null>(null)
+  const [serverRangeId, setServerRangeId] = useState<string | null>(null)
 
   // Rewards states
   const [rewardBalance, setRewardBalance] = useState<number>(0)
@@ -709,16 +722,89 @@ export default function TopupSummaryPage() {
   useEffect(() => {
     const loadFees = async () => {
       try {
-        const res = await fetch('/api/settings/recharge-processing-fees', { cache: 'no-store' })
+        const res = await fetch('/api/settings/recharge-processing-fees', {
+          cache: 'no-store',
+          credentials: 'include',
+        })
         if (!res.ok) return
         const data = await res.json()
-        setProcessingFeePercents(parseRechargeProcessingFees(data))
+        setProcessingFeeConfig(parseRechargeProcessingFeeConfig(data))
+        if (typeof data.monthlyLimitEur === 'number') {
+          setFeeRangeMeta((prev) => ({ ...prev, monthlyLimitEur: data.monthlyLimitEur }))
+        }
       } catch {
         // keep default
       }
     }
     void loadFees()
   }, [])
+
+  // Resolve fee band on the server (EUR conversion) so INR plans never match as EUR.
+  useEffect(() => {
+    const planPrice =
+      Number(selectedPlan?.recharge_amount) > 0
+        ? Number(selectedPlan!.recharge_amount)
+        : Number(pricing?.localAmount) || 0
+    const currency = normalizeCurrencyCode(
+      selectedPlan?.recharge_currency || pricing?.localCurrency || 'INR',
+    )
+    if (!(planPrice > 0) || !currency) {
+      setServerFeePercents(null)
+      return
+    }
+    let cancelled = false
+    const loadResolved = async () => {
+      try {
+        const qs = `?amount=${encodeURIComponent(String(planPrice))}&currency=${encodeURIComponent(currency)}`
+        const res = await fetch(`/api/settings/recharge-processing-fees${qs}`, {
+          cache: 'no-store',
+          credentials: 'include',
+        })
+        if (!res.ok || cancelled) return
+        const data = await res.json()
+        if (cancelled) return
+        if (
+          typeof data.taxPercent === 'number' ||
+          typeof data.platformFeePercent === 'number' ||
+          typeof data.paymentGatewayFeePercent === 'number'
+        ) {
+          setServerFeePercents({
+            taxPercent: Number(data.taxPercent) || 0,
+            platformFeePercent: Number(data.platformFeePercent) || 0,
+            paymentGatewayFeePercent: Number(data.paymentGatewayFeePercent) || 0,
+          })
+        }
+        const amountEur =
+          typeof data.resolved?.amountEur === 'number' ? data.resolved.amountEur : null
+        const rangeId =
+          typeof data.resolved?.rangeId === 'string'
+            ? data.resolved.rangeId
+            : typeof data.computed?.rangeId === 'string'
+              ? data.computed.rangeId
+              : null
+        setServerAmountEur(amountEur)
+        setServerRangeId(rangeId)
+        setFeeRangeMeta((prev) => ({
+          ...prev,
+          amountEur,
+          rangeId,
+          monthlyLimitEur:
+            typeof data.monthlyLimitEur === 'number' ? data.monthlyLimitEur : prev.monthlyLimitEur,
+        }))
+      } catch {
+        // client-side resolve still runs when rates load
+      }
+    }
+    void loadResolved()
+    return () => {
+      cancelled = true
+    }
+  }, [
+    selectedPlan?.recharge_amount,
+    selectedPlan?.recharge_currency,
+    pricing?.localAmount,
+    pricing?.localCurrency,
+  ])
 
   useEffect(() => {
     if (!storeHydrated) return
@@ -859,10 +945,40 @@ export default function TopupSummaryPage() {
         ? Number(selectedPlan!.recharge_amount)
         : (pricing?.localAmount ?? 0)
     const subtotal = planPrice
-    const feeParts = computeRechargeProcessingFeeAmount(subtotal, processingFeePercents)
+    const planCurrency = normalizeCurrencyCode(
+      selectedPlan?.recharge_currency || pricing?.localCurrency || rechargeCurrency || 'INR',
+    )
+
+    // Fee bands are always EUR — convert INR (etc.) → EUR before matching.
+    const resolved = resolveRechargeProcessingFeesForLocalAmount(
+      subtotal,
+      planCurrency,
+      processingFeeConfig,
+      ratesData,
+    )
+    let feePercents: RechargeProcessingFees
+    let amountEur: number | null = resolved.amountEur
+    let rangeId: string | null = resolved.rangeId
+    if (planCurrency === 'EUR' || resolved.amountEur != null) {
+      feePercents = {
+        taxPercent: resolved.taxPercent,
+        platformFeePercent: resolved.platformFeePercent,
+        paymentGatewayFeePercent: resolved.paymentGatewayFeePercent,
+      }
+    } else if (serverFeePercents) {
+      // Rates not loaded yet — use server conversion (same EUR bands)
+      feePercents = serverFeePercents
+      amountEur = serverAmountEur
+      rangeId = serverRangeId
+    } else {
+      feePercents = DEFAULT_RECHARGE_PROCESSING_FEES
+    }
+
+    const feeParts = computeRechargeProcessingFeeAmount(subtotal, feePercents)
     const serviceFee = feeParts.platformFee + feeParts.paymentGatewayFee
     const tax = feeParts.tax
-    const fee = fees ?? feeParts.total
+    // Always recompute from EUR-resolved percents — never reuse stale store fee totals
+    const fee = feeParts.total
     const totalInRecharge = subtotal + fee
 
     let totalPayable = totalInRecharge
@@ -963,8 +1079,13 @@ export default function TopupSummaryPage() {
     return {
       subtotal,
       serviceFee,
+      platformFee: feeParts.platformFee,
+      paymentGatewayFee: feeParts.paymentGatewayFee,
       tax,
       fee,
+      feePercents,
+      amountEur,
+      rangeId,
       totalInRecharge,
       totalPayable,
       walletBalInPayCurrency,
@@ -982,8 +1103,10 @@ export default function TopupSummaryPage() {
   }, [
     selectedPlan,
     pricing,
-    fees,
-    processingFeePercents,
+    processingFeeConfig,
+    serverFeePercents,
+    serverAmountEur,
+    serverRangeId,
     exchangeRates,
     isAuthenticated,
     walletBalance,
@@ -999,6 +1122,45 @@ export default function TopupSummaryPage() {
     maxRedemptionPercentage,
     useRewards,
   ])
+
+  // Keep persisted checkout fees aligned with EUR-band resolution (not stale topup totals).
+  useEffect(() => {
+    if (!storeHydrated || !selectedPlan) return
+    if (!(amounts.subtotal > 0)) return
+    const state = useTopupStore.getState()
+    if (
+      Math.abs((state.fees ?? 0) - amounts.fee) < 0.005 &&
+      Math.abs((state.serviceFee ?? 0) - amounts.serviceFee) < 0.005 &&
+      Math.abs((state.tax ?? 0) - amounts.tax) < 0.005
+    ) {
+      return
+    }
+    calculatePricing({
+      fee: amounts.fee,
+      serviceFee: amounts.serviceFee,
+      tax: amounts.tax,
+    })
+  }, [
+    storeHydrated,
+    selectedPlan,
+    amounts.subtotal,
+    amounts.fee,
+    amounts.serviceFee,
+    amounts.tax,
+    calculatePricing,
+  ])
+
+  useEffect(() => {
+    if (amounts.amountEur == null && amounts.rangeId == null) return
+    setFeeRangeMeta((prev) => {
+      if (prev.amountEur === amounts.amountEur && prev.rangeId === amounts.rangeId) return prev
+      return {
+        ...prev,
+        amountEur: amounts.amountEur ?? prev.amountEur,
+        rangeId: amounts.rangeId ?? prev.rangeId,
+      }
+    })
+  }, [amounts.amountEur, amounts.rangeId])
 
   const currency = amounts.payableCurrency
   const lineCurrency = amounts.rechargeCurrency
@@ -1047,6 +1209,17 @@ export default function TopupSummaryPage() {
             walletCurrency: activeWalletCurrency,
             checkoutSessionId,
             usedRewardPoints: amounts.pointsUsed,
+            checkoutPricing: {
+              planPrice: amounts.subtotal,
+              planPriceCurrency: amounts.rechargeCurrency,
+              platformFee: amounts.platformFee,
+              paymentGatewayFee: amounts.paymentGatewayFee,
+              tax: amounts.tax,
+              totalInRechargeCurrency: amounts.totalInRecharge,
+              fxRate: conversionRate ?? (amounts.payableCurrency === amounts.rechargeCurrency ? 1 : null),
+              fxFromCurrency: amounts.rechargeCurrency,
+              fxToCurrency: amounts.payableCurrency,
+            },
           }),
         })
         const data = await res.json()
@@ -1096,6 +1269,17 @@ export default function TopupSummaryPage() {
           walletCurrency: activeWalletCurrency,
           checkoutSessionId,
           usedRewardPoints: amounts.pointsUsed,
+          checkoutPricing: {
+            planPrice: amounts.subtotal,
+            planPriceCurrency: amounts.rechargeCurrency,
+            platformFee: amounts.platformFee,
+            paymentGatewayFee: amounts.paymentGatewayFee,
+            tax: amounts.tax,
+            totalInRechargeCurrency: amounts.totalInRecharge,
+            fxRate: conversionRate ?? (amounts.payableCurrency === amounts.rechargeCurrency ? 1 : null),
+            fxFromCurrency: amounts.rechargeCurrency,
+            fxToCurrency: amounts.payableCurrency,
+          },
         }),
       })
       const createData = await createRes.json()
@@ -1182,6 +1366,7 @@ export default function TopupSummaryPage() {
     pricing,
     isSubmitting,
     amounts,
+    conversionRate,
     countryCode,
     phoneNumber,
     operator,
@@ -1326,6 +1511,12 @@ export default function TopupSummaryPage() {
                       {(amounts.serviceFee + amounts.tax) > 0 ? formatMoney(amounts.serviceFee + amounts.tax, lineCurrency) : 'Free'}
                     </span>
                   </div>
+                  {amounts.amountEur != null && lineCurrency !== 'EUR' ? (
+                    <div className="flex items-center justify-between text-xs text-neutral-400">
+                      <span>Fee band (EUR equivalent)</span>
+                      <span>€{amounts.amountEur.toFixed(2)}</span>
+                    </div>
+                  ) : null}
                   {payableCurrency !== lineCurrency && (
                     <div className="flex items-center justify-between text-xs text-neutral-500">
                       <span>Subtotal in {lineCurrency}</span>

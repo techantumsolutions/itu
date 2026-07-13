@@ -20,6 +20,10 @@ export async function POST(request: Request) {
     const walletCurrency = typeof body.walletCurrency === 'string' ? body.walletCurrency.trim().toUpperCase() : ''
     const checkoutSessionId = typeof body.checkoutSessionId === 'string' ? body.checkoutSessionId.trim() : ''
     const usedRewardPoints = typeof body.usedRewardPoints === 'number' ? body.usedRewardPoints : 0
+    const checkoutPricing =
+      body.checkoutPricing && typeof body.checkoutPricing === 'object'
+        ? (body.checkoutPricing as Record<string, unknown>)
+        : undefined
 
     if (!planId || !amount || !mobileNumber) {
       return NextResponse.json({ error: 'Missing required fields: planId, amount, mobileNumber' }, { status: 400 })
@@ -137,6 +141,35 @@ export async function POST(request: Request) {
           typeof txnMeta.provider_selection_timestamp === 'string'
             ? txnMeta.provider_selection_timestamp
             : undefined,
+        totalPayable: amount,
+        paymentCurrency: currency,
+        checkoutPricing: checkoutPricing
+          ? {
+              platformFee:
+                typeof checkoutPricing.platformFee === 'number' ? checkoutPricing.platformFee : undefined,
+              paymentGatewayFee:
+                typeof checkoutPricing.paymentGatewayFee === 'number'
+                  ? checkoutPricing.paymentGatewayFee
+                  : undefined,
+              tax: typeof checkoutPricing.tax === 'number' ? checkoutPricing.tax : undefined,
+              planPrice: typeof checkoutPricing.planPrice === 'number' ? checkoutPricing.planPrice : undefined,
+              planPriceCurrency:
+                typeof checkoutPricing.planPriceCurrency === 'string'
+                  ? checkoutPricing.planPriceCurrency
+                  : undefined,
+              totalInRechargeCurrency:
+                typeof checkoutPricing.totalInRechargeCurrency === 'number'
+                  ? checkoutPricing.totalInRechargeCurrency
+                  : undefined,
+              fxRate: typeof checkoutPricing.fxRate === 'number' ? checkoutPricing.fxRate : null,
+              fxFromCurrency:
+                typeof checkoutPricing.fxFromCurrency === 'string'
+                  ? checkoutPricing.fxFromCurrency
+                  : undefined,
+              fxToCurrency:
+                typeof checkoutPricing.fxToCurrency === 'string' ? checkoutPricing.fxToCurrency : undefined,
+            }
+          : undefined,
       })
     }
 

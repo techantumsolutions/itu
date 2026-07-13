@@ -1,6 +1,7 @@
 import { supabaseGetUser } from '@/lib/supabase/auth-rest'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { buildUserFromProfile, type ProfileRow } from '@/lib/auth/build-auth-user'
+import { isAccessTokenInvalidated } from '@/lib/auth/trusted-devices'
 
 export async function fetchProfileForUser(userId: string): Promise<ProfileRow | null> {
   try {
@@ -37,6 +38,7 @@ export async function getAdminFromAccessCookie(request: Request) {
   if (!token) return null
   const u = await supabaseGetUser(token)
   if (!u?.id) return null
+  if (await isAccessTokenInvalidated(u.id, token)) return null
   const profile = await fetchProfileForUser(u.id)
   const user = buildUserFromProfile(u, profile)
   return { token, supabaseUser: u, profile, user }

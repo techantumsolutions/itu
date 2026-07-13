@@ -28,6 +28,11 @@ import {
   assertAuthoritativeProviderForRecharge,
 } from '@/lib/recharge-orchestration/validate-orchestration-provider'
 import { resolveSystemPlanFromInternalPlan } from '@/lib/recharge-orchestration/resolve-system-plan-from-internal-plan'
+import { loadRechargeProcessingFeeConfig } from '@/lib/settings/recharge-processing-fees'
+import {
+  assertWithinMonthlyRechargeLimit,
+  getMonthlyRechargeLimitEur,
+} from '@/lib/settings/recharge-monthly-limit'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -45,10 +50,16 @@ export type PrepareCheckoutInput = {
   mobileNumber: string
   operatorId: string
   countryId: string
+  /** Total in recharge currency (plan + fees) used for routing / transaction amount. */
   amount: number
   currency: string
+  /** Plan face value only (before fees), as shown on summary. */
+  planPrice?: number
   userId?: string
+  /** Combined platform + gateway fee (legacy). Prefer platformFee + paymentGatewayFee. */
   serviceFee?: number
+  platformFee?: number
+  paymentGatewayFee?: number
   tax?: number
 }
 
@@ -106,64 +117,132 @@ async function createPendingRechargeOrder(input: {
   countryId: string
   amount: number
   currency: string
+  planPrice?: number
+  /** Real catalog plan display name (not operator + uuid). */
+  planName?: string
   userId?: string
   rechargeAttemptId?: string
   serviceFee?: number
+  platformFee?: number
+  paymentGatewayFee?: number
   tax?: number
   selectedProviderId?: string
   selectedProviderName?: string
   selectedProviderCost?: number
   selectedProviderCurrency?: string
+  routingType?: string
 }): Promise<string | null> {
-  const userPayAmount = input.amount + (input.serviceFee ?? 0) + (input.tax ?? 0);
+  const currency = (input.currency || 'INR').trim().toUpperCase()
+  const platformFee = Math.max(0, input.platformFee ?? 0)
+  const paymentGatewayFee = Math.max(0, input.paymentGatewayFee ?? 0)
+  const serviceFee =
+    platformFee + paymentGatewayFee > 0
+      ? platformFee + paymentGatewayFee
+      : Math.max(0, input.serviceFee ?? 0)
+  const tax = input.tax ?? 0
+  const planPrice =
+    input.planPrice != null && Number.isFinite(input.planPrice) && input.planPrice > 0
+      ? input.planPrice
+      : Math.max(0, input.amount - serviceFee - tax)
+  const providerCost =
+    input.selectedProviderCost != null && Number.isFinite(input.selectedProviderCost)
+      ? input.selectedProviderCost
+      : null
+  const providerCostCurrency = input.selectedProviderCurrency
+    ? input.selectedProviderCurrency.trim().toUpperCase()
+    : null
+  const routingType = input.routingType ? String(input.routingType).trim().toUpperCase() : null
+  const planDisplayName =
+    (input.planName && input.planName.trim()) ||
+    `${input.operatorName} Plan`
 
   // Enforce mandatory user_id lookup fallback
-  let userIdValue = input.userId;
+  let userIdValue = input.userId
   if (!userIdValue) {
-    const profileRes = await supabaseRest('profiles?select=id&limit=1');
-    const profiles = profileRes.ok ? await profileRes.json() : [];
-    userIdValue = profiles[0]?.id || '00000000-0000-0000-0000-000000000000';
+    const profileRes = await supabaseRest('profiles?select=id&limit=1')
+    const profiles = profileRes.ok ? await profileRes.json() : []
+    userIdValue = profiles[0]?.id || '00000000-0000-0000-0000-000000000000'
   }
 
-  const res = await supabaseRest('recharge_orders?select=id', {
+  const baseRow = {
+    user_id: userIdValue,
+    transaction_id: input.transactionId,
+    lcr_attempt_id: input.rechargeAttemptId || null,
+    phone_number: input.mobileNumber,
+    operator_code: input.operatorId,
+    operator_name: input.operatorName,
+    country_iso: input.countryId,
+    sku_code: input.planId,
+    plan_id: input.planId,
+    product_name: planDisplayName,
+    send_amount: input.amount,
+    send_currency: currency,
+    receive_amount: providerCost,
+    receive_currency: providerCostCurrency,
+    status: 'pending_payment',
+    payment_status: 'pending',
+    service_fee: serviceFee,
+    tax,
+    provider: input.selectedProviderName || input.selectedProviderId || null,
+    metadata: {
+      checkout_phase: 'provider_selected_awaiting_payment',
+      plan_price: planPrice,
+      plan_price_currency: currency,
+      plan_name: planDisplayName,
+      product_name: planDisplayName,
+      plan_id: input.planId,
+      operator_id: input.operatorId,
+      operator_name: input.operatorName,
+      recharge_currency: currency,
+      service_fee: serviceFee,
+      service_fee_currency: currency,
+      platform_fee: platformFee,
+      payment_gateway_fee: paymentGatewayFee,
+      tax,
+      tax_currency: currency,
+      total_payable: input.amount,
+      payment_currency: currency,
+      user_pay_amount: input.amount,
+      selected_provider: input.selectedProviderId,
+      provider_cost: providerCost,
+      provider_cost_currency: providerCostCurrency,
+      routing_type: routingType,
+      fx_rate: 1,
+      fx_from_currency: currency,
+      fx_to_currency: currency,
+    },
+  }
+
+  const pricingColumns = {
+    plan_price: planPrice,
+    plan_price_currency: currency,
+    service_fee_currency: currency,
+    tax_currency: currency,
+    total_payable: input.amount,
+    payment_currency: currency,
+    provider_cost: providerCost,
+    provider_cost_currency: providerCostCurrency,
+    routing_type: routingType,
+    platform_fee: platformFee,
+    payment_gateway_fee: paymentGatewayFee,
+    fx_rate: 1,
+    fx_from_currency: currency,
+    fx_to_currency: currency,
+  }
+
+  let res = await supabaseRest('recharge_orders?select=id', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },
-    body: JSON.stringify([
-      {
-        user_id: userIdValue,
-        transaction_id: input.transactionId,
-        lcr_attempt_id: input.rechargeAttemptId || null,
-        phone_number: input.mobileNumber,
-        operator_code: input.operatorId,
-        operator_name: input.operatorName,
-        country_iso: input.countryId,
-        sku_code: input.planId,
-        plan_id: input.planId,
-        product_name: `${input.operatorName} ${input.planId}`,
-        send_amount: input.amount,
-        send_currency: input.currency,
-        receive_amount: input.selectedProviderCost || null,
-        receive_currency: input.selectedProviderCurrency || null,
-        status: 'pending_payment',
-        payment_status: 'pending',
-        service_fee: input.serviceFee ?? 0,
-        tax: input.tax ?? 0,
-        provider: input.selectedProviderName || input.selectedProviderId || null,
-        metadata: {
-          checkout_phase: 'provider_selected_awaiting_payment',
-          plan_price: input.amount,
-          plan_name: `${input.operatorName} ${input.planId}`,
-          plan_id: input.planId,
-          operator_id: input.operatorId,
-          operator_name: input.operatorName,
-          user_pay_amount: userPayAmount,
-          selected_provider: input.selectedProviderId,
-          provider_cost: input.selectedProviderCost,
-          provider_cost_currency: input.selectedProviderCurrency,
-        },
-      },
-    ]),
+    body: JSON.stringify([{ ...baseRow, ...pricingColumns }]),
   })
+  if (!res.ok) {
+    // Older DBs may not have checkout pricing columns yet.
+    res = await supabaseRest('recharge_orders?select=id', {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify([baseRow]),
+    })
+  }
   if (!res.ok) return null
   const rows = (await res.json()) as Array<{ id: string }>
   return rows[0]?.id ?? null
@@ -354,6 +433,38 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
     operatorId: operatorInfo.id,
   }
 
+  // Rolling 30-day EUR recharge cap from fee-range max amounts
+  const planFace =
+    typeof input.planPrice === 'number' && Number.isFinite(input.planPrice) && input.planPrice > 0
+      ? input.planPrice
+      : input.amount
+  try {
+    const feeConfig = await loadRechargeProcessingFeeConfig()
+    const limitCheck = await assertWithinMonthlyRechargeLimit({
+      config: feeConfig,
+      planPrice: planFace,
+      planCurrency: input.currency || 'INR',
+      userId: input.userId,
+      phoneNumber: input.mobileNumber,
+    })
+    if (!limitCheck.ok) {
+      return { ok: false, error: limitCheck.error }
+    }
+  } catch (e) {
+    console.error('[prepareCheckout] monthly limit check failed:', e)
+    try {
+      const feeConfig = await loadRechargeProcessingFeeConfig()
+      if (getMonthlyRechargeLimitEur(feeConfig) != null) {
+        return {
+          ok: false,
+          error: 'Unable to verify monthly recharge limit. Please try again shortly.',
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   const transactionId = await createPendingTransaction({
     ...normalizedInput,
     operatorName: operatorInfo.name,
@@ -382,6 +493,31 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
   const plan = await dbGetInternalPlan(normalizedInput.planId)
   const countryCode = plan?.country_iso3 ?? normalizedInput.countryId ?? ''
   const operatorCode = plan?.operator_ref ?? normalizedInput.operatorId ?? ''
+
+  let resolvedPlanName =
+    (typeof plan?.uti_plan_name === 'string' && plan.uti_plan_name.trim()) ||
+    (typeof plan?.name === 'string' && plan.name.trim()) ||
+    ''
+  if (!resolvedPlanName && normalizedInput.systemPlanId) {
+    const sysRes = await supabaseRest(
+      `system_plans?id=eq.${enc(normalizedInput.systemPlanId)}&select=system_plan_name&limit=1`,
+      { cache: 'no-store' },
+    )
+    if (sysRes.ok) {
+      const rows = (await sysRes.json()) as Array<{ system_plan_name?: string | null }>
+      resolvedPlanName = rows[0]?.system_plan_name?.trim() || ''
+    }
+  }
+  if (!resolvedPlanName) {
+    const sysByInternal = await supabaseRest(
+      `system_plans?internal_plan_id=eq.${enc(normalizedInput.planId)}&select=system_plan_name&limit=1`,
+      { cache: 'no-store' },
+    )
+    if (sysByInternal.ok) {
+      const rows = (await sysByInternal.json()) as Array<{ system_plan_name?: string | null }>
+      resolvedPlanName = rows[0]?.system_plan_name?.trim() || ''
+    }
+  }
 
   if (!routingResult.selected) {
     const errMsg = 'No active provider available for this transaction'
@@ -499,14 +635,19 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
     countryId: normalizedInput.countryId,
     amount: input.amount,
     currency: input.currency,
+    planPrice: input.planPrice,
+    planName: resolvedPlanName || undefined,
     userId: input.userId,
     rechargeAttemptId: attempt.id,
     serviceFee: input.serviceFee,
+    platformFee: input.platformFee,
+    paymentGatewayFee: input.paymentGatewayFee,
     tax: input.tax,
     selectedProviderId: selected.providerId,
     selectedProviderName: provider?.name || selected.providerName,
     selectedProviderCost: selected.provider_wholesale_amount ?? selected.price,
     selectedProviderCurrency: selected.provider_wholesale_currency ?? selected.currency,
+    routingType: routingResult.routingType,
   })
 
   const txnMetaRes = await supabaseRest(`transactions?id=eq.${enc(transactionId)}&select=metadata&limit=1`, {
@@ -583,6 +724,21 @@ export async function linkPaymentOrderToCheckoutSession(input: {
   routingResult?: unknown
   lcrResult?: unknown
   providerSelectionTimestamp?: string
+  /** Final charged amount in payment currency (summary page grand total). */
+  totalPayable?: number
+  paymentCurrency?: string
+  /** Checkout FX + fee snapshot from summary page (rates at recharge time). */
+  checkoutPricing?: {
+    platformFee?: number
+    paymentGatewayFee?: number
+    tax?: number
+    planPrice?: number
+    planPriceCurrency?: string
+    totalInRechargeCurrency?: number
+    fxRate?: number | null
+    fxFromCurrency?: string
+    fxToCurrency?: string
+  }
 }) {
   await supabaseRest(`payment_orders?id=eq.${enc(input.paymentOrderId)}`, {
     method: 'PATCH',
@@ -602,4 +758,137 @@ export async function linkPaymentOrderToCheckoutSession(input: {
       provider_selection_timestamp: input.providerSelectionTimestamp ?? new Date().toISOString(),
     }),
   })
+
+  if (
+    input.transactionId &&
+    input.totalPayable != null &&
+    Number.isFinite(input.totalPayable) &&
+    input.paymentCurrency
+  ) {
+    await persistRechargeOrderPaymentTotals({
+      transactionId: input.transactionId,
+      totalPayable: input.totalPayable,
+      paymentCurrency: input.paymentCurrency,
+      checkoutPricing: input.checkoutPricing,
+    })
+  }
+}
+
+/** Update final customer charge on the linked recharge order (summary-page totals). */
+export async function persistRechargeOrderPaymentTotals(input: {
+  transactionId: string
+  totalPayable: number
+  paymentCurrency: string
+  checkoutPricing?: {
+    platformFee?: number
+    paymentGatewayFee?: number
+    tax?: number
+    planPrice?: number
+    planPriceCurrency?: string
+    totalInRechargeCurrency?: number
+    fxRate?: number | null
+    fxFromCurrency?: string
+    fxToCurrency?: string
+  }
+}) {
+  const currency = input.paymentCurrency.trim().toUpperCase()
+  const pricing = input.checkoutPricing ?? {}
+  const orderRes = await supabaseRest(
+    `recharge_orders?transaction_id=eq.${enc(input.transactionId)}&select=id,metadata,send_currency,plan_price_currency&limit=1`,
+    { cache: 'no-store' },
+  )
+  if (!orderRes.ok) return
+  const rows = (await orderRes.json()) as Array<{
+    id: string
+    metadata?: Record<string, unknown>
+    send_currency?: string | null
+    plan_price_currency?: string | null
+  }>
+  const order = rows[0]
+  if (!order?.id) return
+
+  const fromCurrency = (
+    pricing.fxFromCurrency ||
+    pricing.planPriceCurrency ||
+    order.plan_price_currency ||
+    order.send_currency ||
+    currency
+  )
+    .toString()
+    .trim()
+    .toUpperCase()
+  const toCurrency = (pricing.fxToCurrency || currency).toString().trim().toUpperCase()
+  const fxRate =
+    pricing.fxRate != null && Number.isFinite(pricing.fxRate)
+      ? pricing.fxRate
+      : fromCurrency === toCurrency
+        ? 1
+        : null
+
+  const platformFee =
+    pricing.platformFee != null && Number.isFinite(pricing.platformFee) ? pricing.platformFee : undefined
+  const paymentGatewayFee =
+    pricing.paymentGatewayFee != null && Number.isFinite(pricing.paymentGatewayFee)
+      ? pricing.paymentGatewayFee
+      : undefined
+  const serviceFee =
+    platformFee != null || paymentGatewayFee != null
+      ? (platformFee ?? 0) + (paymentGatewayFee ?? 0)
+      : undefined
+
+  const nextMeta: Record<string, unknown> = {
+    ...(order.metadata ?? {}),
+    total_payable: input.totalPayable,
+    payment_currency: currency,
+    user_pay_amount: input.totalPayable,
+  }
+  if (platformFee != null) nextMeta.platform_fee = platformFee
+  if (paymentGatewayFee != null) nextMeta.payment_gateway_fee = paymentGatewayFee
+  if (serviceFee != null) {
+    nextMeta.service_fee = serviceFee
+    nextMeta.service_fee_currency = fromCurrency
+  }
+  if (pricing.tax != null) nextMeta.tax = pricing.tax
+  if (pricing.planPrice != null) nextMeta.plan_price = pricing.planPrice
+  if (pricing.planPriceCurrency) nextMeta.plan_price_currency = pricing.planPriceCurrency
+  if (pricing.totalInRechargeCurrency != null) {
+    nextMeta.total_in_recharge_currency = pricing.totalInRechargeCurrency
+  }
+  if (fxRate != null) {
+    nextMeta.fx_rate = fxRate
+    nextMeta.fx_from_currency = fromCurrency
+    nextMeta.fx_to_currency = toCurrency
+    nextMeta.checkout_fx_rate = fxRate
+  }
+
+  const columnPatch: Record<string, unknown> = {
+    total_payable: input.totalPayable,
+    payment_currency: currency,
+    metadata: nextMeta,
+  }
+  if (platformFee != null) columnPatch.platform_fee = platformFee
+  if (paymentGatewayFee != null) columnPatch.payment_gateway_fee = paymentGatewayFee
+  if (serviceFee != null) columnPatch.service_fee = serviceFee
+  if (pricing.tax != null) columnPatch.tax = pricing.tax
+  if (pricing.planPrice != null) columnPatch.plan_price = pricing.planPrice
+  if (pricing.planPriceCurrency) columnPatch.plan_price_currency = pricing.planPriceCurrency
+  if (fxRate != null) {
+    columnPatch.fx_rate = fxRate
+    columnPatch.fx_from_currency = fromCurrency
+    columnPatch.fx_to_currency = toCurrency
+  }
+
+  const withColumns = await supabaseRest(`recharge_orders?id=eq.${enc(order.id)}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify(columnPatch),
+  })
+
+  if (!withColumns.ok) {
+    await supabaseRest(`recharge_orders?id=eq.${enc(order.id)}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ metadata: nextMeta }),
+    })
+  }
 }

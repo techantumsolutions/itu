@@ -65,10 +65,21 @@ type AdminTransaction = {
     planPrice: number
     planPriceCurrency: string
     serviceFee: number
+    serviceFeeCurrency?: string
+    platformFee?: number
+    paymentGatewayFee?: number
     tax: number
+    taxCurrency?: string
     totalPayable: number
     paymentCurrency: string
     paymentMethod: string
+    providerCost?: number | null
+    providerCostCurrency?: string | null
+    routingType?: string | null
+    fxRate?: number | null
+    fxFromCurrency?: string | null
+    fxToCurrency?: string | null
+    totalInRechargeCurrency?: number | null
   } | null
   user?: {
     name: string
@@ -94,6 +105,7 @@ type TransactionsSummary = {
   total_margin: number
   gross_revenue?: number
   refunds?: number
+  payment_gateway_fees?: number
   provider_cost?: number
   itu_revenue?: number
   reporting_currency: string
@@ -112,7 +124,7 @@ export default function AdminTransactionsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
-  const [dateFilter, setDateFilter] = useState<string>('all')
+  const [dateFilter, setDateFilter] = useState<string>('today')
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(25)
   const [loading, setLoading] = useState(true)
@@ -153,7 +165,7 @@ export default function AdminTransactionsPage() {
     params.set('page', String(page))
     params.set('pageSize', String(pageSize))
     if (statusFilter !== 'all') params.set('status', statusFilter)
-    if (dateFilter !== 'all') params.set('date', dateFilter)
+    params.set('date', dateFilter)
     if (debouncedSearch) params.set('search', debouncedSearch)
 
     setLoading(true)
@@ -305,13 +317,13 @@ export default function AdminTransactionsPage() {
       id: order.id,
       createdAt: order.createdAt,
       status: getDisplayStatus(order) as any,
-      amount: order.amount,
-      currency: order.currency,
+      amount: summary?.totalPayable ?? order.amount,
+      currency: summary?.paymentCurrency ?? order.currency,
       customerName: getCustomerName(order),
       customerEmail: getCustomerEmail(order),
       customerPhone: getCustomerPhone(order),
       customerCountry: getCustomerCountry(order),
-      destinationCountry: String(metadata.countryName ?? metadata.country ?? '—'),
+      destinationCountry: String(metadata.countryName ?? metadata.country ?? metadata.country_id ?? '—'),
       networkOperator: order.rechargeDetails?.operatorName || order.metadata?.operator_id || order.metadata?.operator || String(order.metadata?.carrierName ?? '—'),
       mobileNumber: getDestinationPhoneNumber(order),
       planId: summary?.planId,
@@ -319,7 +331,11 @@ export default function AdminTransactionsPage() {
       planPrice: summary?.planPrice,
       planPriceCurrency: summary?.planPriceCurrency,
       serviceFee: summary?.serviceFee,
+      serviceFeeCurrency: summary?.serviceFeeCurrency ?? summary?.planPriceCurrency,
+      platformFee: summary?.platformFee,
+      paymentGatewayFee: summary?.paymentGatewayFee,
       tax: summary?.tax,
+      taxCurrency: summary?.taxCurrency ?? summary?.planPriceCurrency,
       totalPayable: summary?.totalPayable ?? order.amount,
       paymentCurrency: summary?.paymentCurrency ?? order.currency,
       paymentMethod: summary?.paymentMethod ?? String(metadata.payment_gateway ?? '—'),
@@ -327,7 +343,18 @@ export default function AdminTransactionsPage() {
       paymentReferenceId: String(metadata.razorpay_payment_id ?? metadata.providerRef ?? order.id),
       gatewayResponse: String(metadata.gatewayResponse ?? ((metadata.razorpay_payment_id || metadata.payment_order_id || order.status === 'completed') ? 'Approved' : 'Pending')),
       providerUsed: getProviderName(order),
-      routingType: order.routingType && order.routingType !== '—' ? order.routingType : resolveRoutingTypeLabel(metadata),
+      providerCost: summary?.providerCost ?? null,
+      providerCostCurrency: summary?.providerCostCurrency ?? null,
+      routingType:
+        (order.routingType && order.routingType !== '—'
+          ? order.routingType
+          : summary?.routingType
+            ? resolveRoutingTypeLabel({ routing_type: summary.routingType })
+            : resolveRoutingTypeLabel(metadata)),
+      fxRate: summary?.fxRate ?? null,
+      fxFromCurrency: summary?.fxFromCurrency ?? null,
+      fxToCurrency: summary?.fxToCurrency ?? null,
+      totalInRechargeCurrency: summary?.totalInRechargeCurrency ?? null,
       apiResponseStatus: getDisplayStatus(order) === 'completed' ? 'SUCCESS' : getDisplayStatus(order) === 'failed' ? 'FAILED' : 'PENDING',
       errorMessage: typeof metadata.errorMessage === 'string' ? metadata.errorMessage : undefined,
       failureReason: String(metadata.errorMessage ?? (order.status === 'failed' ? 'Provider unavailable' : '')),
@@ -369,7 +396,7 @@ export default function AdminTransactionsPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Total Orders</CardDescription>
@@ -384,11 +411,21 @@ export default function AdminTransactionsPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>ITU Revenue</CardDescription>
+            <CardDescription>Gross Revenue</CardDescription>
+            <CardTitle className="text-2xl">
+              {formatCurrency(summary.gross_revenue ?? 0, reportingCurrency)}
+            </CardTitle>
+          </CardHeader>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>ITU Profit</CardDescription>
             <CardTitle className="text-2xl">
               {formatCurrency(summary.itu_revenue ?? summary.total_margin, reportingCurrency)}
             </CardTitle>
-            <p className="text-xs text-muted-foreground pt-1">Gross − Refunds − Provider Cost</p>
+            <p className="text-xs text-muted-foreground pt-1">
+              Gross − Refund − Payment Gateway − Provider Cost
+            </p>
           </CardHeader>
         </Card>
         <Card>

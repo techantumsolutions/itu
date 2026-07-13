@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { useAuthStore } from '@/lib/stores'
@@ -25,6 +26,19 @@ import {
 } from '@/components/ui/select'
 import { apiCreateTicket } from '@/lib/tickets/client-api'
 import { toast } from 'sonner'
+import {
+  SUPPORT_BOT_CATEGORIES,
+  type SupportBotCategory,
+} from '@/lib/support-bot/qa'
+
+const CATEGORY_LABELS: Record<SupportBotCategory, string> = {
+  general: 'General',
+  transaction: 'Transactions',
+  payment: 'Payments & refunds',
+  recharge: 'Recharge',
+  account: 'Account',
+  other: 'Other',
+}
 
 type Props = {
   open: boolean
@@ -34,7 +48,14 @@ type Props = {
   onSuccess?: () => void
 }
 
-export function CreateTicketDialog({ open, onOpenChange, preselectedTxId, lockTransaction = false, onSuccess }: Props) {
+export function CreateTicketDialog({
+  open,
+  onOpenChange,
+  preselectedTxId,
+  lockTransaction = false,
+  onSuccess,
+}: Props) {
+  const router = useRouter()
   const user = useAuthStore((s) => s.user)
   const headers = useMemo(
     () =>
@@ -44,6 +65,7 @@ export function CreateTicketDialog({ open, onOpenChange, preselectedTxId, lockTr
     [user],
   )
 
+  const [category, setCategory] = useState<SupportBotCategory>('general')
   const [subject, setSubject] = useState('')
   const [description, setDescription] = useState('')
   const [attachmentUrl, setAttachmentUrl] = useState('')
@@ -57,6 +79,7 @@ export function CreateTicketDialog({ open, onOpenChange, preselectedTxId, lockTr
 
   useEffect(() => {
     if (open) {
+      setCategory(preselectedTxId ? 'transaction' : 'general')
       setSubject('')
       setDescription('')
       setAttachmentUrl('')
@@ -147,13 +170,17 @@ export function CreateTicketDialog({ open, onOpenChange, preselectedTxId, lockTr
     if (!headers) return
     setSubmitting(true)
     try {
-      const tx = selectedTxId && selectedTxId !== 'none' ? transactions.find((t) => t.id === selectedTxId) : null
-      await apiCreateTicket(headers, {
+      const tx =
+        selectedTxId && selectedTxId !== 'none'
+          ? transactions.find((t) => t.id === selectedTxId)
+          : null
+      const ticket = await apiCreateTicket(headers, {
         subject,
         description,
         attachmentUrl,
         transactionId: tx?.id || undefined,
         transactionCreatedAt: tx?.createdAt || undefined,
+        category,
       })
       toast.success('Ticket created')
       onOpenChange(false)
@@ -162,8 +189,9 @@ export function CreateTicketDialog({ open, onOpenChange, preselectedTxId, lockTr
       setAttachmentUrl('')
       setAttachmentName('')
       setSelectedTxId('')
-      if (onSuccess) {
-        onSuccess()
+      if (onSuccess) onSuccess()
+      if (ticket?.id) {
+        router.push(`/account/tickets/${ticket.id}`)
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to create ticket')
@@ -176,7 +204,7 @@ export function CreateTicketDialog({ open, onOpenChange, preselectedTxId, lockTr
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <form onSubmit={onCreate}>
           <DialogHeader>
             <DialogTitle>New support ticket</DialogTitle>
@@ -185,6 +213,24 @@ export function CreateTicketDialog({ open, onOpenChange, preselectedTxId, lockTr
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="ticket-category">Category</Label>
+              <Select
+                value={category}
+                onValueChange={(v) => setCategory(v as SupportBotCategory)}
+              >
+                <SelectTrigger id="ticket-category">
+                  <SelectValue placeholder="Select a category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SUPPORT_BOT_CATEGORIES.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {CATEGORY_LABELS[c]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="grid gap-2">
               <Label htmlFor="ticket-subject">Subject</Label>
               <Input
@@ -228,26 +274,41 @@ export function CreateTicketDialog({ open, onOpenChange, preselectedTxId, lockTr
                   ✓ Ready: {attachmentName}
                 </p>
               )}
-              <p className="text-[11px] text-muted-foreground">Images (PNG, JPG, GIF, WEBP) and PDFs are supported.</p>
+              <p className="text-[11px] text-muted-foreground">
+                Images (PNG, JPG, GIF, WEBP) and PDFs are supported.
+              </p>
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="ticket-tx">Attach Recent Transaction {lockTransaction ? '' : '(Optional)'}</Label>
+              <Label htmlFor="ticket-tx">
+                Attach Recent Transaction {lockTransaction ? '' : '(Optional)'}
+              </Label>
               {loadingTransactions ? (
                 <p className="text-xs text-muted-foreground flex items-center gap-1.5 animate-pulse">
                   <Loader2 className="size-3 animate-spin" /> Loading transactions...
                 </p>
               ) : transactions.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic">No transactions found in the last 7 days.</p>
+                <p className="text-xs text-muted-foreground italic">
+                  No transactions found in the last 7 days.
+                </p>
               ) : (
-                <Select disabled={lockTransaction} value={selectedTxId} onValueChange={setSelectedTxId}>
-                  <SelectTrigger id="ticket-tx" className={lockTransaction ? 'bg-muted cursor-not-allowed opacity-80' : ''}>
+                <Select
+                  disabled={lockTransaction}
+                  value={selectedTxId}
+                  onValueChange={setSelectedTxId}
+                >
+                  <SelectTrigger
+                    id="ticket-tx"
+                    className={lockTransaction ? 'bg-muted cursor-not-allowed opacity-80' : ''}
+                  >
                     <SelectValue placeholder="Select a transaction" />
                   </SelectTrigger>
                   <SelectContent>
                     {!lockTransaction && <SelectItem value="none">None</SelectItem>}
                     {transactions.map((tx) => (
                       <SelectItem key={tx.id} value={tx.id}>
-                        {tx.metadata?.carrierName || tx.description || tx.type} • {tx.amount.toFixed(2)} {tx.currency} ({tx.createdAt ? format(new Date(tx.createdAt), 'MMM d') : 'Recent'})
+                        {tx.metadata?.carrierName || tx.description || tx.type} •{' '}
+                        {tx.amount.toFixed(2)} {tx.currency} (
+                        {tx.createdAt ? format(new Date(tx.createdAt), 'MMM d') : 'Recent'})
                       </SelectItem>
                     ))}
                   </SelectContent>

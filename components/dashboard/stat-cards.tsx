@@ -68,22 +68,27 @@ export function StatCards({ summary }: StatCardsProps) {
   const formatNumber = (value: number) => new Intl.NumberFormat('en-US').format(value)
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
+    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
       <StatCard
-        title="ITU Revenue"
+        title="Gross Revenue"
+        value={formatCurrency(summary.gross_revenue ?? 0)}
+        subtitle="Completed recharge volume"
+      />
+      <StatCard
+        title="ITU Profit"
         value={formatCurrency(summary.itu_revenue ?? summary.total_margin)}
-        subtitle="Gross − Refunds − Provider Cost"
+        subtitle="Gross − Refund − Payment Gateway − Provider Cost"
+      />
+      <StatCard
+        title="Total Recharges"
+        value={formatNumber(summary.total_orders)}
+        subtitle={`${formatNumber(summary.completed_orders)} success · ${formatNumber(summary.failed_orders)} failed · ${formatNumber(summary.pending_orders)} pending`}
       />
       <CatalogStatCard
         operators={summary.total_operators}
         plans={summary.total_plans}
         countries={summary.total_countries}
         syncedAt={summary.catalog_synced_at}
-      />
-      <StatCard
-        title="Total Recharges"
-        value={formatNumber(summary.total_orders)}
-        subtitle={`${formatNumber(summary.completed_orders)} success · ${formatNumber(summary.failed_orders)} failed · ${formatNumber(summary.pending_orders)} pending`}
       />
       <StatCard
         title="Total Customers"

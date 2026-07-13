@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { User, Bell, Shield, Save, Settings, ArrowRight, LayoutDashboard, Clock, Eye, EyeOff, Lock, Camera, Loader2, Mail, Phone, CheckCircle2, Check, ChevronDown, History, Search, RefreshCw, FileJson, Receipt } from "lucide-react"
+import { User, Bell, Shield, Save, Settings, ArrowRight, LayoutDashboard, Clock, Eye, EyeOff, Lock, Camera, Loader2, Mail, Phone, CheckCircle2, Check, ChevronDown, History, Search, RefreshCw, FileJson, Receipt, Plus, Trash2, MessageSquareText } from "lucide-react"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,6 +25,15 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { validatePassword, PASSWORD_API_ERROR_MESSAGE } from '@/lib/validators/password'
 import { PasswordRequirementsHint } from '@/components/password-requirements-hint'
+import { TrustedDevicesPanel } from '@/components/admin/trusted-devices-panel'
+import { SupportBotQaPanel } from '@/components/admin/support-bot-qa-panel'
+import {
+  createEmptyFeeRange,
+  DEFAULT_RECHARGE_PROCESSING_FEE_CONFIG,
+  formatRangeLabel,
+  totalRechargeProcessingFeePercent,
+  type RechargeProcessingFeeRange,
+} from '@/lib/settings/recharge-processing-fees'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
@@ -99,11 +108,9 @@ function SettingsContent() {
   const [isSaving, setIsSaving] = useState(false)
   const [activeTab, setActiveTab] = useState(searchParams.get("tab") || "profile")
   const [focusedPasswordField, setFocusedPasswordField] = useState<string | null>(null)
-  const [rechargeFees, setRechargeFees] = useState({
-    taxPercent: 0,
-    platformFeePercent: 2,
-    paymentGatewayFeePercent: 0,
-  })
+  const [rechargeFeeRanges, setRechargeFeeRanges] = useState<RechargeProcessingFeeRange[]>(
+    DEFAULT_RECHARGE_PROCESSING_FEE_CONFIG.ranges.map((r) => ({ ...r })),
+  )
   const [loadingRechargeFees, setLoadingRechargeFees] = useState(false)
   const [savingRechargeFees, setSavingRechargeFees] = useState(false)
 
@@ -160,11 +167,21 @@ function SettingsContent() {
         const res = await fetch('/api/admin/settings/recharge-fees')
         if (res.ok) {
           const data = await res.json()
-          setRechargeFees({
-            taxPercent: Number(data.taxPercent) || 0,
-            platformFeePercent: Number(data.platformFeePercent) || 0,
-            paymentGatewayFeePercent: Number(data.paymentGatewayFeePercent) || 0,
-          })
+          const ranges = Array.isArray(data.ranges) ? data.ranges : []
+          if (ranges.length > 0) {
+            setRechargeFeeRanges(
+              ranges.map((r: RechargeProcessingFeeRange) => ({
+                id: r.id,
+                minAmount: Number(r.minAmount) || 0,
+                maxAmount: r.maxAmount == null ? null : Number(r.maxAmount),
+                taxPercent: Number(r.taxPercent) || 0,
+                platformFeePercent: Number(r.platformFeePercent) || 0,
+                paymentGatewayFeePercent: Number(r.paymentGatewayFeePercent) || 0,
+              })),
+            )
+          } else {
+            setRechargeFeeRanges(DEFAULT_RECHARGE_PROCESSING_FEE_CONFIG.ranges.map((r) => ({ ...r })))
+          }
         } else {
           toast.error('Failed to load recharge processing fees')
         }
@@ -187,11 +204,14 @@ function SettingsContent() {
       const res = await fetch('/api/admin/settings/recharge-fees', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rechargeFees),
+        body: JSON.stringify({ ranges: rechargeFeeRanges }),
       })
       const data = await res.json().catch(() => ({}))
       if (res.ok && data.ok) {
-        toast.success('Recharge processing fees saved')
+        if (Array.isArray(data.ranges)) {
+          setRechargeFeeRanges(data.ranges)
+        }
+        toast.success('Recharge processing fee ranges saved')
       } else {
         toast.error(data.error ?? 'Failed to save recharge processing fees')
       }
@@ -200,6 +220,21 @@ function SettingsContent() {
     } finally {
       setSavingRechargeFees(false)
     }
+  }
+
+  const updateFeeRange = (id: string, patch: Partial<RechargeProcessingFeeRange>) => {
+    setRechargeFeeRanges((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)))
+  }
+
+  const addFeeRange = () => {
+    setRechargeFeeRanges((prev) => {
+      const last = prev[prev.length - 1]
+      return [...prev, createEmptyFeeRange(last?.maxAmount ?? last?.minAmount ?? 0)]
+    })
+  }
+
+  const removeFeeRange = (id: string) => {
+    setRechargeFeeRanges((prev) => (prev.length <= 1 ? prev : prev.filter((r) => r.id !== id)))
   }
 
   useEffect(() => {
@@ -668,7 +703,7 @@ function SettingsContent() {
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className={cn("grid w-full", canEditSettings ? "grid-cols-5" : "grid-cols-4")}>
+        <TabsList className={cn("grid w-full", canEditSettings ? "grid-cols-6" : "grid-cols-5")}>
           <TabsTrigger value="profile" className="gap-2">
             <User className="h-4 w-4" />
             <span className="hidden sm:inline">Profile</span>
@@ -688,6 +723,10 @@ function SettingsContent() {
           <TabsTrigger value="system" className="gap-2">
             <Settings className="h-4 w-4" />
             <span className="hidden sm:inline">System</span>
+          </TabsTrigger>
+          <TabsTrigger value="support-bot" className="gap-2">
+            <MessageSquareText className="h-4 w-4" />
+            <span className="hidden sm:inline">Support Bot</span>
           </TabsTrigger>
           <TabsTrigger value="activity" className="gap-2">
             <History className="h-4 w-4" />
@@ -1063,6 +1102,7 @@ function SettingsContent() {
 
               <Separator />
 
+              <TrustedDevicesPanel />
 
             </CardContent>
           </Card>
@@ -1209,7 +1249,9 @@ function SettingsContent() {
                   Recharge Processing Fees
                 </CardTitle>
                 <CardDescription>
-                  Configure tax, platform fee, and payment gateway fee as percentages of the recharge amount.
+                  Range min/max amounts are always in <strong>EUR</strong>. At checkout, the plan
+                  price is converted to EUR to pick the matching band. The highest finite max across
+                  ranges is the user&apos;s rolling 30-day recharge limit (EUR).
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1219,82 +1261,157 @@ function SettingsContent() {
                     Loading fee settings…
                   </div>
                 ) : (
-                  <div className="grid gap-4 md:grid-cols-3">
-                    <div className="space-y-2">
-                      <Label htmlFor="recharge-tax">Tax (%)</Label>
-                      <Input
-                        id="recharge-tax"
-                        type="number"
-                        min={0}
-                        max={100}
-                        step="0.01"
-                        value={rechargeFees.taxPercent}
-                        onChange={(e) =>
-                          setRechargeFees((prev) => ({
-                            ...prev,
-                            taxPercent: Number(e.target.value) || 0,
-                          }))
-                        }
-                        readOnly={!canEditSettings}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="recharge-platform-fee">Platform Fee (%)</Label>
-                      <Input
-                        id="recharge-platform-fee"
-                        type="number"
-                        min={0}
-                        max={100}
-                        step="0.01"
-                        value={rechargeFees.platformFeePercent}
-                        onChange={(e) =>
-                          setRechargeFees((prev) => ({
-                            ...prev,
-                            platformFeePercent: Number(e.target.value) || 0,
-                          }))
-                        }
-                        readOnly={!canEditSettings}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="recharge-gateway-fee">Payment Gateway Fee (%)</Label>
-                      <Input
-                        id="recharge-gateway-fee"
-                        type="number"
-                        min={0}
-                        max={100}
-                        step="0.01"
-                        value={rechargeFees.paymentGatewayFeePercent}
-                        onChange={(e) =>
-                          setRechargeFees((prev) => ({
-                            ...prev,
-                            paymentGatewayFeePercent: Number(e.target.value) || 0,
-                          }))
-                        }
-                        readOnly={!canEditSettings}
-                      />
-                    </div>
+                  <div className="space-y-4">
+                    {rechargeFeeRanges.map((range, index) => {
+                      const combined = totalRechargeProcessingFeePercent(range)
+                      return (
+                        <div
+                          key={range.id}
+                          className="rounded-xl border border-border/60 p-4 space-y-4 bg-muted/20"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-medium">Range {index + 1}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatRangeLabel(range)} · combined {combined.toFixed(2)}%
+                              </p>
+                            </div>
+                            {canEditSettings && rechargeFeeRanges.length > 1 ? (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => removeFeeRange(range.id)}
+                              >
+                                <Trash2 className="size-4 mr-1" />
+                                Remove
+                              </Button>
+                            ) : null}
+                          </div>
+
+                          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+                            <div className="space-y-2">
+                              <Label htmlFor={`fee-min-${range.id}`}>Min amount (EUR)</Label>
+                              <Input
+                                id={`fee-min-${range.id}`}
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                value={range.minAmount}
+                                onChange={(e) =>
+                                  updateFeeRange(range.id, {
+                                    minAmount: Number(e.target.value) || 0,
+                                  })
+                                }
+                                readOnly={!canEditSettings}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor={`fee-max-${range.id}`}>
+                                Max amount (EUR){' '}
+                                <span className="text-muted-foreground font-normal">(blank = no limit)</span>
+                              </Label>
+                              <Input
+                                id={`fee-max-${range.id}`}
+                                type="number"
+                                min={0}
+                                step="0.01"
+                                placeholder="No upper limit"
+                                value={range.maxAmount ?? ''}
+                                onChange={(e) => {
+                                  const raw = e.target.value.trim()
+                                  updateFeeRange(range.id, {
+                                    maxAmount: raw === '' ? null : Number(raw) || 0,
+                                  })
+                                }}
+                                readOnly={!canEditSettings}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor={`fee-tax-${range.id}`}>Tax (%)</Label>
+                              <Input
+                                id={`fee-tax-${range.id}`}
+                                type="number"
+                                min={0}
+                                max={100}
+                                step="0.01"
+                                value={range.taxPercent}
+                                onChange={(e) =>
+                                  updateFeeRange(range.id, {
+                                    taxPercent: Number(e.target.value) || 0,
+                                  })
+                                }
+                                readOnly={!canEditSettings}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor={`fee-platform-${range.id}`}>Platform Fee (%)</Label>
+                              <Input
+                                id={`fee-platform-${range.id}`}
+                                type="number"
+                                min={0}
+                                max={100}
+                                step="0.01"
+                                value={range.platformFeePercent}
+                                onChange={(e) =>
+                                  updateFeeRange(range.id, {
+                                    platformFeePercent: Number(e.target.value) || 0,
+                                  })
+                                }
+                                readOnly={!canEditSettings}
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor={`fee-gateway-${range.id}`}>Gateway Fee (%)</Label>
+                              <Input
+                                id={`fee-gateway-${range.id}`}
+                                type="number"
+                                min={0}
+                                max={100}
+                                step="0.01"
+                                value={range.paymentGatewayFeePercent}
+                                onChange={(e) =>
+                                  updateFeeRange(range.id, {
+                                    paymentGatewayFeePercent: Number(e.target.value) || 0,
+                                  })
+                                }
+                                readOnly={!canEditSettings}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+
+                    {canEditSettings ? (
+                      <Button type="button" variant="outline" size="sm" onClick={addFeeRange}>
+                        <Plus className="size-4 mr-2" />
+                        Add price range
+                      </Button>
+                    ) : null}
                   </div>
                 )}
                 <p className="text-xs text-muted-foreground">
-                  Combined processing fee rate:{' '}
-                  <span className="font-semibold text-foreground">
-                    {(
-                      rechargeFees.taxPercent +
-                      rechargeFees.platformFeePercent +
-                      rechargeFees.paymentGatewayFeePercent
-                    ).toFixed(2)}
-                    %
-                  </span>
-                  {' — '}
-                  e.g. on a ₹100 recharge, fees would be ₹
-                  {((100 *
-                    (rechargeFees.taxPercent +
-                      rechargeFees.platformFeePercent +
-                      rechargeFees.paymentGatewayFeePercent)) /
-                    100).toFixed(2)}
-                  {!canEditSettings && ' — you do not have permission to edit these values.'}
+                  Ranges are inclusive in EUR and must not overlap. Example: 0–100 EUR, 100.01–500 EUR,
+                  500.01+ EUR. Leave max blank only for an open upper band. The highest finite max (e.g.
+                  €500) is the rolling 30-day recharge cap per user — after that limit, further
+                  recharges are blocked until older usage falls outside the 30-day window.
+                  {!canEditSettings && ' You do not have permission to edit these values.'}
                 </p>
+                {(() => {
+                  const finiteMaxes = rechargeFeeRanges
+                    .map((r) => r.maxAmount)
+                    .filter((m): m is number => m != null && Number.isFinite(m))
+                  if (finiteMaxes.length === 0) return null
+                  const cap = Math.max(...finiteMaxes)
+                  return (
+                    <p className="text-sm font-medium">
+                      Current 30-day recharge limit:{' '}
+                      <span className="text-foreground">€{cap.toFixed(2)}</span>
+                    </p>
+                  )
+                })()}
               </CardContent>
               {canEditSettings ? (
                 <CardFooter>
@@ -1311,7 +1428,7 @@ function SettingsContent() {
                     ) : (
                       <>
                         <Save className="mr-2 size-4" />
-                        Save Fees
+                        Save Fee Ranges
                       </>
                     )}
                   </Button>
@@ -1319,6 +1436,10 @@ function SettingsContent() {
               ) : null}
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="support-bot" className="space-y-6">
+          <SupportBotQaPanel canEdit={canEditSettings} />
         </TabsContent>
 
         <TabsContent value="activity">

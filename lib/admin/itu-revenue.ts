@@ -1,17 +1,19 @@
 /**
- * Canonical ITU Revenue calculation — same source & rules as Admin Dashboard.
+ * Canonical ITU Profit calculation — same source & rules as Admin Dashboard.
  *
  * Source: recharge_orders + embedded transactions(amount,currency,status,metadata)
  * Gross:   transactions.amount when recharge_orders.status === 'completed'
  * Refunds: recharge/txn status in refunded|cancelled
+ * Gateway: 2% of completed gross (non-wallet)
  * Cost:    transactions.metadata (selected_provider_cost / LCR / routing) → routing_logs fallback
- * ITU Revenue = Gross − Refunds − Provider Cost (EUR)
+ * ITU Profit = Gross − Refunds − Payment Gateway − Provider Cost (EUR)
  */
 
 import {
   amountToReporting,
   computeItuRevenue,
   computeMargin,
+  computePaymentGatewayFee,
   extractProviderCost,
   fetchRoutingCosts,
   loadMarginRateContext,
@@ -44,13 +46,16 @@ export type ItuAmountBreakdown = {
   paidCurrency: string
   isCompleted: boolean
   isRefunded: boolean
+  isWalletPayment: boolean
   providerCost: number | null
   providerCurrency: string | null
   grossReporting: number
   costReporting: number
   refundReporting: number
+  gatewayFeeReporting: number
   marginNative: number
   marginReporting: number
+  /** Per-row contribution to ITU Profit */
   ituContribution: number
 }
 
@@ -64,6 +69,16 @@ export function unwrapTransaction(row: {
 }): ItuTxnEmbed | null {
   if (!row.transactions) return null
   return Array.isArray(row.transactions) ? row.transactions[0] ?? null : row.transactions
+}
+
+function isWalletPaymentFromMeta(
+  txnMeta: Record<string, unknown> | null | undefined,
+  rowMeta?: Record<string, unknown> | null,
+): boolean {
+  const method = String(
+    txnMeta?.payment_method ?? rowMeta?.payment_method ?? txnMeta?.gateway ?? rowMeta?.gateway ?? '',
+  ).toLowerCase()
+  return method === 'wallet'
 }
 
 export function resolveProviderCostForRow(
@@ -128,12 +143,14 @@ export function resolveItuAmountsForRow(
   // Dashboard gross source: transactions.amount (fallback to send_amount)
   const paidAmount = txn ? numberFrom(txn.amount) : numberFrom(row.send_amount)
   const paidCurrency = normalizeCurrency(txn?.currency ?? row.send_currency)
+  const isWalletPayment = isWalletPaymentFromMeta(txn?.metadata)
 
   const { cost: providerCost, currency: providerCurrency } = resolveProviderCostForRow(row, routingCosts)
 
   let grossReporting = 0
   let costReporting = 0
   let refundReporting = 0
+  let gatewayFeeReporting = 0
   let marginNative = 0
   let marginReporting = 0
 
@@ -155,6 +172,7 @@ export function resolveItuAmountsForRow(
       rateMap,
       fallbackRates,
     )
+    gatewayFeeReporting = computePaymentGatewayFee(grossReporting, isWalletPayment)
     if (providerCost != null && providerCost > 0) {
       costReporting = amountToReporting(
         providerCost,
@@ -187,17 +205,20 @@ export function resolveItuAmountsForRow(
     paidCurrency,
     isCompleted,
     isRefunded,
+    isWalletPayment,
     providerCost,
     providerCurrency,
     grossReporting,
     costReporting,
     refundReporting,
+    gatewayFeeReporting,
     marginNative,
     marginReporting,
     ituContribution: computeItuRevenue({
       grossReporting,
       refundsReporting: refundReporting,
       providerCostReporting: costReporting,
+      gatewayFeesReporting: gatewayFeeReporting,
     }),
   }
 }
@@ -225,4 +246,4 @@ export async function loadItuRateContext() {
   return loadMarginRateContext()
 }
 
-export { computeItuRevenue }
+export { computeItuRevenue, computePaymentGatewayFee }

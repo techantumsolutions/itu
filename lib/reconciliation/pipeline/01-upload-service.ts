@@ -46,8 +46,9 @@ export class UploadService {
 
     // 3. Resolve next run version for this supplier + period + type combination
     let runVersion = 1;
+    const periodFilter = encodeURIComponent(billingPeriod);
     const checkVersionRes = await supabaseRest(
-      `reconciliation_reports?provider=eq.${supplier}&billing_period=eq.${billingPeriod}&billing_type=eq.${billingType}&select=run_version&order=run_version.desc&limit=1`
+      `reconciliation_reports?provider=eq.${encodeURIComponent(supplier)}&billing_period=eq.${periodFilter}&billing_type=eq.${encodeURIComponent(billingType)}&select=run_version&order=run_version.desc&limit=1`
     );
     if (checkVersionRes.ok) {
       const records = await checkVersionRes.json();
@@ -62,7 +63,8 @@ export class UploadService {
     if (!existsSync(storageDir)) {
       mkdirSync(storageDir, { recursive: true });
     }
-    const safeFileName = `${supplier}_${billingPeriod}_${billingType}_v${runVersion}_${fileName.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    const safePeriod = billingPeriod.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const safeFileName = `${supplier}_${safePeriod}_${billingType}_v${runVersion}_${fileName.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
     const filePath = join(storageDir, safeFileName);
     writeFileSync(filePath, fileContent, 'utf8');
 

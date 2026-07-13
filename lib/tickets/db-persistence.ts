@@ -16,6 +16,7 @@ type TicketRow = {
   user_email: string | null
   user_name: string | null
   transaction_id: string | null
+  category?: string | null
   subject: string
   description: string
   status: TicketStatus
@@ -27,7 +28,7 @@ type TicketRow = {
 type MessageRow = {
   id: string
   ticket_id: string
-  sender_type: 'admin' | 'user'
+  sender_type: 'admin' | 'user' | 'bot'
   message: string
   created_at: string
 }
@@ -65,6 +66,7 @@ function toTicket(
     userEmail,
     userName,
     transactionId: row.transaction_id ?? undefined,
+    category: row.category ?? undefined,
     subject: row.subject,
     description: row.description,
     status: row.status,
@@ -141,7 +143,7 @@ function shouldFallbackToFile(err: unknown): boolean {
 }
 
 const TICKET_SELECT =
-  'id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at'
+  'id,user_id,user_email,user_name,transaction_id,category,subject,description,status,attachment_url,created_at,updated_at'
 
 async function enrichTicketsWithProfiles(tickets: Ticket[]): Promise<Ticket[]> {
   if (tickets.length === 0) return tickets
@@ -254,40 +256,69 @@ export async function createTicket(input: {
   userEmail: string
   userName: string
   transactionId?: string
+  category?: string
   subject: string
   description: string
   attachmentUrl?: string
 }): Promise<Ticket> {
+  const category = (input.category || 'general').trim().toLowerCase() || 'general'
+  const payload = {
+    user_id: input.userId,
+    user_email: input.userEmail,
+    user_name: input.userName,
+    transaction_id: input.transactionId?.trim() || null,
+    category,
+    subject: input.subject.trim(),
+    description: input.description.trim(),
+    status: 'open',
+    attachment_url: input.attachmentUrl || null,
+  }
   try {
-    const res = await supabaseRest('support_tickets?select=id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at', {
-      method: 'POST',
-      headers: { Prefer: 'return=representation' },
-      body: JSON.stringify([
-        {
-          user_id: input.userId,
-          user_email: input.userEmail,
-          user_name: input.userName,
-          transaction_id: input.transactionId?.trim() || null,
-          subject: input.subject.trim(),
-          description: input.description.trim(),
-          status: 'open',
-          attachment_url: input.attachmentUrl || null,
-        },
-      ]),
-    })
+    const res = await supabaseRest(
+      'support_tickets?select=id,user_id,user_email,user_name,transaction_id,category,subject,description,status,attachment_url,created_at,updated_at',
+      {
+        method: 'POST',
+        headers: { Prefer: 'return=representation' },
+        body: JSON.stringify([payload]),
+      },
+    )
     if (!res.ok) {
-      const err = await ticketQueryError(res, 'Failed to create ticket')
-      if (shouldFallbackToFile(err)) {
-        console.warn('[tickets] DB unavailable, using file fallback:', err.message)
-        return filePersistence.createTicket(input)
+      // Older DBs without category column — retry without it
+      const res2 = await supabaseRest(
+        'support_tickets?select=id,user_id,user_email,user_name,transaction_id,subject,description,status,attachment_url,created_at,updated_at',
+        {
+          method: 'POST',
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify([
+            {
+              user_id: payload.user_id,
+              user_email: payload.user_email,
+              user_name: payload.user_name,
+              transaction_id: payload.transaction_id,
+              subject: payload.subject,
+              description: payload.description,
+              status: payload.status,
+              attachment_url: payload.attachment_url,
+            },
+          ]),
+        },
+      )
+      if (!res2.ok) {
+        const err = await ticketQueryError(res2, 'Failed to create ticket')
+        if (shouldFallbackToFile(err)) {
+          console.warn('[tickets] DB unavailable, using file fallback:', err.message)
+          return filePersistence.createTicket({ ...input, category })
+        }
+        throw err
       }
-      throw err
+      const rows = (await res2.json()) as TicketRow[]
+      return { ...toTicket(rows[0]!), category }
     }
     const rows = (await res.json()) as TicketRow[]
     return toTicket(rows[0]!)
   } catch (err) {
     if (shouldFallbackToFile(err)) {
-      return filePersistence.createTicket(input)
+      return filePersistence.createTicket({ ...input, category })
     }
     throw err
   }
@@ -430,7 +461,7 @@ export async function getTicketAdmin(ticketId: string): Promise<TicketAdminDetai
 
 export async function addMessage(input: {
   ticketId: string
-  senderType: 'admin' | 'user'
+  senderType: 'admin' | 'user' | 'bot'
   message: string
 }): Promise<TicketMessage> {
   try {

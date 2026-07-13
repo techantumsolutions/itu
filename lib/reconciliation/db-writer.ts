@@ -14,6 +14,8 @@ export class DbWriter {
   async writeReport(params: {
     supplier: string;
     billingPeriod: string;
+    periodStart: string;
+    periodEnd: string;
     billingType: string;
     fileHash: string;
     fileName: string;
@@ -29,6 +31,8 @@ export class DbWriter {
     const {
       supplier,
       billingPeriod,
+      periodStart,
+      periodEnd,
       billingType,
       fileHash,
       fileName,
@@ -45,8 +49,8 @@ export class DbWriter {
     // 1. Create Report Header
     const reportPayload = {
       provider: supplier,
-      period_start: `${billingPeriod}-01`,
-      period_end: `${billingPeriod}-31`, // general approximate
+      period_start: periodStart,
+      period_end: periodEnd,
       status: 'pending', // default run status is pending review
       totals: summary, // stores the summary payout details
       summary_details: summary,

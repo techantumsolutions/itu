@@ -51,14 +51,12 @@ export function TicketThread({
   return (
     <div className="rounded-2xl border border-neutral-200/80 bg-neutral-50/50 p-6 shadow-inner max-h-[400px] overflow-y-auto flex flex-col gap-5">
       {allMessages.map((msg) => {
-        console.log("each message:::::", msg);
         const sType = msg.senderType || (msg as any).sender_type || 'user'
-        // Determine if outgoing from perspective of variant
+        // Bot messages sit on the support side for both views
         const isOutgoing = variant === 'user'
           ? sType === 'user'
           : sType === 'admin'
 
-        // Determine sender display name
         let senderName = ''
         let avatarText = ''
         let avatarBg = ''
@@ -67,6 +65,10 @@ export function TicketThread({
           senderName = variant === 'user' ? 'You' : 'Customer'
           avatarText = 'C'
           avatarBg = 'bg-orange-500 text-white shadow-sm shadow-orange-500/20'
+        } else if (sType === 'bot') {
+          senderName = 'Support Team'
+          avatarText = 'S'
+          avatarBg = 'bg-neutral-800 text-white shadow-sm shadow-neutral-800/20'
         } else {
           senderName = variant === 'admin' ? 'You (Support)' : 'Support Team'
           avatarText = 'S'
@@ -118,8 +120,8 @@ export function TicketThread({
                       ? 'bg-gradient-to-br from-orange-500 to-orange-600 text-white border-transparent rounded-br-none'
                       : 'bg-gradient-to-br from-neutral-800 to-neutral-900 text-white border-transparent rounded-br-none'
                     : variant === 'user'
-                      ? 'bg-white border-neutral-200/80 text-neutral-900 rounded-bl-none'
-                      : 'bg-orange-50/70 border-orange-100/80 text-neutral-900 rounded-bl-none'
+                        ? 'bg-white border-neutral-200/80 text-neutral-900 rounded-bl-none'
+                        : 'bg-orange-50/70 border-orange-100/80 text-neutral-900 rounded-bl-none'
                 )}
               >
                 {/* Message Body */}

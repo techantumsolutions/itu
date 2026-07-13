@@ -21,10 +21,10 @@ export default function AdminStatisticsPage() {
       </div>
       <div className="grid gap-4 md:grid-cols-4">
         {[
-          ['Revenue', summary.total_revenue],
+          ['Gross Revenue', summary.gross_revenue],
+          ['ITU Profit', summary.itu_revenue ?? summary.total_revenue],
           ['Orders', summary.total_orders],
           ['Completed', summary.completed_orders],
-          ['Failed', summary.failed_orders],
         ].map(([label, value]) => (
           <Card key={String(label)}>
             <CardHeader>

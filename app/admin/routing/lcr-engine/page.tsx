@@ -218,7 +218,7 @@ export default function LcrEnginePage() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="retryAttempts">Retry attempts</Label>
+              <Label htmlFor="retryAttempts">Provider Selection Attempt</Label>
               <Select
                 value={settings.retryAttempts !== undefined && settings.retryAttempts !== null ? String(settings.retryAttempts) : ""}
                 onValueChange={(v) =>

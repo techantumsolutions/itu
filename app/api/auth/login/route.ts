@@ -7,6 +7,7 @@ import { buildUserFromProfile } from '@/lib/auth/build-auth-user'
 import { cacheGetJson, cacheSetJson, cacheDel } from '@/lib/cache/redis'
 import { logLoginAudit, sendLoginOtp, sendSuperAdminLockoutAlert } from '@/lib/auth/audit'
 import { generateOtp } from '@/lib/security/otp'
+import { upsertTrustedDevice } from '@/lib/auth/trusted-devices'
 import { authCookieOptions } from '@/lib/auth/cookie-options'
 import { getRequestIp, requireCaptcha } from '@/lib/security/recaptcha-guard'
 
@@ -75,7 +76,7 @@ export async function POST(req: Request) {
     if (!captcha.ok) {
       return captcha.response
     }
-    if (!fingerprint && source !== 'admin') {
+    if (!fingerprint) {
       return NextResponse.json(
         { ok: false, success: false, error: 'Device identification failed', message: 'Device identification failed' },
         { status: 400 },
@@ -195,6 +196,8 @@ export async function POST(req: Request) {
       clientUser?.role === 'super_admin'
 
     // 6. Global 2FA and Trusted Device check
+    // /admin/login (source=admin) always requires trusted device / email OTP for staff.
+    // Other admin logins follow the global_2fa_settings toggle.
     let is2FAEnabled = false
     try {
       const settingsRes = await supabaseRest(`app_settings?key=eq.global_2fa_settings&select=value&limit=1`)
@@ -208,30 +211,35 @@ export async function POST(req: Request) {
       console.error('Fetch global 2FA setting error:', err)
     }
 
+    const force2FAForAdminLogin = Boolean(isStaff && source === 'admin')
+    const mustVerifyDevice = Boolean(isAdmin && (is2FAEnabled || force2FAForAdminLogin))
+
     let isTrusted = false
-    if (isStaff && source === 'admin') {
-      isTrusted = true // Super-admin sign-in at /admin/login — skip 2FA
-    } else if (isAdmin) {
-      if (!is2FAEnabled) {
-        isTrusted = true // Skip 2FA when globally disabled for admins
-      } else if (user?.id && fingerprint) {
+    if (mustVerifyDevice) {
+      if (user?.id && fingerprint) {
         try {
-          const devRes = await supabaseRest(`trusted_devices?user_id=eq.${encodeURIComponent(user.id)}&device_fingerprint=eq.${encodeURIComponent(fingerprint)}&select=id&limit=1`)
+          const devRes = await supabaseRest(
+            `trusted_devices?user_id=eq.${encodeURIComponent(user.id)}&device_fingerprint=eq.${encodeURIComponent(fingerprint)}&select=id&limit=1`,
+          )
           if (devRes.ok) {
             const devRows = await devRes.json().catch(() => [])
-            isTrusted = devRows.length > 0
+            isTrusted = Array.isArray(devRows) && devRows.length > 0
           }
         } catch (e) {
           console.error('Fetch trusted device error:', e)
         }
       }
+    } else if (isAdmin) {
+      isTrusted = true // Global 2FA off and not /admin/login — skip challenge
     } else if (user?.id && fingerprint) {
       // Regular user flow: check trusted device
       try {
-        const devRes = await supabaseRest(`trusted_devices?user_id=eq.${encodeURIComponent(user.id)}&device_fingerprint=eq.${encodeURIComponent(fingerprint)}&select=id&limit=1`)
+        const devRes = await supabaseRest(
+          `trusted_devices?user_id=eq.${encodeURIComponent(user.id)}&device_fingerprint=eq.${encodeURIComponent(fingerprint)}&select=id&limit=1`,
+        )
         if (devRes.ok) {
           const devRows = await devRes.json().catch(() => [])
-          isTrusted = devRows.length > 0
+          isTrusted = Array.isArray(devRows) && devRows.length > 0
         }
       } catch (e) {
         console.error('Fetch trusted device error:', e)
@@ -273,16 +281,18 @@ export async function POST(req: Request) {
       })
     }
 
-    // 7. Success Login logic
-    // Update last_login_at
+    // 7. Success Login logic — register / refresh trusted device
     if (user?.id && fingerprint) {
       try {
-        await supabaseRest(`trusted_devices?user_id=eq.${encodeURIComponent(user.id)}&device_fingerprint=eq.${encodeURIComponent(fingerprint)}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ last_login_at: new Date().toISOString() })
+        await upsertTrustedDevice({
+          userId: user.id,
+          fingerprint,
+          ipAddress,
+          country,
+          userAgent,
         })
       } catch (e) {
-         console.error('Failed to update last_login_at', e)
+        console.error('Failed to upsert trusted device', e)
       }
     }
 

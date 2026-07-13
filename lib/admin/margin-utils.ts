@@ -164,16 +164,40 @@ export function marginToReporting(
   return toReportingAmount(marginNative, paidCurrency, reportingCurrency, rateMap, fallbackRates)
 }
 
-/** ITU Revenue = Gross (completed) − Refunds − Provider Cost, all in reporting currency. */
+/** Fixed payment-gateway fee rate used for ITU Profit (matches Financial Report). */
+export const ITU_PAYMENT_GATEWAY_FEE_RATE = 0.02
+
+/** Payment gateway fee on completed non-wallet gross (reporting currency). */
+export function computePaymentGatewayFee(
+  grossReporting: number,
+  isWalletPayment: boolean,
+): number {
+  if (isWalletPayment || !(grossReporting > 0)) return 0
+  return parseFloat((grossReporting * ITU_PAYMENT_GATEWAY_FEE_RATE).toFixed(2))
+}
+
+/**
+ * ITU Profit = Gross − Refunds − Payment Gateway − Provider Cost (reporting currency).
+ * `computeItuRevenue` kept as alias name for existing call sites.
+ */
 export function computeItuRevenue(input: {
   grossReporting: number
   refundsReporting: number
   providerCostReporting: number
+  gatewayFeesReporting?: number
 }): number {
   return parseFloat(
-    (input.grossReporting - input.refundsReporting - input.providerCostReporting).toFixed(2),
+    (
+      input.grossReporting -
+      input.refundsReporting -
+      (input.gatewayFeesReporting ?? 0) -
+      input.providerCostReporting
+    ).toFixed(2),
   )
 }
+
+/** @see computeItuRevenue */
+export const computeItuProfit = computeItuRevenue
 
 export async function loadMarginRateContext(): Promise<{
   reportingCurrency: string
