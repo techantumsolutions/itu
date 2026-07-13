@@ -683,6 +683,7 @@ export default function TopupSummaryPage() {
   const [rewardBalance, setRewardBalance] = useState<number>(0)
   const [rewardPointValue, setRewardPointValue] = useState<number>(0.01)
   const [maxRedemptionPercentage, setMaxRedemptionPercentage] = useState<number>(50)
+  const [minBalanceToRedeem, setMinBalanceToRedeem] = useState<number>(0)
   const [useRewards, setUseRewards] = useState<boolean>(false)
   const [isLoadingRewards, setIsLoadingRewards] = useState<boolean>(false)
 
@@ -877,6 +878,7 @@ export default function TopupSummaryPage() {
       setRewardBalance(0)
       setRewardPointValue(0.01)
       setMaxRedemptionPercentage(50)
+      setMinBalanceToRedeem(0)
       setUseRewards(false)
       return
     }
@@ -893,6 +895,7 @@ export default function TopupSummaryPage() {
             setRewardBalance(data.balance)
             setRewardPointValue(data.pointValue ?? 0.01)
             setMaxRedemptionPercentage(data.maxRedemptionPercentage ?? 50)
+            setMinBalanceToRedeem(data.minBalanceToRedeem ?? 0)
           }
         }
       } catch (err) {
@@ -1036,13 +1039,13 @@ export default function TopupSummaryPage() {
     let pointsUsed = 0
 
     if (isAuthenticated && rewardBalance > 0) {
-      const usdWorth = rewardBalance * rewardPointValue
-      if (payableCurrency === 'USD') {
-        rewardPointsInPayCurrency = usdWorth
+      const eurWorth = rewardBalance * rewardPointValue
+      if (payableCurrency === 'EUR') {
+        rewardPointsInPayCurrency = eurWorth
       } else if (ratesData) {
         const converted = convertUsingEurBaseRates(
-          usdWorth,
-          'USD',
+          eurWorth,
+          'EUR',
           payableCurrency,
           ratesData,
         )
@@ -1051,12 +1054,12 @@ export default function TopupSummaryPage() {
 
       maxAllowedPointsDeduction = totalPayable * (maxRedemptionPercentage / 100)
 
-      if (useRewards) {
+      if (useRewards && rewardBalance >= minBalanceToRedeem) {
         let onePointInPayCurrency = rewardPointValue
-        if (payableCurrency !== 'USD' && ratesData) {
+        if (payableCurrency !== 'EUR' && ratesData) {
           const converted = convertUsingEurBaseRates(
             rewardPointValue,
-            'USD',
+            'EUR',
             payableCurrency,
             ratesData,
           )
@@ -1485,12 +1488,12 @@ export default function TopupSummaryPage() {
               </div>
 
               {/* Customer Information */}
-              <div className="rounded-xl border border-neutral-200/80 bg-white p-5">
+              {/* <div className="rounded-xl border border-neutral-200/80 bg-white p-5">
                 <p className="text-sm font-semibold text-neutral-900">Customer Information</p>
                 <div className="mt-3 space-y-2 text-sm">
                   <DetailRow label="Phone" value={buildInternationalMobile(countryCode, phoneNumber).replace(/^(\+\d+)/, '$1 ')} />
                 </div>
-              </div>
+              </div> */}
             </div>
 
             {/* Right Column — Pricing & Pay */}
@@ -1656,7 +1659,7 @@ export default function TopupSummaryPage() {
                       <input
                         type="checkbox"
                         checked={useRewards}
-                        disabled={isAuthenticated && rewardBalance <= 0}
+                        disabled={isAuthenticated && (rewardBalance <= 0 || rewardBalance < minBalanceToRedeem)}
                         onChange={(e) => {
                           if (isAuthenticated) {
                             setUseRewards(e.target.checked)
@@ -1683,15 +1686,17 @@ export default function TopupSummaryPage() {
                             </span>
                           )}
                         </div>
-                        <p className="text-[9px] text-neutral-400 mt-0.5 leading-tight">
+                        <p className="text-[9px] mt-0.5 leading-tight">
                           {isAuthenticated ? (
-                            maxRedemptionPercentage < 100 ? (
-                              `Max ${maxRedemptionPercentage}% points consumption allowed`
+                            rewardBalance < minBalanceToRedeem ? (
+                              <span className="text-amber-600 font-semibold">{`Requires a minimum balance of ${minBalanceToRedeem} points to redeem`}</span>
+                            ) : maxRedemptionPercentage < 100 ? (
+                              <span className="text-neutral-400">{`Max ${maxRedemptionPercentage}% points consumption allowed`}</span>
                             ) : (
-                              `Pay up to 100% using points`
+                              <span className="text-neutral-400">Pay up to 100% using points</span>
                             )
                           ) : (
-                            'Apply your reward points balance to this order'
+                            <span className="text-neutral-400">Apply your reward points balance to this order</span>
                           )}
                         </p>
                       </div>

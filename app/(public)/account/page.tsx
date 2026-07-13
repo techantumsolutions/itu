@@ -819,54 +819,59 @@ export default function AccountProfilePage() {
         </div>
 
       </div>
-      <Card className="flex flex-col border-neutral-100 shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-bold flex items-center gap-2 text-neutral-800">
-            <Phone className="h-4 w-4 text-[#1d2d5b]" />
-            <span>Saved Contacts</span>
-          </CardTitle>
-          <CardDescription className="text-xs">Numbers saved for quick top-ups</CardDescription>
-        </CardHeader>
-        <CardContent className="flex-1 overflow-y-auto max-h-[220px] space-y-3 pt-0">
-          {savedContacts.length === 0 ? (
-            <div className="text-center py-6 text-muted-foreground text-xs">
-              No saved contacts yet.
-            </div>
-          ) : (
-            <div className="divide-y divide-neutral-100">
-              {savedContacts.map((contact, idx) => (
-                <div key={idx} className="flex justify-between items-center py-2 first:pt-0 last:pb-0">
-                  <div>
-                    <p className="font-semibold text-xs text-neutral-800">{contact.name || 'Unnamed Contact'}</p>
-                    <p className="text-[11px] text-muted-foreground font-mono">{contact.phone}</p>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 text-neutral-500 hover:text-[#1d2d5b] hover:bg-neutral-50 rounded-lg"
-                      onClick={() => handleEditContactClick(contact)}
-                    >
-                      <Edit2 className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-xs h-7 px-2 rounded-lg text-[#1d2d5b] hover:bg-[#1d2d5b]/5"
-                      onClick={() => {
-                        navigator.clipboard.writeText(contact.phone)
-                        toast.success('Number copied to clipboard!')
-                      }}
-                    >
-                      Copy
-                    </Button>
-                  </div>
+      {
+        savedContacts.length !== 0 && (
+          <Card className="flex flex-col border-neutral-100 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-bold flex items-center gap-2 text-neutral-800">
+                <Phone className="h-4 w-4 text-[#1d2d5b]" />
+                <span>Saved Contacts</span>
+              </CardTitle>
+              <CardDescription className="text-xs">Numbers saved for quick top-ups</CardDescription>
+            </CardHeader>
+            <CardContent className="flex-1 overflow-y-auto max-h-[220px] space-y-3 pt-0">
+              {savedContacts.length === 0 ? (
+                <div className="text-center py-6 text-muted-foreground text-xs">
+                  No saved contacts yet.
                 </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+              ) : (
+                <div className="divide-y divide-neutral-100">
+                  {savedContacts.map((contact, idx) => (
+                    <div key={idx} className="flex justify-between items-center py-2 first:pt-0 last:pb-0">
+                      <div>
+                        <p className="font-semibold text-xs text-neutral-800">{contact.name || 'Unnamed Contact'}</p>
+                        <p className="text-[11px] text-muted-foreground font-mono">{contact.phone}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-neutral-500 hover:text-[#1d2d5b] hover:bg-neutral-50 rounded-lg"
+                          onClick={() => handleEditContactClick(contact)}
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs h-7 px-2 rounded-lg text-[#1d2d5b] hover:bg-[#1d2d5b]/5"
+                          onClick={() => {
+                            navigator.clipboard.writeText(contact.phone)
+                            toast.success('Number copied to clipboard!')
+                          }}
+                        >
+                          Copy
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )
+      }
+
 
       {/* Edit Contact Dialog */}
       {editContactOpen && (

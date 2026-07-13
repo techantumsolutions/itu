@@ -75,7 +75,7 @@ export default function AccountLayout({
   })
 
   return (
-    <div className="border-b border-border/60 bg-mesh">
+    <div className="border-b border-border/60 bg-mesh pt-[5.25rem] sm:pt-[5.5rem]">
       <div className="w-full px-4 py-10 md:py-12 sm:px-6">
         <div className="grid w-full gap-8 lg:grid-cols-[260px_1fr] lg:gap-10">
           <aside className="h-fit rounded-2xl border border-border/70 bg-card/90 p-4 shadow-elevated-sm backdrop-blur-sm lg:sticky lg:top-24">

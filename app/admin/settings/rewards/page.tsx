@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { 
-  Plus, Trash2, Edit2, Save, ArrowLeft, RefreshCw, 
-  Coins, Gift, History, DollarSign, Loader2, Check, X 
+import {
+  Plus, Trash2, Edit2, Save, ArrowLeft, RefreshCw,
+  Coins, Gift, History, Euro, Loader2, Check, X
 } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -64,6 +64,7 @@ export default function RewardsManagementPage() {
   const [ledger, setLedger] = useState<LedgerLog[]>([])
   const [usdValue, setUsdValue] = useState(0.01)
   const [maxRedemptionPercentage, setMaxRedemptionPercentage] = useState(50)
+  const [minBalanceToRedeem, setMinBalanceToRedeem] = useState(0)
   const [isSuperAdmin, setIsSuperAdmin] = useState(true) // will check via profile check or default
 
   // Loading States
@@ -143,6 +144,7 @@ export default function RewardsManagementPage() {
         const body = await res.json()
         setUsdValue(body.usdValue ?? 0.01)
         setMaxRedemptionPercentage(body.maxRedemptionPercentage ?? 50)
+        setMinBalanceToRedeem(body.minBalanceToRedeem ?? 0)
       }
     } catch {
       // ignore
@@ -191,7 +193,7 @@ export default function RewardsManagementPage() {
       const res = await fetch('/api/admin/rewards/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ usdValue, maxRedemptionPercentage }),
+        body: JSON.stringify({ usdValue, maxRedemptionPercentage, minBalanceToRedeem }),
       })
       if (res.ok) {
         toast.success('Point settings updated successfully')
@@ -341,7 +343,7 @@ export default function RewardsManagementPage() {
             Ledger
           </TabsTrigger>
           <TabsTrigger value="settings" className="gap-2">
-            <DollarSign className="size-4" />
+            <Euro className="size-4" />
             Point Settings
           </TabsTrigger>
         </TabsList>
@@ -352,7 +354,7 @@ export default function RewardsManagementPage() {
             {/* Rules List */}
             <Card className="rounded-2xl border border-border/70 bg-card shadow-elevated-sm">
               <CardHeader>
-                <CardTitle>Active Campaigns</CardTitle>
+                <CardTitle>Active Reward Rules</CardTitle>
                 <CardDescription>Reward structures evaluated when a customer completes a recharge order.</CardDescription>
               </CardHeader>
               <CardContent className="p-0">
@@ -362,7 +364,7 @@ export default function RewardsManagementPage() {
                     Loading rules...
                   </div>
                 ) : rules.length === 0 ? (
-                  <div className="py-20 text-center text-muted-foreground text-sm">No campaigns defined yet. Use the editor to add your first rule.</div>
+                  <div className="py-20 text-center text-muted-foreground text-sm">No Rewards rules defined yet. Use the editor to add your first rule.</div>
                 ) : (
                   <Table>
                     <TableHeader>
@@ -430,12 +432,12 @@ export default function RewardsManagementPage() {
               <Card className="rounded-2xl border border-border/70 bg-card shadow-elevated-sm h-fit">
                 <form onSubmit={handleSaveRule}>
                   <CardHeader>
-                    <CardTitle>{editingRuleId ? 'Edit Campaign Rule' : 'New Campaign Rule'}</CardTitle>
+                    <CardTitle>{editingRuleId ? 'Edit Reward Rule' : 'New Reward Rule'}</CardTitle>
                     <CardDescription>Define loyalty rewards multipliers for active user recharge events.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="name">Campaign Name</Label>
+                      <Label htmlFor="name">Reward Rule Name</Label>
                       <Input
                         id="name"
                         value={ruleName}
@@ -502,16 +504,12 @@ export default function RewardsManagementPage() {
                     )}
 
                     <div className="flex items-center justify-between pt-2">
-                      <Label htmlFor="active" className="cursor-pointer">Enable Campaign Rule</Label>
+                      <Label htmlFor="active" className="cursor-pointer">Enable Reward Rule</Label>
                       <Switch id="active" checked={ruleActive} onCheckedChange={setRuleActive} />
                     </div>
                   </CardContent>
                   <CardFooter className="flex justify-between border-t border-border/40 pt-4">
-                    {editingRuleId ? (
-                      <Button type="button" variant="outline" onClick={resetRuleForm}>Cancel</Button>
-                    ) : (
-                      <div />
-                    )}
+                    <Button type="button" variant="outline" onClick={resetRuleForm}>Cancel</Button>
                     <Button type="submit" disabled={savingRule}>
                       {savingRule ? (
                         <>
@@ -573,7 +571,7 @@ export default function RewardsManagementPage() {
                         <TableCell className="font-mono text-sm">{account.profiles?.email || '—'}</TableCell>
                         <TableCell>{account.profiles?.name || '—'}</TableCell>
                         <TableCell className="font-bold text-primary">{account.points_balance.toLocaleString()} pts</TableCell>
-                        <TableCell className="font-medium text-neutral-800">${(account.points_balance * usdValue).toFixed(2)} USD</TableCell>
+                        <TableCell className="font-medium text-neutral-800">€{(account.points_balance * usdValue).toFixed(2)} EUR</TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {new Date(account.updated_at).toLocaleString()}
                         </TableCell>
@@ -652,9 +650,9 @@ export default function RewardsManagementPage() {
               ) : (
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="usdValue">Valuation rate (1 Point = X USD)</Label>
+                    <Label htmlFor="usdValue">Valuation rate (1 Point = X EUR)</Label>
                     <div className="relative">
-                      <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground size-4" />
+                      <Euro className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground size-4" />
                       <Input
                         id="usdValue"
                         type="number"
@@ -666,7 +664,7 @@ export default function RewardsManagementPage() {
                         className="pl-9"
                       />
                     </div>
-                    <p className="text-xs text-muted-foreground">By default, 1 point is valued at $0.01 USD (1 cent). Changing this updates value conversion displays.</p>
+                    <p className="text-xs text-muted-foreground">By default, 1 point is valued at €0.01 EUR (1 cent). Changing this updates value conversion displays.</p>
                   </div>
 
                   <Separator />
@@ -705,15 +703,35 @@ export default function RewardsManagementPage() {
 
                   <Separator />
 
+                  <div className="space-y-2">
+                    <Label htmlFor="minBalanceToRedeem">Minimum Points Balance Required to Redeem</Label>
+                    <div className="relative flex items-center">
+                      <Input
+                        id="minBalanceToRedeem"
+                        type="number"
+                        min="0"
+                        value={minBalanceToRedeem}
+                        onChange={(e) => setMinBalanceToRedeem(Math.max(0, Number(e.target.value)))}
+                        disabled={!isSuperAdmin}
+                        className="font-semibold"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Specifies the minimum number of reward points a user must have in their account balance before they are allowed to redeem points at checkout.
+                    </p>
+                  </div>
+
+                  <Separator />
+
                   <div className="bg-muted/30 rounded-xl p-4 border border-border/50 text-sm space-y-2">
                     <h3 className="font-semibold text-neutral-800 flex items-center gap-1">
                       <Coins className="size-4 text-primary" />
                       Example Conversion Scales
                     </h3>
                     <ul className="list-disc pl-5 space-y-1 text-xs text-muted-foreground mt-1">
-                      <li>100 Points = ${(100 * usdValue).toFixed(2)} USD</li>
-                      <li>1,000 Points = ${(1000 * usdValue).toFixed(2)} USD</li>
-                      <li>5,000 Points = ${(5000 * usdValue).toFixed(2)} USD</li>
+                      <li>100 Points = €{(100 * usdValue).toFixed(2)} EUR</li>
+                      <li>1,000 Points = €{(1000 * usdValue).toFixed(2)} EUR</li>
+                      <li>5,000 Points = €{(5000 * usdValue).toFixed(2)} EUR</li>
                     </ul>
                   </div>
                 </div>

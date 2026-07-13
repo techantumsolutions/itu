@@ -548,10 +548,10 @@ export default function CMSPage() {
                 <Sparkles className="h-4 w-4" />
                 <span>Careers Page</span>
               </TabsTrigger>
-              <TabsTrigger value="contact" className="gap-2">
+              {/* <TabsTrigger value="contact" className="gap-2">
                 <Map className="h-4 w-4" />
                 <span>Contact Page</span>
-              </TabsTrigger>
+              </TabsTrigger> */}
               <TabsTrigger value="about" className="gap-2">
                 <Sparkles className="h-4 w-4" />
                 <span>About Page</span>

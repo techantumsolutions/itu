@@ -34,6 +34,10 @@ export default function AccountWalletPage() {
   const currentCurrency = selectedCurrency || currency
   const walletList = wallets || []
 
+  const refundTxns = useMemo(() => {
+    return (transactions || []).filter((t) => t.type === 'refund')
+  }, [transactions])
+
   const displayedBalance = useMemo(() => {
     if (walletList.length > 0) {
       const match = walletList.find((w) => w.currency === currentCurrency)
@@ -193,121 +197,31 @@ export default function AccountWalletPage() {
         </Card>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-3">
-        {/* Top Up Form - Commented out per request
-        <Card className="rounded-2xl border-neutral-200/60 shadow-sm h-fit">
-          <CardHeader>
-            <CardTitle className="text-lg font-bold">Top Up Wallet</CardTitle>
-            <CardDescription>Add funds using simulated payment processing</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs font-medium text-amber-800">
-              Top up is temporarily disabled. You cannot add funds to your wallet at this time.
-            </div>
-
-            {error && (
-              <div className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
-                {error}
-              </div>
-            )}
-            {success && (
-              <div className="rounded-xl bg-green-50 px-4 py-3 text-sm font-medium text-green-700">
-                {success}
-              </div>
-            )}
-
-            <form onSubmit={handleTopUpSubmit} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="topup-amount">Amount (USD)</Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 font-semibold">$</span>
-                  <Input
-                    id="topup-amount"
-                    type="number"
-                    step="0.01"
-                    min="1"
-                    placeholder="0.00"
-                    value={topUpAmount}
-                    onChange={(e) => setTopUpAmount(e.target.value)}
-                    className="pl-7 h-10 rounded-xl"
-                    required
-                    disabled={true}
-                  />
+      {refundTxns.length > 0 && (
+        <div className="grid gap-6 md:grid-cols-3">
+          {/* Transaction Ledger */}
+          <Card className="md:col-span-3 rounded-2xl border-neutral-200/60 shadow-sm">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-lg font-bold">Refund History</CardTitle>
+                  <CardDescription>Records of your refunded transactions</CardDescription>
                 </div>
               </div>
-
-              <div className="space-y-2">
-                <Label>Quick Select</Label>
-                <div className="grid grid-cols-3 gap-2">
-                  {quickAmounts.map((amount) => (
-                    <Button
-                      key={amount}
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        setTopUpAmount(amount.toString())
-                        setError('')
-                        setSuccess('')
-                      }}
-                      className={cn(
-                        'rounded-lg text-xs font-semibold',
-                        topUpAmount === amount.toString() && 'bg-neutral-900 text-white hover:bg-neutral-800'
-                      )}
-                      disabled={true}
-                    >
-                      ${amount}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              <Button
-                type="submit"
-                className="w-full h-10 rounded-xl bg-neutral-200 text-neutral-400 font-semibold cursor-not-allowed"
-                disabled={true}
-              >
-                Top Up Disabled
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-        */}
-
-        {/* Transaction Ledger */}
-        <Card className="md:col-span-3 rounded-2xl border-neutral-200/60 shadow-sm">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-lg font-bold">Refund History</CardTitle>
-                <CardDescription>Records of your refunded transactions</CardDescription>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="max-h-[350px] overflow-y-auto border-t border-neutral-100">
-              <Table>
-                <TableHeader className="bg-neutral-50/50 sticky top-0 backdrop-blur-md">
-                  <TableRow>
-                    <TableHead className="w-[140px] pl-6">Type</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead className="text-right pr-6">Amount</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(() => {
-                    const refundTxns = transactions.filter((t) => t.type === 'refund')
-                    if (refundTxns.length === 0) {
-                      return (
-                        <TableRow>
-                          <TableCell colSpan={4} className="text-center py-8 text-neutral-400">
-                            No refunds found.
-                          </TableCell>
-                        </TableRow>
-                      )
-                    }
-                    return refundTxns.map((t) => (
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="max-h-[350px] overflow-y-auto border-t border-neutral-100">
+                <Table>
+                  <TableHeader className="bg-neutral-50/50 sticky top-0 backdrop-blur-md">
+                    <TableRow>
+                      <TableHead className="w-[140px] pl-6">Type</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead className="text-right pr-6">Amount</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {refundTxns.map((t) => (
                       <TableRow key={t.id} className="hover:bg-neutral-50/40">
                         <TableCell className="pl-6 py-3.5">
                           <div className="flex items-center gap-2">
@@ -328,14 +242,14 @@ export default function AccountWalletPage() {
                           {formatCurrency(t.amount, t.currency)}
                         </TableCell>
                       </TableRow>
-                    ))
-                  })()}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }

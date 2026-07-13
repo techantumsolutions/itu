@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const res = await supabaseRest('app_settings?key=eq.reward_point_usd_value&select=value&limit=1', { cache: 'no-store' })
+    const res = await supabaseRest('app_settings?key=eq.reward_point_eur_value&select=value&limit=1', { cache: 'no-store' })
     let usdValue = 0.01 // default fallback
     if (res.ok) {
       const rows = await res.json()
@@ -28,7 +28,16 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json({ usdValue, maxRedemptionPercentage })
+    const minBalRes = await supabaseRest('app_settings?key=eq.reward_min_balance_to_redeem&select=value&limit=1', { cache: 'no-store' })
+    let minBalanceToRedeem = 0 // default fallback to 0
+    if (minBalRes.ok) {
+      const rows = await minBalRes.json()
+      if (rows.length > 0) {
+        minBalanceToRedeem = Number(rows[0].value) ?? 0
+      }
+    }
+
+    return NextResponse.json({ usdValue, maxRedemptionPercentage, minBalanceToRedeem })
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : 'failed' }, { status: 500 })
   }
@@ -44,18 +53,22 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => ({}))
     const usdValue = Number(body.usdValue)
     const maxRedemptionPercentage = Number(body.maxRedemptionPercentage)
+    const minBalanceToRedeem = Number(body.minBalanceToRedeem)
 
     if (body.usdValue !== undefined && (isNaN(usdValue) || usdValue <= 0)) {
-      return NextResponse.json({ error: 'usdValue must be a positive number' }, { status: 400 })
+      return NextResponse.json({ error: 'Valuation rate must be a positive number' }, { status: 400 })
     }
     if (body.maxRedemptionPercentage !== undefined && (isNaN(maxRedemptionPercentage) || maxRedemptionPercentage < 0 || maxRedemptionPercentage > 100)) {
       return NextResponse.json({ error: 'maxRedemptionPercentage must be a number between 0 and 100' }, { status: 400 })
+    }
+    if (body.minBalanceToRedeem !== undefined && (isNaN(minBalanceToRedeem) || minBalanceToRedeem < 0)) {
+      return NextResponse.json({ error: 'minBalanceToRedeem must be a positive number or zero' }, { status: 400 })
     }
 
     const payload: Array<{ key: string; value: any; updated_at: string }> = []
     if (body.usdValue !== undefined) {
       payload.push({
-        key: 'reward_point_usd_value',
+        key: 'reward_point_eur_value',
         value: usdValue,
         updated_at: new Date().toISOString(),
       })
@@ -64,6 +77,13 @@ export async function POST(request: Request) {
       payload.push({
         key: 'reward_max_redemption_percentage',
         value: maxRedemptionPercentage,
+        updated_at: new Date().toISOString(),
+      })
+    }
+    if (body.minBalanceToRedeem !== undefined) {
+      payload.push({
+        key: 'reward_min_balance_to_redeem',
+        value: minBalanceToRedeem,
         updated_at: new Date().toISOString(),
       })
     }
@@ -82,7 +102,7 @@ export async function POST(request: Request) {
     await logAdminActivity({
       action: 'Update Reward Settings',
       pageName: 'System Settings',
-      details: { usdValue, maxRedemptionPercentage },
+      details: { usdValue, maxRedemptionPercentage, minBalanceToRedeem },
     })
 
     return NextResponse.json({ ok: true })
