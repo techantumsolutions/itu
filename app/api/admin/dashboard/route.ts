@@ -9,7 +9,9 @@ export async function GET(request: Request) {
   }
 
   try {
-    const metrics = await loadAdminDashboardMetrics()
+    const url = new URL(request.url)
+    const date = url.searchParams.get('date')
+    const metrics = await loadAdminDashboardMetrics({ date })
 
     await logAdminActivity({
       action: 'View Reports',

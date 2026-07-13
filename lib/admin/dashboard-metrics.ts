@@ -9,10 +9,18 @@ import {
   resolveItuAmountsForRow,
   unwrapTransaction,
 } from '@/lib/admin/itu-revenue'
+import { resolveAdminTransactionDateRange } from '@/lib/admin/admin-transaction-date-range'
 import { translatePlanTextToEnglish } from '@/lib/catalog/plan-text-english'
+import {
+  extractPlanIdFromSources,
+  resolvePlanNameMap,
+  resolveProductDisplayName,
+} from '@/lib/admin/plan-name-resolver'
 
 /** Admin dashboard always reports in EUR with English labels. */
 const ADMIN_REPORTING_CURRENCY = 'EUR'
+
+export type DashboardDateFilter = 'today' | 'week' | 'month' | 'year' | 'all'
 
 export type DashboardTopProduct = {
   product_name: string
@@ -34,13 +42,15 @@ export type DashboardDailySale = {
 }
 
 export type DashboardSummary = {
-  /** ITU Revenue = Gross − Refunds − Provider Cost (EUR) */
+  /** ITU Profit = Gross − Refunds − Payment Gateway − Provider Cost (EUR) */
   total_revenue: number
-  /** Alias of total_revenue for older UI bindings */
+  /** Alias of total_revenue / itu_revenue for older UI bindings */
   total_margin: number
   gross_revenue: number
   refunds: number
+  payment_gateway_fees: number
   provider_cost: number
+  /** ITU Profit (same as total_revenue) */
   itu_revenue: number
   total_orders: number
   completed_orders: number
@@ -53,6 +63,7 @@ export type DashboardSummary = {
   catalog_synced_at: string | null
   reporting_currency: string
   margin_by_currency: Record<string, number>
+  date_filter: DashboardDateFilter
 }
 
 export type DashboardMetrics = {
@@ -71,103 +82,28 @@ type TransactionEmbed = {
 type RechargeRow = {
   id: string
   status: string
+  payment_status?: string | null
   product_name: string | null
   operator_name: string | null
   sku_code: string | null
   plan_id: string | null
   created_at: string
   transaction_id: string | null
+  send_amount?: number | string | null
+  send_currency?: string | null
+  receive_amount?: number | string | null
+  receive_currency?: string | null
   transactions: TransactionEmbed | TransactionEmbed[] | null
 }
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-function looksLikeUuid(value: string): boolean {
-  return UUID_RE.test(value.trim())
-}
-
 function extractPlanId(row: RechargeRow): string {
-  const fromRow = row.plan_id?.trim() || row.sku_code?.trim()
-  if (fromRow) return fromRow
-
   const txn = unwrapTransaction(row)
-  const meta = txn?.metadata
-  if (!meta) return ''
-
-  for (const key of ['system_plan_id', 'plan_id', 'planId'] as const) {
-    const value = meta[key]
-    if (typeof value === 'string' && value.trim()) return value.trim()
-  }
-
-  return ''
-}
-
-function resolveProductDisplayName(
-  productName: string | null | undefined,
-  planId: string | null | undefined,
-  nameMap: Map<string, string>,
-): string {
-  const name = productName?.trim()
-  if (name && !looksLikeUuid(name)) return name
-
-  const id = planId?.trim()
-  if (id && nameMap.has(id)) return nameMap.get(id)!
-
-  if (name) return name
-  if (id) return id
-
-  return 'Unknown plan'
-}
-
-async function resolvePlanNameMap(planIds: string[]): Promise<Map<string, string>> {
-  const map = new Map<string, string>()
-  const unique = [...new Set(planIds.map((id) => id.trim()).filter(Boolean))]
-  if (unique.length === 0) return map
-
-  const chunkSize = 80
-  for (let i = 0; i < unique.length; i += chunkSize) {
-    const chunk = unique.slice(i, i + chunkSize)
-    const inList = chunk.map(encodeURIComponent).join(',')
-
-    const [systemRes, internalRes, systemByInternalRes] = await Promise.all([
-      supabaseRest(`system_plans?id=in.(${inList})&select=id,system_plan_name`, { cache: 'no-store' }),
-      supabaseRest(`internal_plans?id=in.(${inList})&select=id,uti_plan_name`, { cache: 'no-store' }),
-      supabaseRest(
-        `system_plans?internal_plan_id=in.(${inList})&select=internal_plan_id,system_plan_name`,
-        { cache: 'no-store' },
-      ),
-    ])
-
-    if (systemRes.ok) {
-      const rows = (await systemRes.json()) as Array<{ id: string; system_plan_name?: string | null }>
-      for (const row of rows) {
-        const label = row.system_plan_name?.trim()
-        if (row.id && label) map.set(row.id, label)
-      }
-    }
-
-    if (internalRes.ok) {
-      const rows = (await internalRes.json()) as Array<{ id: string; uti_plan_name?: string | null }>
-      for (const row of rows) {
-        const label = row.uti_plan_name?.trim()
-        if (row.id && label && !map.has(row.id)) map.set(row.id, label)
-      }
-    }
-
-    if (systemByInternalRes.ok) {
-      const rows = (await systemByInternalRes.json()) as Array<{
-        internal_plan_id?: string | null
-        system_plan_name?: string | null
-      }>
-      for (const row of rows) {
-        const id = row.internal_plan_id?.trim()
-        const label = row.system_plan_name?.trim()
-        if (id && label && !map.has(id)) map.set(id, label)
-      }
-    }
-  }
-
-  return map
+  return extractPlanIdFromSources({
+    planId: row.plan_id,
+    skuCode: row.sku_code,
+    productName: row.product_name,
+    metadata: txn?.metadata ?? null,
+  })
 }
 
 function numberFrom(value: unknown): number {
@@ -262,14 +198,19 @@ async function fetchCatalogCoverageStats(): Promise<CatalogCoverageStats> {
   }
 }
 
-async function fetchAllRechargeRows(): Promise<RechargeRow[]> {
+async function fetchAllRechargeRows(dateFilter: DashboardDateFilter): Promise<RechargeRow[]> {
   const pageSize = 500
   const rows: RechargeRow[] = []
   let offset = 0
+  const range = resolveAdminTransactionDateRange(dateFilter)
+  const dateParts: string[] = []
+  if (range.start) dateParts.push(`created_at=gte.${encodeURIComponent(range.start.toISOString())}`)
+  if (range.end) dateParts.push(`created_at=lte.${encodeURIComponent(range.end.toISOString())}`)
+  const dateQuery = dateParts.length > 0 ? `&${dateParts.join('&')}` : ''
 
   while (true) {
     const res = await supabaseRest(
-      `recharge_orders?select=id,status,product_name,operator_name,sku_code,plan_id,created_at,transaction_id,transactions(amount,currency,status,metadata)&status=neq.pending_payment&order=created_at.asc&limit=${pageSize}&offset=${offset}`,
+      `recharge_orders?select=id,status,payment_status,product_name,operator_name,sku_code,plan_id,created_at,transaction_id,send_amount,send_currency,receive_amount,receive_currency,transactions(amount,currency,status,metadata)&status=neq.pending_payment${dateQuery}&order=created_at.asc&limit=${pageSize}&offset=${offset}`,
       { cache: 'no-store' },
     )
     if (!res.ok) break
@@ -286,9 +227,20 @@ function dayKey(iso: string): string {
   return iso.slice(0, 10)
 }
 
-export async function loadAdminDashboardMetrics(): Promise<DashboardMetrics> {
+function normalizeDashboardDateFilter(date?: string | null): DashboardDateFilter {
+  const key = (date ?? 'today').trim().toLowerCase()
+  if (key === 'week' || key === 'month' || key === 'year' || key === 'all' || key === 'today') {
+    return key
+  }
+  return 'today'
+}
+
+export async function loadAdminDashboardMetrics(options?: {
+  date?: string | null
+}): Promise<DashboardMetrics> {
+  const dateFilter = normalizeDashboardDateFilter(options?.date)
   const [rechargeRows, totalUsers, catalog, rateMap] = await Promise.all([
-    fetchAllRechargeRows(),
+    fetchAllRechargeRows(dateFilter),
     fetchExactCount('profiles', 'app_role=eq.user'),
     fetchCatalogCoverageStats(),
     loadCatalogExchangeRates(ADMIN_REPORTING_CURRENCY),
@@ -304,6 +256,7 @@ export async function loadAdminDashboardMetrics(): Promise<DashboardMetrics> {
   let pendingOrders = 0
   let grossReporting = 0
   let refundsReporting = 0
+  let gatewayFeesReporting = 0
   let providerCostReporting = 0
   const marginByCurrency: Record<string, number> = {}
   const dailyMap = new Map<string, DashboardDailySale>()
@@ -330,6 +283,7 @@ export async function loadAdminDashboardMetrics(): Promise<DashboardMetrics> {
 
     grossReporting += itu.grossReporting
     refundsReporting += itu.refundReporting
+    gatewayFeesReporting += itu.gatewayFeeReporting
     providerCostReporting += itu.costReporting
 
     if (itu.marginNative > 0) {
@@ -375,7 +329,7 @@ export async function loadAdminDashboardMetrics(): Promise<DashboardMetrics> {
     if (status === 'completed') {
       productExisting.orders += 1
       productExisting.revenue += itu.grossReporting
-      productExisting.margin += itu.marginReporting
+      productExisting.margin += itu.ituContribution
     }
     productExisting.currency = reportingCurrency
     productMap.set(productKey, productExisting)
@@ -400,19 +354,21 @@ export async function loadAdminDashboardMetrics(): Promise<DashboardMetrics> {
     currency: reportingCurrency,
   }))
 
-  const ituRevenue = computeItuRevenue({
+  const ituProfit = computeItuRevenue({
     grossReporting,
     refundsReporting,
     providerCostReporting,
+    gatewayFeesReporting,
   })
 
   const summary: DashboardSummary = {
-    total_revenue: ituRevenue,
-    total_margin: ituRevenue,
+    total_revenue: ituProfit,
+    total_margin: ituProfit,
     gross_revenue: parseFloat(grossReporting.toFixed(2)),
     refunds: parseFloat(refundsReporting.toFixed(2)),
+    payment_gateway_fees: parseFloat(gatewayFeesReporting.toFixed(2)),
     provider_cost: parseFloat(providerCostReporting.toFixed(2)),
-    itu_revenue: ituRevenue,
+    itu_revenue: ituProfit,
     total_orders: countedRows.length,
     completed_orders: completedOrders,
     failed_orders: failedOrders,
@@ -424,6 +380,7 @@ export async function loadAdminDashboardMetrics(): Promise<DashboardMetrics> {
     catalog_synced_at: catalog.catalog_synced_at,
     reporting_currency: reportingCurrency,
     margin_by_currency: marginByCurrency,
+    date_filter: dateFilter,
   }
 
   return { summary, sales, topProducts }

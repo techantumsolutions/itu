@@ -28,6 +28,10 @@ export async function POST(request: Request) {
 
     const serviceFee = typeof body.serviceFee === 'number' ? body.serviceFee : undefined
     const tax = typeof body.tax === 'number' ? body.tax : undefined
+    const planPrice = typeof body.planPrice === 'number' ? body.planPrice : undefined
+    const platformFee = typeof body.platformFee === 'number' ? body.platformFee : undefined
+    const paymentGatewayFee =
+      typeof body.paymentGatewayFee === 'number' ? body.paymentGatewayFee : undefined
 
     const userId = await getUserIdFromRequest(request)
     const result = await prepareCheckout({
@@ -38,8 +42,11 @@ export async function POST(request: Request) {
       countryId,
       amount,
       currency,
+      planPrice,
       userId: userId || undefined,
       serviceFee,
+      platformFee,
+      paymentGatewayFee,
       tax,
     })
 

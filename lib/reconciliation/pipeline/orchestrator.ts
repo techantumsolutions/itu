@@ -26,13 +26,24 @@ export class ReconciliationOrchestrator {
   async run(params: {
     supplier: string;
     billingPeriod: string;
+    periodStart: string;
+    periodEnd: string;
     billingType: string;
     fileName: string;
     fileContent: string;
     uploadedBy: string;
   }): Promise<{ reportId: string; metrics: ReconciliationHealthMetrics }> {
     const startTime = Date.now();
-    const { supplier, billingPeriod, billingType, fileName, fileContent, uploadedBy } = params;
+    const {
+      supplier,
+      billingPeriod,
+      periodStart,
+      periodEnd,
+      billingType,
+      fileName,
+      fileContent,
+      uploadedBy,
+    } = params;
 
     // 1. Process Upload (Deduplication check & save file)
     const uploadResult = await this.uploadService.processUpload({
@@ -122,6 +133,8 @@ export class ReconciliationOrchestrator {
     const reportId = await this.dbWriter.writeReport({
       supplier,
       billingPeriod,
+      periodStart,
+      periodEnd,
       billingType,
       fileHash: uploadResult.fileHash,
       fileName,

@@ -41,22 +41,27 @@ type DashboardTransaction = {
 type TransactionsTableProps = {
   reportingCurrency?: string
   locale?: string
+  dateFilter?: string
 }
 
 export function TransactionsTable({
   reportingCurrency = "EUR",
   locale = "en-US",
+  dateFilter = "today",
 }: TransactionsTableProps) {
   const [sortField, setSortField] = useState<SortField>("date")
   const [sortDirection, setSortDirection] = useState<SortDirection>("desc")
   const [transactions, setTransactions] = useState<DashboardTransaction[]>([])
 
   useEffect(() => {
-    void fetch('/api/admin/transactions?limit=10', { credentials: 'include', cache: 'no-store' })
+    void fetch(`/api/admin/transactions?limit=10&date=${encodeURIComponent(dateFilter)}`, {
+      credentials: 'include',
+      cache: 'no-store',
+    })
       .then((r) => r.json())
       .then((data) => setTransactions(Array.isArray(data?.transactions) ? data.transactions : []))
       .catch(() => setTransactions([]))
-  }, [])
+  }, [dateFilter])
 
   const sortedTransactions = [...transactions].sort((a, b) => {
     let comparison = 0

@@ -43,6 +43,12 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
+  defaultReconciliationPeriodRange,
+  RECON_MAX_PAST_YEARS,
+  RECON_MAX_RANGE_DAYS,
+  validateReconciliationPeriodRange,
+} from '@/lib/reconciliation/billing-period';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -104,11 +110,22 @@ export default function ReconciliationDashboard() {
 
   // Form state
   const [supplier, setSupplier] = useState<string>('dtone');
-  const [billingPeriod, setBillingPeriod] = useState<string>('');
+  const [periodStart, setPeriodStart] = useState(() => defaultReconciliationPeriodRange().periodStart);
+  const [periodEnd, setPeriodEnd] = useState(() => defaultReconciliationPeriodRange().periodEnd);
   const [billingType, setBillingType] = useState<string>('Original');
   const [fileName, setFileName] = useState<string>('');
   const [fileContent, setFileContent] = useState<string>('');
   const [isUploading, setIsUploading] = useState<boolean>(false);
+
+  const todayYmd = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
+  const minPastYmd = (() => {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - RECON_MAX_PAST_YEARS);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })();
 
   // Data lists state
   const [reports, setReports] = useState<ReconciliationReport[]>([]);
@@ -255,8 +272,9 @@ export default function ReconciliationDashboard() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!billingPeriod) {
-      toast.error('Please specify the billing period (e.g. 2026-07).');
+    const periodCheck = validateReconciliationPeriodRange({ periodStart, periodEnd });
+    if (!periodCheck.ok) {
+      toast.error(periodCheck.error);
       return;
     }
     if (!fileContent) {
@@ -273,7 +291,8 @@ export default function ReconciliationDashboard() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           supplier,
-          billingPeriod,
+          periodStart: periodCheck.range.periodStart,
+          periodEnd: periodCheck.range.periodEnd,
           billingType,
           fileName,
           fileContent,
@@ -286,6 +305,9 @@ export default function ReconciliationDashboard() {
         toast.success('Comparison compile runs finished successfully!', { id: toastId });
 
         // Reset form & close modal
+        const nextDefault = defaultReconciliationPeriodRange();
+        setPeriodStart(nextDefault.periodStart);
+        setPeriodEnd(nextDefault.periodEnd);
         setFileName('');
         setFileContent('');
         setIsUploadOpen(false);
@@ -368,7 +390,7 @@ export default function ReconciliationDashboard() {
                 Upload Provider Bill/Invoice
               </DialogTitle>
               <DialogDescription>
-                Select the provider and billing parameters to execute a comparison run.
+                Select the provider and inclusive billing date range to execute a comparison run.
               </DialogDescription>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4 pt-4">
@@ -386,16 +408,36 @@ export default function ReconciliationDashboard() {
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="billing-period-input">Billing Period (YYYY-MM)</Label>
-                <Input
-                  id="billing-period-input"
-                  type="month"
-                  value={billingPeriod}
-                  onChange={(e) => setBillingPeriod(e.target.value)}
-                  required
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="period-start-input">Start date</Label>
+                  <Input
+                    id="period-start-input"
+                    type="date"
+                    value={periodStart}
+                    min={minPastYmd}
+                    max={periodEnd && periodEnd < todayYmd ? periodEnd : todayYmd}
+                    onChange={(e) => setPeriodStart(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="period-end-input">End date</Label>
+                  <Input
+                    id="period-end-input"
+                    type="date"
+                    value={periodEnd}
+                    min={periodStart || minPastYmd}
+                    max={todayYmd}
+                    onChange={(e) => setPeriodEnd(e.target.value)}
+                    required
+                  />
+                </div>
               </div>
+              <p className="text-xs text-muted-foreground -mt-2">
+                Inclusive range, max {RECON_MAX_RANGE_DAYS} days, not in the future, and within the last{' '}
+                {RECON_MAX_PAST_YEARS} years.
+              </p>
 
               <div className="space-y-2">
                 <Label htmlFor="billing-type-select">Run Billing Type</Label>

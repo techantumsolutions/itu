@@ -11,11 +11,12 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import { TicketStatusBadge } from '@/components/ticket-status-badge'
 import { TicketThread } from '@/components/ticket-thread'
-import { apiGetTicket, apiPostTicketMessage } from '@/lib/tickets/client-api'
+import { apiGetTicket, apiPostTicketMessage, apiApplyTicketSuggestion } from '@/lib/tickets/client-api'
 import type { TicketStatus, TicketWithThread, TicketMessage } from '@/lib/tickets/types'
 import { toast } from 'sonner'
 import { io } from 'socket.io-client'
 import { getPublicSocketServerUrl } from '@/lib/tickets/socket-config'
+import { TicketChatSuggestions } from '@/components/ticket-chat-suggestions'
 
 export default function AccountTicketDetailPage() {
   const params = useParams()
@@ -113,6 +114,12 @@ export default function AccountTicketDetailPage() {
       setSending(false)
     }
   }
+
+  const latestUserText = useMemo(() => {
+    if (!data) return ''
+    const userMsgs = data.messages.filter((m) => m.senderType === 'user')
+    return userMsgs.length > 0 ? userMsgs[userMsgs.length - 1]!.message : ''
+  }, [data])
 
   if (!headers) return null
 
@@ -213,6 +220,30 @@ export default function AccountTicketDetailPage() {
           messages={data.messages}
           ticketCreatedAt={data.createdAt}
         />
+        {canReply && headers ? (
+          <TicketChatSuggestions
+            subject={data.subject}
+            description={data.description}
+            category={data.category}
+            latestUserText={latestUserText}
+            onPick={async (s) => {
+              try {
+                const msgs = await apiApplyTicketSuggestion(headers, id, s.id)
+                setData((prev) => {
+                  if (!prev) return prev
+                  const existing = new Set(prev.messages.map((m) => m.id))
+                  const next = [...prev.messages]
+                  for (const m of msgs) {
+                    if (!existing.has(m.id)) next.push(m)
+                  }
+                  return { ...prev, messages: next }
+                })
+              } catch (err) {
+                toast.error(err instanceof Error ? err.message : 'Failed to apply suggestion')
+              }
+            }}
+          />
+        ) : null}
       </section>
 
       {canReply ? (

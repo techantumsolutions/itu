@@ -242,7 +242,7 @@ export function ReportAnalyticsCards({ filters, currency = 'EUR' }: ReportAnalyt
       tooltip: 'Total cost charged by top-up suppliers (DTOne, Ding Connect, etc.) in base currency.',
     },
     {
-      title: 'Net Profit',
+      title: 'ITU Profit',
       key: 'profit',
       value: cur.profit,
       prevValue: prev.profit,
@@ -252,7 +252,7 @@ export function ReportAnalyticsCards({ filters, currency = 'EUR' }: ReportAnalyt
       isCurrency: true,
       isMilliseconds: false,
       icon: Layers,
-      tooltip: 'Platform margins/recharge processing fees accrued (Revenue minus Provider Cost).',
+      tooltip: 'ITU Profit = Gross − Refund − Payment Gateway − Provider Cost.',
     },
     {
       title: 'Refunds',

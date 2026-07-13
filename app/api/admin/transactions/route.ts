@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   const page = Number(url.searchParams.get('page') ?? '1')
   const pageSize = Number(url.searchParams.get('pageSize') ?? url.searchParams.get('limit') ?? '25')
   const status = (url.searchParams.get('status') ?? 'all').trim()
-  const date = (url.searchParams.get('date') ?? 'all').trim()
+  const date = (url.searchParams.get('date') ?? 'today').trim()
   const search = (url.searchParams.get('search') ?? '').trim()
 
   try {

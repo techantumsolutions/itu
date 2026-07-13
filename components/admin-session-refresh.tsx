@@ -14,8 +14,13 @@ export function AdminSessionRefresh() {
     const run = () => {
       void fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' })
         .then((r) => r.json())
-        .then((d: { ok?: boolean; user?: User | null }) => {
+        .then((d: { ok?: boolean; user?: User | null; session_revoked?: boolean }) => {
+          if (d?.session_revoked) {
+            useAuthStore.getState().logout()
+            return
+          }
           if (d?.ok && d.user?.id) setSession(d.user)
+          else if (d?.ok && !d.user) setSession(null)
         })
         .catch(() => {})
     }

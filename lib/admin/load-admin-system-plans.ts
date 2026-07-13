@@ -5,10 +5,54 @@ import {
 } from '@/lib/aggregator/repository'
 import { matchesPlanListSearch } from '@/lib/admin/operator-list-search'
 import { translatePlanTextToEnglish } from '@/lib/catalog/plan-text-english'
+import { batchLoadSystemPlanMappedDetails } from '@/lib/catalog/system-plan-mapped-details'
 import { normalizeCountryIso3 } from '@/lib/lcr/countries'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
+}
+
+/** Local / face-value currencies that should not display as EUR wholesale. */
+const LOCAL_CURRENCY_BY_COUNTRY: Record<string, string> = {
+  IND: 'INR',
+  IN: 'INR',
+  USA: 'USD',
+  US: 'USD',
+  GBR: 'GBP',
+  GB: 'GBP',
+  ARE: 'AED',
+  AE: 'AED',
+  NGA: 'NGN',
+  NG: 'NGN',
+  PHL: 'PHP',
+  PH: 'PHP',
+  BGD: 'BDT',
+  BD: 'BDT',
+  PAK: 'PKR',
+  PK: 'PKR',
+  LKA: 'LKR',
+  LK: 'LKR',
+  NPL: 'NPR',
+  NP: 'NPR',
+}
+
+/**
+ * system_plans.amount/currency sometimes stores provider wholesale (e.g. 4.62 EUR)
+ * instead of destination recharge face value (e.g. 379 INR). Reject that fallback
+ * when it clearly conflicts with the plan country.
+ */
+function isLikelyWholesaleStoredAsPlanPrice(
+  amount: number | null,
+  currency: string | null,
+  countryIso3: string,
+): boolean {
+  if (amount == null || !(amount > 0) || !currency) return false
+  const local = LOCAL_CURRENCY_BY_COUNTRY[countryIso3.trim().toUpperCase()]
+  if (!local) return false
+  const stored = currency.trim().toUpperCase()
+  if (stored === local) return false
+  // Wholesale settlement currencies mislabeled as plan price for local-market plans
+  return stored === 'EUR' || stored === 'USD' || stored === 'GBP'
 }
 
 export type AdminSystemPlanRow = {
@@ -19,6 +63,9 @@ export type AdminSystemPlanRow = {
   operator_ref: string
   category: string
   active: boolean
+  /** Customer recharge / face value (not provider wholesale cost). */
+  price: number | null
+  currency: string | null
   provider_count: number
   provider_names: string[]
   provider_codes: string[]
@@ -160,14 +207,17 @@ export async function loadAdminSystemPlans(input: {
     plan_type?: string | null
     status?: string | null
     country_code?: string | null
+    amount?: number | string | null
+    currency?: string | null
   }>
 
   const systemIds = rows.map((row) => row.system_operator_id).filter(Boolean) as string[]
   const planIds = rows.map((row) => row.id).filter(Boolean)
-  const [systemOperatorInfo, providerCounts, providerLabelsByPlan] = await Promise.all([
+  const [systemOperatorInfo, providerCounts, providerLabelsByPlan, mappedDetails] = await Promise.all([
     loadSystemOperatorsInfo(systemIds),
     aggCountProvidersBySystemPlanIds(planIds),
     aggProviderLabelsBySystemPlanIds(planIds),
+    batchLoadSystemPlanMappedDetails(planIds),
   ])
 
   let systemPlans = rows.map((row) => {
@@ -176,15 +226,52 @@ export async function loadAdminSystemPlans(input: {
     const opStatus = opInfo?.status || 'ACTIVE'
     const planActive = (row.status || '').toUpperCase() === 'ACTIVE'
     const active = planActive && opStatus !== 'INACTIVE'
+    const countryIso3 = row.country_code || opInfo?.countryId || ''
+
+    // Prefer destination recharge face value from provider mappings (same as mapping popup).
+    const mapped = mappedDetails.get(row.id)
+    let price: number | null = null
+    let currency: string | null = null
+
+    if (mapped?.rechargeSource === 'mapping_raw' && mapped.recharge.amount > 0) {
+      price = mapped.recharge.amount
+      currency = mapped.recharge.currency
+    } else {
+      const storedAmount = row.amount != null ? Number(row.amount) : NaN
+      const storedCurrency = row.currency?.trim()?.toUpperCase() || null
+      const storedPrice = Number.isFinite(storedAmount) ? storedAmount : null
+
+      if (
+        storedPrice != null &&
+        !isLikelyWholesaleStoredAsPlanPrice(storedPrice, storedCurrency, countryIso3)
+      ) {
+        price = storedPrice
+        currency = storedCurrency
+      } else if (mapped?.recharge.amount && mapped.recharge.amount > 0) {
+        // Mapped value even if merge labeled it system_plan — only if not wholesale-looking
+        if (
+          !isLikelyWholesaleStoredAsPlanPrice(
+            mapped.recharge.amount,
+            mapped.recharge.currency,
+            countryIso3,
+          )
+        ) {
+          price = mapped.recharge.amount
+          currency = mapped.recharge.currency
+        }
+      }
+    }
 
     return {
       id: row.id,
       plan_name: translatePlanTextToEnglish(row.system_plan_name || 'Unnamed Plan'),
-      country_iso3: row.country_code || opInfo?.countryId || '',
+      country_iso3: countryIso3,
       operator_name: opInfo?.name || opId,
       operator_ref: opId,
       category: row.plan_type || 'Unknown',
       active,
+      price,
+      currency,
       provider_count: providerCounts.get(row.id) ?? 0,
       provider_names: providerLabelsByPlan.get(row.id)?.names ?? [],
       provider_codes: providerLabelsByPlan.get(row.id)?.codes ?? [],

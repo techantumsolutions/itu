@@ -59,6 +59,7 @@ export async function createTicket(input: {
   userEmail: string
   userName: string
   transactionId?: string
+  category?: string
   subject: string
   description: string
   attachmentUrl?: string
@@ -73,6 +74,7 @@ export async function createTicket(input: {
       userEmail: input.userEmail,
       userName: input.userName,
       transactionId: input.transactionId?.trim() || undefined,
+      category: input.category || 'general',
       subject: input.subject.trim(),
       description: input.description.trim(),
       status: 'open',
@@ -146,7 +148,7 @@ export async function getTicketAdmin(ticketId: string): Promise<TicketAdminDetai
 
 export async function addMessage(input: {
   ticketId: string
-  senderType: 'admin' | 'user'
+  senderType: 'admin' | 'user' | 'bot'
   message: string
 }): Promise<TicketMessage> {
   return withFileLock(async () => {

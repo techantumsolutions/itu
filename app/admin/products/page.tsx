@@ -40,6 +40,8 @@ type ProductPlan = {
   operator_name: string
   category: string
   active: boolean
+  price?: number | null
+  currency?: string | null
   provider_count?: number
   provider_names?: string[]
   provider_codes?: string[]
@@ -450,7 +452,7 @@ export default function AdminProductsPage() {
     }
   }
 
-  const tableColSpan = 7 + (showSelection ? 1 : 0) + (showStatusToggle ? 1 : 0)
+  const tableColSpan = 8 + (showSelection ? 1 : 0) + (showStatusToggle ? 1 : 0)
 
   const sortedPlans = useMemo(() => {
     return [...plans].sort((a, b) => {
@@ -554,12 +556,13 @@ export default function AdminProductsPage() {
                   />
                 </TableHead>
                 ) : null}
-                <TableHead className="w-[28%]">Plan name</TableHead>
+                <TableHead className="w-[24%]">Plan name</TableHead>
+                <TableHead className="w-[10%] text-right">Price</TableHead>
                 <TableHead className="w-[12%]">Country</TableHead>
-                <TableHead className="w-[24%]">Operator name</TableHead>
-                <TableHead className="w-[16%]">Provider</TableHead>
-                <TableHead className="w-[12%]">Category</TableHead>
-                <TableHead className="w-[12%]">Status</TableHead>
+                <TableHead className="w-[20%]">Operator name</TableHead>
+                <TableHead className="w-[14%]">Provider</TableHead>
+                <TableHead className="w-[10%]">Category</TableHead>
+                <TableHead className="w-[10%]">Status</TableHead>
                 {showStatusToggle ? (
                 <TableHead className="w-[12%] text-right">Action</TableHead>
                 ) : null}
@@ -574,6 +577,7 @@ export default function AdminProductsPage() {
                     className="h-8 text-xs font-normal"
                   />
                 </TableHead>
+                <TableHead className="py-2" />
                 <TableHead className="py-2 font-normal normal-case">
                   <ComboFilter
                     value={countryFilter}
@@ -665,6 +669,9 @@ export default function AdminProductsPage() {
                     </TableCell>
                     ) : null}
                     <TableCell className="font-medium">{plan.plan_name}</TableCell>
+                    <TableCell className="text-right tabular-nums whitespace-nowrap">
+                      {formatMoney(plan.price, plan.currency)}
+                    </TableCell>
                     <TableCell>
                       {plan.country_iso3 ? (
                         <>

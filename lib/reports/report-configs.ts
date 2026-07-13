@@ -87,7 +87,7 @@ const DASHBOARD_SUMMARY: ReportConfig = {
 
   supportedFilters: ['search'],
   defaultSort: { column: 'orders', direction: 'desc' },
-  defaultDateRange: 'last_30_days',
+  defaultDateRange: 'today',
 }
 
 // ─── 2. Transactions ──────────────────────────────────────────────────────────
@@ -184,7 +184,7 @@ const TRANSACTIONS: ReportConfig = {
     'operator',
   ],
   defaultSort: { column: 'created_at', direction: 'desc' },
-  defaultDateRange: 'all_time',
+  defaultDateRange: 'today',
 }
 
 // ─── 3. Country ───────────────────────────────────────────────────────────────
@@ -272,7 +272,7 @@ const COUNTRY: ReportConfig = {
 
   supportedFilters: ['search'],
   defaultSort: { column: 'revenue', direction: 'desc' },
-  defaultDateRange: 'all_time',
+  defaultDateRange: 'today',
 }
 
 // ─── 4. Origin Country ────────────────────────────────────────────────────────
@@ -440,7 +440,7 @@ const DESTINATION_NETWORK: ReportConfig = {
 
   supportedFilters: ['destinationCountry', 'operator', 'network', 'search'],
   defaultSort: { column: 'orders', direction: 'desc' },
-  defaultDateRange: 'all_time',
+  defaultDateRange: 'today',
 }
 
 // ─── 7. Provider Report ───────────────────────────────────────────────────────
@@ -552,7 +552,7 @@ const PROVIDER: ReportConfig = {
 
   supportedFilters: ['provider', 'search'],
   defaultSort: { column: 'revenue', direction: 'desc' },
-  defaultDateRange: 'all_time',
+  defaultDateRange: 'today',
 }
 
 // ─── 8. Financial Report ──────────────────────────────────────────────────────
@@ -594,8 +594,8 @@ const FINANCIAL: ReportConfig = {
     computeAfter: [
       // Net Revenue = Gross − Refunds − Gateway Fees
       { key: 'net_revenue',   compute: (r) => parseFloat((n(r.gross_revenue) - n(r.refunds) - n(r.gateway_fees)).toFixed(2)) },
-      // ITU Revenue = Gross − Refunds − Provider Cost (same as Dashboard)
-      { key: 'profit',        compute: (r) => parseFloat((n(r.gross_revenue) - n(r.refunds) - n(r.provider_cost)).toFixed(2)) },
+      // ITU Profit = Gross − Refunds − Payment Gateway − Provider Cost (same as Dashboard)
+      { key: 'profit',        compute: (r) => parseFloat((n(r.gross_revenue) - n(r.refunds) - n(r.gateway_fees) - n(r.provider_cost)).toFixed(2)) },
     ],
   },
 
@@ -608,7 +608,7 @@ const FINANCIAL: ReportConfig = {
     { key: 'gateway_fees',   header: 'Gateway Fees',      type: 'currency', sortable: true, align: 'right', currency: 'EUR' },
     { key: 'net_revenue',    header: 'Net Revenue',       type: 'currency', sortable: true, align: 'right', currency: 'EUR' },
     { key: 'provider_cost',  header: 'Provider Cost',     type: 'currency', sortable: true, align: 'right', currency: 'EUR' },
-    { key: 'profit',         header: 'ITU Revenue',       type: 'currency', sortable: true, align: 'right', currency: 'EUR' },
+    { key: 'profit',         header: 'ITU Profit',        type: 'currency', sortable: true, align: 'right', currency: 'EUR' },
     { key: 'wallet_usage',   header: 'Wallet Usage',      type: 'currency', sortable: true, align: 'right', currency: 'EUR' },
     { key: 'taxes',          header: 'Taxes (VAT)',       type: 'currency', sortable: true, align: 'right', currency: 'EUR' },
   ],
@@ -620,13 +620,13 @@ const FINANCIAL: ReportConfig = {
       compute: (rows) => parseFloat(rows.reduce((s,r) => s + n(r.gross_revenue), 0).toFixed(2)) },
     { id: 'refunds',   label: 'Total Refunds',      icon: 'Undo2', currency: 'EUR',
       compute: (rows) => parseFloat(rows.reduce((s,r) => s + n(r.refunds), 0).toFixed(2)) },
-    { id: 'profit',    label: 'ITU Revenue',        icon: 'DollarSign', currency: 'EUR',
+    { id: 'profit',    label: 'ITU Profit',         icon: 'DollarSign', currency: 'EUR',
       compute: (rows) => parseFloat(rows.reduce((s,r) => s + n(r.profit), 0).toFixed(2)) },
   ],
 
   charts: [
     { id: 'revenue_trend', name: 'Gross vs Net Revenue Trend', labelKey: 'period', valueKey: 'gross_revenue', type: 'area' },
-    { id: 'profit_trend', name: 'ITU Revenue Trend', labelKey: 'period', valueKey: 'profit', type: 'line' },
+    { id: 'profit_trend', name: 'ITU Profit Trend', labelKey: 'period', valueKey: 'profit', type: 'line' },
     { id: 'wallet_usage', name: 'Wallet payments share', labelKey: 'period', valueKey: 'wallet_usage', type: 'bar' },
   ],
 
@@ -635,7 +635,7 @@ const FINANCIAL: ReportConfig = {
     { filterKey: 'currency', column: 'send_currency', operator: 'eq' },
   ],
   defaultSort: { column: 'period', direction: 'desc' },
-  defaultDateRange: 'all_time',
+  defaultDateRange: 'today',
 }
 
 // ─── 9. Failed Recharges ──────────────────────────────────────────────────────
@@ -762,7 +762,7 @@ const FAILED_RECHARGE: ReportConfig = {
     'search',
   ],
   defaultSort: { column: 'created_at', direction: 'desc' },
-  defaultDateRange: 'last_30_days',
+  defaultDateRange: 'today',
 }
 
 // ─── 10. Reconciliation ───────────────────────────────────────────────────────
@@ -869,7 +869,7 @@ const RECONCILIATION: ReportConfig = {
 
   supportedFilters: ['provider', 'status'],
   defaultSort: { column: 'created_at', direction: 'desc' },
-  defaultDateRange: 'all_time',
+  defaultDateRange: 'today',
 }
 
 // ─── 12. Wallet ───────────────────────────────────────────────────────────────
@@ -913,7 +913,7 @@ const WALLET: ReportConfig = {
 
   supportedFilters: ['currency', 'customer', 'search'],
   defaultSort: { column: 'balance', direction: 'desc' },
-  defaultDateRange: 'this_month',
+  defaultDateRange: 'today',
 }
 
 // ─── 13. Settlement ───────────────────────────────────────────────────────────
@@ -1058,7 +1058,7 @@ const CUSTOMER: ReportConfig = {
 
   supportedFilters: ['search'],
   defaultSort: { column: 'ltv', direction: 'desc' },
-  defaultDateRange: 'all_time',
+  defaultDateRange: 'today',
 }
 
 // ─── 15. Audit ────────────────────────────────────────────────────────────────

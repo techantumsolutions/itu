@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cacheGetJson, cacheDel } from '@/lib/cache/redis'
-import { supabaseRest } from '@/lib/db/supabase-rest'
-import { verifySync } from 'otplib'
 import { logLoginAudit, sendNewAdminDeviceAlert } from '@/lib/auth/audit'
+import { upsertTrustedDevice } from '@/lib/auth/trusted-devices'
 
 function cookieOptions() {
   const isProd = process.env.NODE_ENV === 'production'
@@ -71,16 +70,15 @@ export async function POST(req: Request) {
 
     // Register trusted device
     try {
-      await supabaseRest('trusted_devices', {
-        method: 'POST',
-        body: JSON.stringify({
-          user_id: user?.id,
-          device_fingerprint: fingerprint,
-          last_login_at: new Date().toISOString()
+      if (user?.id && fingerprint) {
+        await upsertTrustedDevice({
+          userId: user.id,
+          fingerprint,
+          ipAddress,
+          country,
+          userAgent,
         })
-      })
-      
-      // (TOTP logic removed - we use Email OTP for everyone now)
+      }
     } catch (e) {
       console.error('Failed to register trusted device or enable totp:', e)
     }
