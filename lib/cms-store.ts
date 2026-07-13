@@ -622,7 +622,6 @@ const defaultContent: SiteContent = {
       { label: 'About us', href: '/about' },
       { label: 'Press', href: '/press' },
       { label: 'Careers', href: '/careers' },
-      { label: 'Contact us', href: '/contact' },
     ],
     legalLinks: [
       { label: 'Privacy notice', href: '/privacy' },

@@ -674,7 +674,7 @@ export default function PublicLayout({
       <main
         className={cn(
           'flex flex-1 flex-col',
-          (pathname === '/' || pathname === '/careers' || pathname === '/contact' || pathname === '/about') ? 'pt-0' : 'pt-[5.25rem] sm:pt-[5.5rem]',
+          (pathname === '/' || pathname === '/careers' || pathname === '/contact' || pathname === '/about' || pathname.startsWith('/account')) ? 'pt-0' : 'pt-[5.25rem] sm:pt-[5.5rem]',
         )}
       >
         {pathname === '/' && (
@@ -746,16 +746,18 @@ export default function PublicLayout({
                 <div>
                   <h4 className="mb-4 text-sm font-bold text-neutral-900">Company</h4>
                   <ul className="space-y-3 text-sm font-normal text-neutral-800">
-                    {content.footer.companyLinks.map((link) => (
-                      <li key={`${link.href}-${link.label}`}>
-                        <Link
-                          href={link.href}
-                          className="transition-colors hover:text-neutral-950 hover:underline underline-offset-4"
-                        >
-                          {link.label}
-                        </Link>
-                      </li>
-                    ))}
+                    {content.footer.companyLinks
+                      .filter((link) => link.href !== '/contact' && link.label.toLowerCase() !== 'contact' && link.label.toLowerCase() !== 'contact us')
+                      .map((link) => (
+                        <li key={`${link.href}-${link.label}`}>
+                          <Link
+                            href={link.href}
+                            className="transition-colors hover:text-neutral-950 hover:underline underline-offset-4"
+                          >
+                            {link.label}
+                          </Link>
+                        </li>
+                      ))}
                   </ul>
                 </div>
 
