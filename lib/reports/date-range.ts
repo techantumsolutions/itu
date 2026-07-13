@@ -122,5 +122,5 @@ export function formatDateRange(range: DateRange): string {
 }
 
 export function getDefaultDateRange(): DateRange {
-  return resolveDateRange('last_30_days')
+  return resolveDateRange('today')
 }

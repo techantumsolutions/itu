@@ -35,7 +35,11 @@ export type TransactionDetailModel = {
   planPrice?: number
   planPriceCurrency?: string
   serviceFee?: number
+  serviceFeeCurrency?: string
+  platformFee?: number
+  paymentGatewayFee?: number
   tax?: number
+  taxCurrency?: string
   totalPayable?: number
   paymentCurrency?: string
   paymentMethod?: string
@@ -43,7 +47,13 @@ export type TransactionDetailModel = {
   paymentReferenceId?: string
   gatewayResponse?: string
   providerUsed?: string
+  providerCost?: number | null
+  providerCostCurrency?: string | null
   routingType?: string
+  fxRate?: number | null
+  fxFromCurrency?: string | null
+  fxToCurrency?: string | null
+  totalInRechargeCurrency?: number | null
   apiResponseStatus?: string
   errorMessage?: string
   failureReason?: string
@@ -132,8 +142,8 @@ export function TransactionDetailDialog({ open, onOpenChange, transaction, viewe
         {!transaction ? null : (
           <>
             <DialogHeader>
-              <DialogTitle>Transaction Details</DialogTitle>
-              <DialogDescription>Complete transaction and payment details.</DialogDescription>
+              <DialogTitle>Recharge Details</DialogTitle>
+              <DialogDescription>Order summary, payment, and routing details for this recharge.</DialogDescription>
             </DialogHeader>
 
             <div className="grid gap-4 py-2">
@@ -143,7 +153,7 @@ export function TransactionDetailDialog({ open, onOpenChange, transaction, viewe
                   <p><span className="text-muted-foreground">Transaction ID:</span> <span className="font-mono">{transaction.id}</span></p>
                   <p><span className="text-muted-foreground">Date & Time:</span> {prettyDateTime(transaction.createdAt)}</p>
                   <p><span className="text-muted-foreground">Status:</span> <Badge variant="outline">{transaction.status || '—'}</Badge></p>
-                  <p><span className="text-muted-foreground">Amount:</span> {prettyMoney(transaction.amount, transaction.currency)}</p>
+                  <p><span className="text-muted-foreground">Amount:</span> {prettyMoney(transaction.totalPayable ?? transaction.amount, transaction.paymentCurrency || transaction.currency)}</p>
                 </div>
               </section>
 
@@ -158,53 +168,82 @@ export function TransactionDetailDialog({ open, onOpenChange, transaction, viewe
               </section>
 
               <section className="rounded-lg border p-3">
-                <h3 className="mb-2 text-sm font-semibold">Recharge Details</h3>
+                <h3 className="mb-2 text-sm font-semibold">Order Details</h3>
                 <div className="grid gap-2 text-sm sm:grid-cols-2">
                   <p><span className="text-muted-foreground">Destination Country:</span> {transaction.destinationCountry || '—'}</p>
                   <p><span className="text-muted-foreground">Network / Operator:</span> {transaction.networkOperator || '—'}</p>
                   <p><span className="text-muted-foreground">Mobile / Account:</span> {transaction.mobileNumber || '—'}</p>
+                  <p><span className="text-muted-foreground">Plan ID:</span> <span className="font-mono text-xs">{transaction.planId || '—'}</span></p>
+                  <p><span className="text-muted-foreground">Plan Name:</span> {transaction.planName || '—'}</p>
+                  <p>
+                    <span className="text-muted-foreground">Plan Price:</span>{' '}
+                    {transaction.planPrice != null
+                      ? prettyMoney(transaction.planPrice, transaction.planPriceCurrency || transaction.currency)
+                      : '—'}
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Platform Fee:</span>{' '}
+                    {transaction.platformFee != null
+                      ? prettyMoney(
+                          transaction.platformFee,
+                          transaction.serviceFeeCurrency || transaction.planPriceCurrency || transaction.currency,
+                        )
+                      : transaction.serviceFee != null &&
+                          (transaction.paymentGatewayFee == null || transaction.paymentGatewayFee <= 0)
+                        ? prettyMoney(
+                            transaction.serviceFee,
+                            transaction.serviceFeeCurrency || transaction.planPriceCurrency || transaction.currency,
+                          )
+                        : '—'}
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Payment Gateway Fee:</span>{' '}
+                    {transaction.paymentGatewayFee != null
+                      ? prettyMoney(
+                          transaction.paymentGatewayFee,
+                          transaction.serviceFeeCurrency || transaction.planPriceCurrency || transaction.currency,
+                        )
+                      : '—'}
+                  </p>
+                  {(transaction.tax ?? 0) > 0 ? (
+                    <p>
+                      <span className="text-muted-foreground">Tax:</span>{' '}
+                      {prettyMoney(
+                        transaction.tax ?? 0,
+                        transaction.taxCurrency || transaction.planPriceCurrency || transaction.currency,
+                      )}
+                    </p>
+                  ) : null}
+                  {transaction.totalInRechargeCurrency != null &&
+                  transaction.planPriceCurrency &&
+                  transaction.paymentCurrency &&
+                  transaction.planPriceCurrency !== transaction.paymentCurrency ? (
+                    <p>
+                      <span className="text-muted-foreground">Total (recharge currency):</span>{' '}
+                      {prettyMoney(transaction.totalInRechargeCurrency, transaction.planPriceCurrency)}
+                    </p>
+                  ) : null}
+                  <p>
+                    <span className="text-muted-foreground">Total Payable:</span>{' '}
+                    {transaction.totalPayable != null
+                      ? prettyMoney(transaction.totalPayable, transaction.paymentCurrency || transaction.currency)
+                      : prettyMoney(transaction.amount, transaction.currency)}
+                  </p>
+                  <p>
+                    <span className="text-muted-foreground">Payment Currency:</span>{' '}
+                    {transaction.paymentCurrency || transaction.currency || '—'}
+                  </p>
+                  {transaction.fxRate != null &&
+                  transaction.fxFromCurrency &&
+                  transaction.fxToCurrency &&
+                  transaction.fxFromCurrency !== transaction.fxToCurrency ? (
+                    <p>
+                      <span className="text-muted-foreground">FX Rate (at recharge):</span>{' '}
+                      1 {transaction.fxFromCurrency} = {transaction.fxRate.toFixed(6)} {transaction.fxToCurrency}
+                    </p>
+                  ) : null}
+                  <p><span className="text-muted-foreground">Payment Method:</span> {transaction.paymentMethod || '—'}</p>
                 </div>
-
-                {(transaction.planName || transaction.planId || transaction.planPrice != null || transaction.serviceFee != null) && (
-                  <div className="mt-4 rounded-md border border-dashed p-3">
-                    <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                      Order Summary
-                    </h4>
-                    <div className="grid gap-2 text-sm sm:grid-cols-2">
-                      <p><span className="text-muted-foreground">Plan ID:</span> <span className="font-mono text-xs">{transaction.planId || '—'}</span></p>
-                      <p><span className="text-muted-foreground">Plan Name:</span> {transaction.planName || '—'}</p>
-                      <p>
-                        <span className="text-muted-foreground">Plan Price:</span>{' '}
-                        {transaction.planPrice != null
-                          ? prettyMoney(transaction.planPrice, transaction.planPriceCurrency || transaction.currency)
-                          : '—'}
-                      </p>
-                      <p>
-                        <span className="text-muted-foreground">Service Fee:</span>{' '}
-                        {transaction.serviceFee != null
-                          ? prettyMoney(transaction.serviceFee, transaction.planPriceCurrency || transaction.currency)
-                          : '—'}
-                      </p>
-                      {(transaction.tax ?? 0) > 0 ? (
-                        <p>
-                          <span className="text-muted-foreground">Tax:</span>{' '}
-                          {prettyMoney(transaction.tax ?? 0, transaction.planPriceCurrency || transaction.currency)}
-                        </p>
-                      ) : null}
-                      <p>
-                        <span className="text-muted-foreground">Total Payable:</span>{' '}
-                        {transaction.totalPayable != null
-                          ? prettyMoney(transaction.totalPayable, transaction.paymentCurrency || transaction.currency)
-                          : prettyMoney(transaction.amount, transaction.currency)}
-                      </p>
-                      <p>
-                        <span className="text-muted-foreground">Payment Currency:</span>{' '}
-                        {transaction.paymentCurrency || transaction.currency || '—'}
-                      </p>
-                      <p><span className="text-muted-foreground">Payment Method:</span> {transaction.paymentMethod || '—'}</p>
-                    </div>
-                  </div>
-                )}
               </section>
 
               <section className="rounded-lg border p-3">
@@ -220,10 +259,19 @@ export function TransactionDetailDialog({ open, onOpenChange, transaction, viewe
 
               {isAdmin && (
                 <section className="rounded-lg border p-3">
-                  <h3 className="mb-2 text-sm font-semibold">Routing Info</h3>
+                  <h3 className="mb-2 text-sm font-semibold">Routing Details</h3>
                   <div className="grid gap-2 text-sm sm:grid-cols-2">
                     <p><span className="text-muted-foreground">Provider Used:</span> {transaction.providerUsed || '—'}</p>
                     <p><span className="text-muted-foreground">Routing Type:</span> {transaction.routingType || '—'}</p>
+                    <p>
+                      <span className="text-muted-foreground">Provider Cost:</span>{' '}
+                      {transaction.providerCost != null && transaction.providerCost > 0
+                        ? prettyMoney(
+                            transaction.providerCost,
+                            transaction.providerCostCurrency || transaction.currency,
+                          )
+                        : '—'}
+                    </p>
                     <p><span className="text-muted-foreground">API Response Status:</span> {transaction.apiResponseStatus || '—'}</p>
                   </div>
                 </section>

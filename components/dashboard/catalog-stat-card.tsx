@@ -41,7 +41,7 @@ export function CatalogStatCard({ operators, plans, countries, syncedAt, classNa
   return (
     <Card
       className={cn(
-        'relative overflow-hidden rounded-2xl border-border/70 transition-colors hover:border-border',
+        'relative overflow-hidden col-span-2 rounded-2xl border-border/70 transition-colors hover:border-border',
         className,
       )}
     >

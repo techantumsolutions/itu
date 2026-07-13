@@ -963,6 +963,8 @@ export default function TopupSummaryPage() {
     return {
       subtotal,
       serviceFee,
+      platformFee: feeParts.platformFee,
+      paymentGatewayFee: feeParts.paymentGatewayFee,
       tax,
       fee,
       totalInRecharge,
@@ -1047,6 +1049,17 @@ export default function TopupSummaryPage() {
             walletCurrency: activeWalletCurrency,
             checkoutSessionId,
             usedRewardPoints: amounts.pointsUsed,
+            checkoutPricing: {
+              planPrice: amounts.subtotal,
+              planPriceCurrency: amounts.rechargeCurrency,
+              platformFee: amounts.platformFee,
+              paymentGatewayFee: amounts.paymentGatewayFee,
+              tax: amounts.tax,
+              totalInRechargeCurrency: amounts.totalInRecharge,
+              fxRate: conversionRate ?? (amounts.payableCurrency === amounts.rechargeCurrency ? 1 : null),
+              fxFromCurrency: amounts.rechargeCurrency,
+              fxToCurrency: amounts.payableCurrency,
+            },
           }),
         })
         const data = await res.json()
@@ -1096,6 +1109,17 @@ export default function TopupSummaryPage() {
           walletCurrency: activeWalletCurrency,
           checkoutSessionId,
           usedRewardPoints: amounts.pointsUsed,
+          checkoutPricing: {
+            planPrice: amounts.subtotal,
+            planPriceCurrency: amounts.rechargeCurrency,
+            platformFee: amounts.platformFee,
+            paymentGatewayFee: amounts.paymentGatewayFee,
+            tax: amounts.tax,
+            totalInRechargeCurrency: amounts.totalInRecharge,
+            fxRate: conversionRate ?? (amounts.payableCurrency === amounts.rechargeCurrency ? 1 : null),
+            fxFromCurrency: amounts.rechargeCurrency,
+            fxToCurrency: amounts.payableCurrency,
+          },
         }),
       })
       const createData = await createRes.json()
@@ -1182,6 +1206,7 @@ export default function TopupSummaryPage() {
     pricing,
     isSubmitting,
     amounts,
+    conversionRate,
     countryCode,
     phoneNumber,
     operator,

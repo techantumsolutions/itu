@@ -26,6 +26,7 @@ import {
   type ReportFxConverter,
 } from './fx'
 import {
+  computePaymentGatewayFee,
   loadItuRateContext,
   loadRoutingCostsForItuRows,
   resolveItuAmountsForRow,
@@ -895,7 +896,7 @@ function injectVirtualKeys(
           const isWallet =
             String(txnMeta?.payment_method ?? meta?.payment_method).toLowerCase() === 'wallet' ||
             String(txnMeta?.gateway ?? meta?.gateway).toLowerCase() === 'wallet'
-          r['_gateway_fee']  = (isCompleted && grossEur > 0 && !isWallet) ? parseFloat((grossEur * 0.02).toFixed(2)) : 0
+          r['_gateway_fee']  = computePaymentGatewayFee(grossEur, isWallet)
           r['_wallet_usage'] = (isCompleted && isWallet) ? grossEur : 0
           r['_tax']          = (isCompleted && grossEur > 0) ? parseFloat((grossEur * 0.05).toFixed(2)) : 0
         } else {
@@ -909,7 +910,7 @@ function injectVirtualKeys(
           r['_refund']       = isRefunded ? amountEur : 0
 
           const isWallet = String(meta?.payment_method).toLowerCase() === 'wallet' || String(meta?.gateway).toLowerCase() === 'wallet'
-          r['_gateway_fee']  = (isCompleted && !isWallet) ? parseFloat((amountEur * 0.02).toFixed(2)) : 0
+          r['_gateway_fee']  = isCompleted ? computePaymentGatewayFee(amountEur, isWallet) : 0
           r['_wallet_usage'] = (isCompleted && isWallet) ? amountEur : 0
           r['_tax']          = isCompleted ? parseFloat((amountEur * 0.05).toFixed(2)) : 0
         }

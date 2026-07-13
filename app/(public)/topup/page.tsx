@@ -548,7 +548,10 @@ function TopupPlanSelectionContent() {
           countryId: countryCode,
           amount: payableAmount,
           currency: rechargeCurrency,
+          planPrice: subtotal,
           serviceFee,
+          platformFee: feeParts.platformFee,
+          paymentGatewayFee: feeParts.paymentGatewayFee,
           tax,
         }),
       })

@@ -8,6 +8,7 @@ import { resolveRawPlanForMapping } from '@/lib/aggregator/plan-mapping-reconcil
 import { resolveProviderPricingForSystemPlan } from '@/lib/catalog/resolve-provider-pricing-for-system-plan'
 import type { ProviderPricingDebugMeta } from '@/lib/catalog/provider-pricing-debug'
 import { englishPlanDisplayFields, translatePlanTextToEnglish } from '@/lib/catalog/plan-text-english'
+import { batchLoadSystemPlanMappedDetails } from '@/lib/catalog/system-plan-mapped-details'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -171,13 +172,29 @@ export async function loadSystemPlanProviderCostBreakdown(
     validity: plan.validity,
   })
 
+  const mappedDetails = await batchLoadSystemPlanMappedDetails([plan.id])
+  const mappedRecharge = mappedDetails.get(plan.id)?.recharge
+  const useMappedFaceValue =
+    mappedRecharge != null &&
+    mappedRecharge.amount > 0 &&
+    Boolean(mappedRecharge.currency) &&
+    // Prefer mapped destination value whenever system_plans stores a different currency/amount
+    (mappedDetails.get(plan.id)?.rechargeSource === 'mapping_raw' ||
+      plan.currency?.toUpperCase() !== mappedRecharge.currency.toUpperCase() ||
+      Number(plan.amount) !== mappedRecharge.amount)
+
+  const systemPlanPrice = useMappedFaceValue ? mappedRecharge!.amount : (plan.amount ?? null)
+  const systemPlanCurrency = useMappedFaceValue
+    ? mappedRecharge!.currency
+    : (plan.currency ?? null)
+
   const planMeta = {
     systemPlanId: plan.id,
     systemPlanName: english.planName || 'Unnamed Plan',
     internalPlanId: plan.internal_plan_id ?? null,
-    systemPlanPrice: plan.amount ?? null,
-    systemPlanCurrency: plan.currency ?? null,
-    finalSellingPrice: plan.amount ?? null,
+    systemPlanPrice,
+    systemPlanCurrency,
+    finalSellingPrice: systemPlanPrice,
     status: plan.status ?? null,
     description: english.benefits || null,
     validity: english.validity || null,
