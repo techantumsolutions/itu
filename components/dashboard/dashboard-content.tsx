@@ -63,7 +63,7 @@ export function DashboardContent({ initialData }: DashboardContentProps) {
   }, [dateFilter])
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       <div className="flex justify-end">
         <Select
           value={dateFilter}
