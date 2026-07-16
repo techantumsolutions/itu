@@ -10,8 +10,11 @@ import {
   dbGetProvider,
   dbFindRechargeByDistributorRef,
   dbFindRechargeByIdempotencyKey,
+  dbFindRechargeById,
+  dbClaimRechargeAttemptForProcessing,
   dbUpdateRechargeAttempt,
   dbGetInternalPlan,
+  type RechargeAttemptRow,
 } from '@/lib/lcr-v2/recharge-db'
 import { insertDetailedRoutingLog } from '@/lib/routing/repository'
 import { processRewardsForTransaction } from '@/lib/rewards/reward-service'
@@ -126,6 +129,25 @@ function buildCachedSuccessResult(
   }
 }
 
+/**
+ * Option (b) support: poll the recharge attempt until it reaches a terminal state
+ * (success/failed) so a duplicate verify can return the winner's real result.
+ * Bounded wait — no lock, no TTL dependency.
+ */
+async function waitForAttemptTerminal(
+  attemptId: string,
+  tries = 10,
+  delayMs = 600,
+): Promise<RechargeAttemptRow | null> {
+  let row: RechargeAttemptRow | null = null
+  for (let i = 0; i < tries; i++) {
+    row = await dbFindRechargeById(attemptId).catch(() => null)
+    if (row && (row.status === 'success' || row.status === 'failed')) return row
+    await new Promise((resolve) => setTimeout(resolve, delayMs))
+  }
+  return dbFindRechargeById(attemptId).catch(() => null)
+}
+
 export async function executePostPaymentRecharge(input: CheckoutInput): Promise<CheckoutResult> {
   const hints: string[] = []
   const logHint = (msg: string) => {
@@ -177,6 +199,49 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
   const meta = (txn.metadata && typeof txn.metadata === 'object' ? txn.metadata : {}) as Record<string, unknown>
   const transactionId = String(txn.id)
   const rechargeOrder = await loadRechargeOrderByTransaction(transactionId)
+
+  // H1 (exactly-once): second atomic claim. Only the request that transitions the
+  // recharge attempt pending/pending_payment -> processing may call the provider.
+  // Concurrent/duplicate verifies lose the claim and instead wait for the winner's
+  // terminal result (option b), so they behave exactly like the original verify
+  // from the frontend's perspective. PostgreSQL is the single source of truth here
+  // — no Redis, no lock TTL.
+  const claimAttempt =
+    attemptExisting ?? (await dbFindRechargeByDistributorRef(transactionId).catch(() => null))
+  if (!claimAttempt) {
+    return { ok: false, transactionId, status: 'failed', error: 'Recharge attempt record not found' }
+  }
+
+  const claimedForProcessing = await dbClaimRechargeAttemptForProcessing(claimAttempt.id).catch(() => false)
+  if (!claimedForProcessing) {
+    const terminal = await waitForAttemptTerminal(claimAttempt.id)
+    if (terminal?.status === 'success') {
+      const points = await getEarnedPoints(pendingTransactionId).catch(() => 0)
+      logHint("Duplicate verify: returning winner's successful result")
+      return buildCachedSuccessResult(pendingTransactionId, terminal, meta, points)
+    }
+    if (terminal?.status === 'failed') {
+      logHint("Duplicate verify: returning winner's failed result")
+      return {
+        ok: false,
+        transactionId,
+        rechargeOrderId: rechargeOrder?.id,
+        status: 'failed',
+        error: terminal.error ?? 'Recharge failed',
+      }
+    }
+    // Winner has not written a terminal outcome within the wait window (very slow
+    // provider or crashed mid-flight). Surface an unconfirmed state rather than a
+    // false success; reconciliation / manual retry resolves it.
+    logHint('Duplicate verify: winner still processing after wait window')
+    return {
+      ok: false,
+      transactionId,
+      rechargeOrderId: rechargeOrder?.id,
+      status: 'failed',
+      error: 'RECHARGE_STATUS_UNCONFIRMED',
+    }
+  }
 
   console.log('[PAYMENT LOG] payment successful — executing stored provider recharge', {
     transactionId,

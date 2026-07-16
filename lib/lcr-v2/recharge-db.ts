@@ -103,6 +103,28 @@ export async function dbUpdateRechargeAttempt(
   if (!res.ok) throw new Error(await res.text())
 }
 
+/**
+ * H1: atomically claim a recharge attempt for provider execution.
+ * Transitions status `pending`/`pending_payment` → `processing` in a single
+ * conditional UPDATE. Returns true only for the request that actually moved the
+ * row (rows affected > 0); concurrent/replay callers get false and must NOT
+ * execute the provider recharge. PostgreSQL row-level locking guarantees exactly
+ * one winner — no Redis, no lock TTL.
+ */
+export async function dbClaimRechargeAttemptForProcessing(id: string): Promise<boolean> {
+  const res = await supabaseRest(
+    `lcr_v2_recharge_attempts?id=eq.${enc(id)}&status=in.(pending,pending_payment)`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ status: 'processing', updated_at: new Date().toISOString() }),
+    },
+  )
+  if (!res.ok) throw new Error(await res.text())
+  const rows = (await res.json()) as RechargeAttemptRow[]
+  return rows.length > 0
+}
+
 export async function dbFindMappingsByProviderPlanId(providerPlanId: string): Promise<
   Array<{ internal_plan_id: string; provider_id: string; provider_plan_id: string }>
 > {

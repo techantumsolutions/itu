@@ -259,7 +259,10 @@ export async function POST(request: Request) {
 
     console.log('[PAYMENT LOG] wallet payment initiated', { paymentOrderId, checkoutSessionId, amount, currency, adjustedAmount })
 
-    // 5. Create the wallet deduction transaction if there is any wallet balance used
+    // 5. Create the wallet deduction transaction if there is any wallet balance used.
+    // H2/H3: the debit is authoritative — the DB trigger rejects any debit that
+    // would overdraw the wallet (insufficient balance / lost concurrent race).
+    let walletDebitFailed = false
     if (adjustedAmount > 0) {
       if (walletCurrency !== currency) {
         const rateRes = await fetch('https://open.er-api.com/v6/latest/EUR', { cache: 'no-store' }).catch(() => null)
@@ -275,7 +278,7 @@ export async function POST(request: Request) {
         }
 
         // Debit from the walletCurrency wallet
-        await supabaseRest('transactions', {
+        const debitRes = await supabaseRest('transactions', {
           method: 'POST',
           body: JSON.stringify([{
             user_id: user.id,
@@ -293,26 +296,30 @@ export async function POST(request: Request) {
               razorpay_payment_id: 'wallet',
             }
           }])
-        }).catch((err) => console.error('Failed to insert wallet-only exchange debit:', err))
+        }).catch(() => null)
 
-        // Credit to the payment currency wallet
-        await supabaseRest('transactions', {
-          method: 'POST',
-          body: JSON.stringify([{
-            user_id: user.id,
-            type: 'topup',
-            amount: adjustedAmount,
-            currency: currency,
-            status: 'completed',
-            description: `Exchange credit from ${walletCurrency} wallet for order ${dummyOrderId}`,
-            metadata: {
-              hide_from_user: true,
-            }
-          }])
-        }).catch((err) => console.error('Failed to insert wallet-only exchange credit:', err))
+        if (!debitRes || !debitRes.ok) {
+          walletDebitFailed = true
+        } else {
+          // Credit to the payment currency wallet (only after a successful debit)
+          await supabaseRest('transactions', {
+            method: 'POST',
+            body: JSON.stringify([{
+              user_id: user.id,
+              type: 'topup',
+              amount: adjustedAmount,
+              currency: currency,
+              status: 'completed',
+              description: `Exchange credit from ${walletCurrency} wallet for order ${dummyOrderId}`,
+              metadata: {
+                hide_from_user: true,
+              }
+            }])
+          }).catch((err) => console.error('Failed to insert wallet-only exchange credit:', err))
+        }
       } else {
         // Debit from the walletCurrency wallet immediately for same currency
-        await supabaseRest('transactions', {
+        const debitRes = await supabaseRest('transactions', {
           method: 'POST',
           body: JSON.stringify([{
             user_id: user.id,
@@ -331,8 +338,24 @@ export async function POST(request: Request) {
               hide_from_user: true,
             }
           }])
-        }).catch((err) => console.error('Failed to insert wallet-only same-currency debit:', err))
+        }).catch(() => null)
+
+        if (!debitRes || !debitRes.ok) {
+          walletDebitFailed = true
+        }
       }
+    }
+
+    // H2/H3: if the authoritative wallet debit failed, fail safely — no money was
+    // captured (wallet is the only tender here), so do NOT call the provider.
+    // Mark the inert dummy payment order as failed and return an error.
+    if (walletDebitFailed) {
+      await supabaseRest(`payment_orders?id=eq.${encodeURIComponent(paymentOrderId)}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ status: 'failed' }),
+      }).catch(() => {})
+      return NextResponse.json({ error: 'Insufficient wallet balance' }, { status: 400 })
     }
 
     // 6. Execute checkout directly
