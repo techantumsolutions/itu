@@ -33,7 +33,7 @@ x-prod-common-env: &prod-common-env
   # Server-side API via Kong on supabase_network_itu (internal :8000, not host :54421).
   # Overrides .env SUPABASE_URL=http://127.0.0.1:54421 which only works on the Windows host.
   # Browser/CSP continues to use NEXT_PUBLIC_SUPABASE_URL from .env (host-mapped URL).
-  SUPABASE_URL: http://supabase_kong_itu:8000
+  SUPABASE_URL: http://supabase-kong:8000
   # Temporary: return OTP in API responses so screens can display it without email/SMS.
   # Set false / remove before real production with working mail delivery.
   SHOW_DEV_OTP: "true"
@@ -86,7 +86,7 @@ services:
     build: *web-build
     container_name: itu-prod-web
     ports:
-      - "3000:3000"
+      - "4009:3000"
     env_file:
       - .env
     environment:
@@ -219,7 +219,7 @@ volumes:
 networks:
   itu:
     driver: bridge
-  # Created by `supabase start` (project id "itu"). Must already exist before compose up.
+  # Created by the production Supabase stack. Must already exist before compose up.
   supabase:
     external: true
-    name: supabase_network_itu
+    name: supabase_default

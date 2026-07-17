@@ -92,10 +92,13 @@ export async function POST(req: Request) {
     }
 
     const res = NextResponse.json({ ok: true, user: { id: userId, phone } })
+    const cookieSecure =
+      process.env.NODE_ENV === 'production' &&
+      process.env.COOKIE_SECURE !== 'false'
     res.cookies.set('itu-user-id', signOtpUserId(userId), {
       httpOnly: true,
       sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
+      secure: cookieSecure,
       path: '/',
       maxAge: 60 * 60 * 24 * 30,
     })
