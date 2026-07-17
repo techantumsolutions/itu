@@ -20,11 +20,11 @@ x-sidecar-build: &sidecar-build
 
 x-web-base: &web-base
   build: *web-build
-  image: ${IMAGE_WEB:-ghcr.io/sjmedialabs/itu/web:latest}
+  image: ${IMAGE_WEB:-ghcr.io/techantumsolutions/itu/web:latest}
 
 x-sidecar-base: &sidecar-base
   build: *sidecar-build
-  image: ${IMAGE_SIDECAR:-ghcr.io/sjmedialabs/itu/sidecar:latest}
+  image: ${IMAGE_SIDECAR:-ghcr.io/techantumsolutions/itu/sidecar:latest}
 
 x-prod-extra-hosts: &prod-extra-hosts
   - host.docker.internal:host-gateway
