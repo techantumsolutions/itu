@@ -28,6 +28,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Load web image build env
+        run: |
+          grep -v '^\s*#' .github/production.build.env | grep -v '^\s*$' >> "$GITHUB_ENV"
+          # Optional repository variable overrides
+          [ -n "${{ vars.NEXT_PUBLIC_APP_URL }}" ] && echo "NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL }}" >> "$GITHUB_ENV"
+          [ -n "${{ vars.NEXT_PUBLIC_SUPABASE_URL }}" ] && echo "NEXT_PUBLIC_SUPABASE_URL=${{ vars.NEXT_PUBLIC_SUPABASE_URL }}" >> "$GITHUB_ENV"
+          [ -n "${{ vars.NEXT_PUBLIC_RECAPTCHA_SITE_KEY }}" ] && echo "NEXT_PUBLIC_RECAPTCHA_SITE_KEY=${{ vars.NEXT_PUBLIC_RECAPTCHA_SITE_KEY }}" >> "$GITHUB_ENV"
+          [ -n "${{ vars.NEXT_PUBLIC_RECAPTCHA_ENABLED }}" ] && echo "NEXT_PUBLIC_RECAPTCHA_ENABLED=${{ vars.NEXT_PUBLIC_RECAPTCHA_ENABLED }}" >> "$GITHUB_ENV"
+
+      - name: Validate web build-args
+        run: |
+          test -n "$NEXT_PUBLIC_APP_URL" || { echo "::error::NEXT_PUBLIC_APP_URL is missing"; exit 1; }
+          test -n "$NEXT_PUBLIC_SUPABASE_URL" || { echo "::error::NEXT_PUBLIC_SUPABASE_URL is missing"; exit 1; }
+
       - name: Build and push Web Image
         uses: docker/build-push-action@v5
         with:
@@ -35,6 +49,11 @@ jobs:
           file: Dockerfile
           push: true
           tags: ${{ env.IMAGE_WEB }}
+          build-args: |
+            NEXT_PUBLIC_APP_URL=${{ env.NEXT_PUBLIC_APP_URL }}
+            NEXT_PUBLIC_SUPABASE_URL=${{ env.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_RECAPTCHA_SITE_KEY=${{ env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY }}
+            NEXT_PUBLIC_RECAPTCHA_ENABLED=${{ env.NEXT_PUBLIC_RECAPTCHA_ENABLED }}
 
       - name: Build and push Sidecar Image
         uses: docker/build-push-action@v5
