@@ -284,13 +284,13 @@ export default function PublicLayout({
           ? 'text-[var(--hero-cta-orange)]'
           : 'text-white/95 hover:bg-white/10'
         : active
-          ? 'text-neutral-900'
-          : 'text-neutral-500 hover:bg-neutral-100/90 hover:text-neutral-800',
+          ? 'text-white font-bold'
+          : 'text-white/90 hover:bg-white/10 hover:text-white',
     )
 
   const headerChromeBtn = onHeroTop
     ? 'text-white hover:bg-white/10 border-transparent'
-    : 'text-neutral-600 hover:bg-neutral-100/90 hover:text-neutral-900'
+    : 'text-white hover:bg-white/10 hover:text-white'
 
   const footerBgImage = (content.footer.backgroundImage ?? '').trim()
   const footerMainBg = (content.footer.mainBackgroundColor ?? '#e4e4e4').trim()
@@ -314,7 +314,7 @@ export default function PublicLayout({
           className={cn(
             'pointer-events-auto flex w-full max-w-7xl items-center gap-2 py-2 pl-2 pr-2 transition-[background-color,box-shadow,border-color,border-radius] duration-200 sm:gap-3 sm:pl-4 md:py-1 md:pl-6',
             navBarSolid
-              ? 'rounded-full border border-neutral-200/90 bg-white/95 shadow-[0_10px_40px_-12px_rgba(15,23,42,0.18)] backdrop-blur-xl'
+              ? 'rounded-full border border-red-700/50 bg-red-600/95 shadow-[0_10px_40px_-12px_rgba(185,28,28,0.3)] backdrop-blur-xl'
               : 'border-transparent bg-transparent',
           )}
         >
