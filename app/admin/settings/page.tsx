@@ -537,6 +537,7 @@ function SettingsContent() {
       }
 
       if (data.otp) {
+        console.log('[DEV OTP] Admin settings profile update:', data.otp)
         setVerifyDevOtp(data.otp)
       }
       setVerifyOtpValue('')

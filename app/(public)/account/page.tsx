@@ -54,6 +54,7 @@ export default function AccountProfilePage() {
   const [showRegPassword, setShowRegPassword] = useState(false)
   const [regOtp, setRegOtp] = useState('')
   const [regOtpTimer, setRegOtpTimer] = useState(30)
+  const [regDevOtp, setRegDevOtp] = useState('')
   const [regError, setRegError] = useState('')
   const [regSuccess, setRegSuccess] = useState('')
   const [sendingRegOtp, setSendingRegOtp] = useState(false)
@@ -324,6 +325,7 @@ export default function AccountProfilePage() {
       }
 
       if (data.otp) {
+        console.log('[DEV OTP] Profile update:', data.otp)
         setVerifyDevOtp(data.otp)
       }
       setVerifyOtpValue('')
@@ -508,6 +510,13 @@ export default function AccountProfilePage() {
         throw new Error(data.error || 'Failed to send verification code. Please try again.')
       }
 
+      if (typeof data.otp === 'string' && data.otp) {
+        console.log('[DEV OTP] Account registration:', data.otp)
+        setRegDevOtp(data.otp)
+      } else {
+        setRegDevOtp('')
+      }
+
       setRegOtp('')
       setRegOtpTimer(30)
       setRegStep('otp')
@@ -557,6 +566,12 @@ export default function AccountProfilePage() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) {
         throw new Error(data.error || 'Failed to resend code.')
+      }
+      if (typeof data.otp === 'string' && data.otp) {
+        console.log('[DEV OTP] Account registration resend:', data.otp)
+        setRegDevOtp(data.otp)
+      } else {
+        setRegDevOtp('')
       }
       setRegOtp('')
       setRegOtpTimer(30)
@@ -1041,6 +1056,13 @@ export default function AccountProfilePage() {
                   <p className="text-xs text-amber-800/80">We sent a 6-digit code to <strong className="font-semibold">{regEmail}</strong></p>
                 </div>
 
+                {regDevOtp ? (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-xs text-amber-800">
+                    [Development Mode] Your OTP is:{' '}
+                    <strong className="text-sm font-bold text-amber-900">{regDevOtp}</strong>
+                  </div>
+                ) : null}
+
                 <div className="flex justify-center">
                   <InputOTP maxLength={6} value={regOtp} onChange={setRegOtp} containerClassName="justify-center gap-2">
                     <InputOTPGroup className="gap-2">
@@ -1079,6 +1101,7 @@ export default function AccountProfilePage() {
                     onClick={() => {
                       setRegStep('input')
                       setRegOtp('')
+                      setRegDevOtp('')
                       setRegError('')
                     }}
                   >

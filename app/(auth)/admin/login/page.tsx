@@ -65,6 +65,7 @@ export default function AdminLoginPage() {
       setRequires2FA(true)
       setTempToken(result.temp_token || null)
       if (result.otp) {
+        console.log('[DEV OTP] Admin login 2FA:', result.otp)
         setDevOtp(result.otp)
       }
       return

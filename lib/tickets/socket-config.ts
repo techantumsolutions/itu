@@ -56,3 +56,27 @@ export function getPublicSocketServerUrl(): string {
 export function isSocketServerConfigured(): boolean {
   return runtimeEnv('SOCKET_SERVER_DISABLED') !== 'true'
 }
+
+/** HTTP header carrying the shared secret for server-to-server broadcast calls. */
+export const BROADCAST_SECRET_HEADER = 'x-broadcast-secret'
+
+// Documented development-only fallback. NEVER used in production: if
+// SOCKET_BROADCAST_SECRET is missing in production we fail fast (throw).
+const DEV_ONLY_BROADCAST_SECRET = 'dev-only-insecure-broadcast-secret'
+
+/**
+ * Shared secret authenticating POST /api/broadcast (Next.js API → socket server).
+ * Production requires SOCKET_BROADCAST_SECRET; development uses a documented fallback.
+ */
+export function getBroadcastSecret(): string {
+  const secret = runtimeEnv('SOCKET_BROADCAST_SECRET')?.trim()
+  if (secret) return secret
+
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'SOCKET_BROADCAST_SECRET is required in production to authenticate socket broadcasts',
+    )
+  }
+
+  return DEV_ONLY_BROADCAST_SECRET
+}

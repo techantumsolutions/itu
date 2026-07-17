@@ -1,4 +1,5 @@
 import { getUserIdFromRequest, buildUserAuthHeaders } from '@/lib/auth/get-user-id-from-request'
+import { signOtpUserId } from '@/lib/auth/otp-session-cookie'
 
 const USER_ID = '11111111-1111-4111-8111-111111111111'
 
@@ -6,12 +7,27 @@ describe('getUserIdFromRequest', () => {
   const env = process.env
 
   beforeEach(() => {
-    process.env = { ...env, NODE_ENV: 'test' }
+    process.env = { ...env, NODE_ENV: 'test', OTP_SESSION_SECRET: 'test-secret' }
     delete process.env.ALLOW_INSECURE_USER_HEADERS
   })
 
   afterAll(() => {
     process.env = env
+  })
+
+  it('rejects an unsigned itu-user-id cookie (forged session)', async () => {
+    const request = new Request('http://localhost/api/topup/prepare-checkout', {
+      headers: { cookie: `itu-user-id=${USER_ID}` },
+    })
+    await expect(getUserIdFromRequest(request)).resolves.toBeNull()
+  })
+
+  it('accepts a validly signed itu-user-id cookie', async () => {
+    const signed = signOtpUserId(USER_ID)
+    const request = new Request('http://localhost/api/topup/prepare-checkout', {
+      headers: { cookie: `itu-user-id=${encodeURIComponent(signed)}` },
+    })
+    await expect(getUserIdFromRequest(request)).resolves.toBe(USER_ID)
   })
 
   it('does not trust x-user-id header by default', async () => {

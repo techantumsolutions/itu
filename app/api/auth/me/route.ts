@@ -4,6 +4,7 @@ import { supabaseRest } from '@/lib/db/supabase-rest'
 import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
 import { buildUserFromProfile } from '@/lib/auth/build-auth-user'
 import { isAccessTokenInvalidated } from '@/lib/auth/trusted-devices'
+import { verifyOtpSessionCookie } from '@/lib/auth/otp-session-cookie'
 
 export const dynamic = 'force-dynamic'
 
@@ -23,8 +24,7 @@ export async function GET(req: Request) {
   console.log('[auth/me] Extracted sb-access-token:', !!token)
 
   if (!token) {
-    const om = cookie.match(/(?:^|;\s*)itu-user-id=([^;]+)/)
-    const otpUserId = om?.[1] ? decodeURIComponent(om[1]) : ''
+    const otpUserId = verifyOtpSessionCookie(cookie) ?? ''
     console.log('[auth/me] Fallback to itu-user-id:', !!otpUserId)
     if (!otpUserId) return NextResponse.json({ ok: true, user: null })
     try {

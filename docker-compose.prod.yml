@@ -1,19 +1,42 @@
-# Production stack — built images, no source bind mounts.
+# Production stack — split images (Phase 3D):
+#   web     → Dockerfile (Next.js standalone)
+#   sidecars → Dockerfile.sidecar
 # Usage: docker compose -f docker-compose.prod.yml up -d --build
 
 name: itu-prod
 
-x-prod-build: &prod-build
+x-web-build: &web-build
   context: .
   dockerfile: Dockerfile
+  args:
+    NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+    NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+    NEXT_PUBLIC_RECAPTCHA_SITE_KEY: ${NEXT_PUBLIC_RECAPTCHA_SITE_KEY:-}
+    NEXT_PUBLIC_RECAPTCHA_ENABLED: ${NEXT_PUBLIC_RECAPTCHA_ENABLED:-false}
+
+x-sidecar-build: &sidecar-build
+  context: .
+  dockerfile: Dockerfile.sidecar
 
 x-prod-extra-hosts: &prod-extra-hosts
   - host.docker.internal:host-gateway
+
+# App services that talk to Redis + self-hosted Supabase (Kong).
+x-prod-app-networks: &prod-app-networks
+  - itu
+  - supabase
 
 x-prod-common-env: &prod-common-env
   NODE_ENV: production
   NODE_OPTIONS: --dns-result-order=ipv4first
   REDIS_URL: redis://redis:6379
+  # Server-side API via Kong on supabase_network_itu (internal :8000, not host :54421).
+  # Overrides .env SUPABASE_URL=http://127.0.0.1:54421 which only works on the Windows host.
+  # Browser/CSP continues to use NEXT_PUBLIC_SUPABASE_URL from .env (host-mapped URL).
+  SUPABASE_URL: http://supabase_kong_itu:8000
+  # Temporary: return OTP in API responses so screens can display it without email/SMS.
+  # Set false / remove before real production with working mail delivery.
+  SHOW_DEV_OTP: "true"
 
 services:
   redis:
@@ -32,8 +55,9 @@ services:
     networks:
       - itu
 
+  # Live tickets only — web readiness does not wait on socket.
   socket:
-    build: *prod-build
+    build: *sidecar-build
     container_name: itu-prod-socket
     command: npm run socket:server
     ports:
@@ -47,22 +71,22 @@ services:
       SOCKET_SERVER_URL: http://socket:3001
     extra_hosts: *prod-extra-hosts
     restart: always
+    stop_grace_period: 20s
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/health"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health | grep -q '\"ok\":true'"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
     mem_limit: 256m
     cpus: "0.25"
-    networks:
-      - itu
+    networks: *prod-app-networks
 
   web:
-    build: *prod-build
+    build: *web-build
     container_name: itu-prod-web
     ports:
-      - "3001:3000"
+      - "3000:3000"
     env_file:
       - .env
     environment:
@@ -70,21 +94,30 @@ services:
       SOCKET_SERVER_URL: http://socket:3001
       CRON_PROVIDER_SYNC_BASE_URL: http://web:3000
     volumes:
-      - file_storage:/app/storage/uploads
+      # Align with app write paths (profile/ticket uploads, reconciliation, tickets JSON).
+      - app_public_uploads:/app/public/uploads
+      - app_storage_reconciliation:/app/storage/reconciliation
+      - app_data:/app/data
     extra_hosts: *prod-extra-hosts
+    # Ready = Redis + Supabase only (not Socket.IO).
     depends_on:
       redis:
         condition: service_healthy
-      socket:
-        condition: service_healthy
     restart: always
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health/ready | grep -q '\"ok\":true'"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     mem_limit: 2g
     cpus: "2"
-    networks:
-      - itu
+    networks: *prod-app-networks
 
+  # BullMQ + Supabase — does not call web HTTP APIs.
   worker:
-    build: *prod-build
+    build: *sidecar-build
     container_name: itu-prod-worker
     command: npm run lcr:worker
     env_file:
@@ -95,9 +128,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      web:
-        condition: service_healthy
     restart: always
+    stop_grace_period: 60s
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f lcr-sync-worker >/dev/null || exit 1"]
       interval: 30s
@@ -106,11 +138,11 @@ services:
       start_period: 60s
     mem_limit: 1g
     cpus: "1"
-    networks:
-      - itu
+    networks: *prod-app-networks
 
+  # Calls POST http://web:3000/api/cron/lcr-v2-sync — requires web ready.
   cron:
-    build: *prod-build
+    build: *sidecar-build
     container_name: itu-prod-cron
     command: npm run cron:provider-sync
     env_file:
@@ -123,6 +155,7 @@ services:
       web:
         condition: service_healthy
     restart: always
+    stop_grace_period: 20s
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f provider-sync-cron >/dev/null || exit 1"]
       interval: 60s
@@ -131,11 +164,11 @@ services:
       start_period: 30s
     mem_limit: 256m
     cpus: "0.25"
-    networks:
-      - itu
+    networks: *prod-app-networks
 
+  # Supabase REST only — no web dependency.
   system-plans-availability:
-    build: *prod-build
+    build: *sidecar-build
     container_name: itu-prod-system-plans-availability
     command: npm run system-plans:availability
     env_file:
@@ -143,10 +176,8 @@ services:
     environment:
       <<: *prod-common-env
     extra_hosts: *prod-extra-hosts
-    depends_on:
-      web:
-        condition: service_healthy
     restart: always
+    stop_grace_period: 60s
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f system-plans-availability-worker >/dev/null || exit 1"]
       interval: 60s
@@ -155,11 +186,11 @@ services:
       start_period: 30s
     mem_limit: 512m
     cpus: "0.5"
-    networks:
-      - itu
+    networks: *prod-app-networks
 
+  # Supabase REST only — no web dependency.
   system-plans-merge:
-    build: *prod-build
+    build: *sidecar-build
     container_name: itu-prod-system-plans-merge
     command: npm run system-plans:merge-duplicates
     env_file:
@@ -167,10 +198,8 @@ services:
     environment:
       <<: *prod-common-env
     extra_hosts: *prod-extra-hosts
-    depends_on:
-      web:
-        condition: service_healthy
     restart: always
+    stop_grace_period: 60s
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f system-plans-duplicate-merge-worker >/dev/null || exit 1"]
       interval: 60s
@@ -179,13 +208,18 @@ services:
       start_period: 30s
     mem_limit: 512m
     cpus: "0.5"
-    networks:
-      - itu
+    networks: *prod-app-networks
 
 volumes:
   redis_data:
-  file_storage:
+  app_public_uploads:
+  app_storage_reconciliation:
+  app_data:
 
 networks:
   itu:
     driver: bridge
+  # Created by `supabase start` (project id "itu"). Must already exist before compose up.
+  supabase:
+    external: true
+    name: supabase_network_itu

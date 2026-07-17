@@ -5,6 +5,8 @@ import { supabaseRest } from '@/lib/db/supabase-rest'
 import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
 import { buildUserFromProfile } from '@/lib/auth/build-auth-user'
 import { assertStrongPassword } from '@/lib/validators/password-api'
+import { verifyOtpSessionCookie } from '@/lib/auth/otp-session-cookie'
+import { rateLimit } from '@/lib/security/rate-limit'
 import { createAdminNotification } from '@/lib/notifications/admin-notifications'
 import {
   parseProfilePhoneFromParts,
@@ -32,6 +34,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Missing email or verification code' }, { status: 400 })
     }
 
+    // Rate limit is enforced before the pending_register lookup, so the phone number
+    // (stored server-side in that record) is not yet available here; email is the
+    // registration identifier present in the request, so we key on IP + email.
+    const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0]?.trim() || 'unknown'
+    const rl = await rateLimit({
+      key: `rl:v1:register_verify:${ip}:${email}`,
+      limit: 5,
+      windowSeconds: 60,
+      failClosed: true,
+    })
+    if (!rl.ok) {
+      return NextResponse.json(
+        { ok: false, error: 'Too many attempts. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(rl.resetSeconds || 60) } },
+      )
+    }
+
     const cacheKey = `pending_register:v1:${email}`
     const record = await cacheGetJson<{
       email: string
@@ -55,8 +74,7 @@ export async function POST(req: Request) {
     if (passwordError) return passwordError
 
     const cookie = req.headers.get('cookie') ?? ''
-    const om = cookie.match(/(?:^|;\s*)itu-user-id=([^;]+)/)
-    const otpUserId = om?.[1] ? decodeURIComponent(om[1]) : ''
+    const otpUserId = verifyOtpSessionCookie(cookie) ?? ''
 
     if (record.phone && record.country_code) {
       const parsed = parseProfilePhoneFromParts(

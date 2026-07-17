@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server'
 import { generateOtp, storeOtp } from '@/lib/security/otp'
+import { shouldExposeDevOtp } from '@/lib/security/expose-dev-otp'
 import { rateLimit } from '@/lib/security/rate-limit'
 import { runtimeEnv } from '@/lib/env/runtime'
 import nodemailer from 'nodemailer'
 import { supabaseGetUser } from '@/lib/supabase/auth-rest'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
+import { verifyOtpSessionCookie } from '@/lib/auth/otp-session-cookie'
 import { parsePhoneNumberFromString } from 'libphonenumber-js/core'
 import metadata from 'libphonenumber-js/metadata.min.json'
 const actualMetadata = (metadata as any).default || metadata
@@ -39,8 +41,7 @@ export async function POST(req: Request) {
     }
 
     if (!userId) {
-      const om = cookie.match(/(?:^|;\s*)itu-user-id=([^;]+)/)
-      userId = om?.[1] ? decodeURIComponent(om[1]) : null
+      userId = verifyOtpSessionCookie(cookie)
     }
 
     if (!userId) {
@@ -109,7 +110,7 @@ export async function POST(req: Request) {
     const otp = generateOtp()
     await storeOtp(value, otp)
 
-    const isDev = process.env.NODE_ENV !== 'production'
+    const exposeOtp = shouldExposeDevOtp()
 
     if (type === 'email') {
       const smtpHost = runtimeEnv('SMTP_HOST')
@@ -118,7 +119,7 @@ export async function POST(req: Request) {
       const smtpPass = runtimeEnv('SMTP_PASS')
 
       if (!smtpHost || !smtpUser || !smtpPass || smtpHost === 'smtp.example.com') {
-        if (isDev) {
+        if (exposeOtp) {
           console.warn(`[DEV ONLY] SMTP host is placeholder or missing. Logging OTP to console.`)
           console.log(`\n========================================\n[DEV ONLY] PROFILE UPDATE OTP FOR ${value}: ${otp}\n========================================\n`)
         } else {
@@ -155,7 +156,7 @@ export async function POST(req: Request) {
             `,
           })
         } catch (mailErr) {
-          if (isDev) {
+          if (exposeOtp) {
             console.warn(`[DEV ONLY] Failed to send email via SMTP, logging OTP as fallback.`, mailErr)
             console.log(`\n========================================\n[DEV ONLY] PROFILE UPDATE OTP FOR ${value}: ${otp}\n========================================\n`)
           } else {
@@ -165,11 +166,15 @@ export async function POST(req: Request) {
       }
     }
 
-    // Return OTP in response for testing if in development mode or if verifying phone
+    if (exposeOtp) {
+      console.log(`\n========================================\n[DEV ONLY] PROFILE UPDATE OTP FOR ${value}: ${otp}\n========================================\n`)
+    }
+
+    // Return OTP in response for testing (SHOW_DEV_OTP / non-production) or phone SMS stub
     return NextResponse.json({
       ok: true,
       message: 'Verification OTP sent successfully',
-      ...(isDev || type === 'phone' ? { otp } : {})
+      ...(exposeOtp || type === 'phone' ? { otp } : {})
     })
   } catch (e) {
     console.error('Failed to send verification OTP:', e)

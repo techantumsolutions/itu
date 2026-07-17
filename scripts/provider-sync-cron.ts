@@ -26,7 +26,13 @@ function envInt(name: string, fallback: number): number {
   return Math.floor(n)
 }
 
+let shuttingDown = false
+let inFlight: Promise<void> | null = null
+let intervalHandle: ReturnType<typeof setInterval> | null = null
+
 async function runOnce() {
+  if (shuttingDown) return
+
   const baseUrl = (process.env.CRON_PROVIDER_SYNC_BASE_URL || 'http://127.0.0.1:3000').replace(/\/+$/, '')
   const endpoint = `${baseUrl}/api/cron/lcr-v2-sync`
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -52,6 +58,33 @@ async function runOnce() {
   }
 }
 
+async function tick() {
+  if (shuttingDown || inFlight) return
+  inFlight = runOnce().finally(() => {
+    inFlight = null
+  })
+  await inFlight
+}
+
+async function shutdown(signal: string) {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`[provider-sync-cron] ${signal} received — stop scheduling new runs`)
+
+  if (intervalHandle) {
+    clearInterval(intervalHandle)
+    intervalHandle = null
+  }
+
+  if (inFlight) {
+    console.log('[provider-sync-cron] waiting for in-flight run to finish')
+    await inFlight
+  }
+
+  console.log('[provider-sync-cron] shutdown complete')
+  process.exit(0)
+}
+
 async function main() {
   loadDotEnv()
   const intervalHours = envInt('CRON_PROVIDER_SYNC_INTERVAL_HOURS', 24)
@@ -62,12 +95,21 @@ async function main() {
     `[provider-sync-cron] started intervalHours=${intervalHours} runOnStart=${runOnStart} pid=${process.pid}`,
   )
 
+  process.on('SIGTERM', () => {
+    void shutdown('SIGTERM')
+  })
+  process.on('SIGINT', () => {
+    void shutdown('SIGINT')
+  })
+
   if (runOnStart) {
-    await runOnce()
+    await tick()
   }
 
-  setInterval(() => {
-    void runOnce()
+  if (shuttingDown) return
+
+  intervalHandle = setInterval(() => {
+    void tick()
   }, intervalMs)
 }
 

@@ -7,6 +7,12 @@ name: itu-dev
 x-dev-build: &dev-build
   context: .
   dockerfile: Dockerfile.dev
+  # Align image ENV with prod public build-args (next dev still prefers compose runtime ENV).
+  args:
+    NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3010}
+    NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://host.docker.internal:54421}
+    NEXT_PUBLIC_RECAPTCHA_SITE_KEY: ${NEXT_PUBLIC_RECAPTCHA_SITE_KEY:-}
+    NEXT_PUBLIC_RECAPTCHA_ENABLED: ${NEXT_PUBLIC_RECAPTCHA_ENABLED:-false}
 
 x-dev-volumes: &dev-volumes
   - .:/app
@@ -49,6 +55,7 @@ services:
     networks:
       - itu
 
+  # Live tickets only — web readiness does not wait on socket.
   socket:
     build: *dev-build
     container_name: itu-dev-socket
@@ -63,8 +70,9 @@ services:
     volumes: *dev-volumes
     extra_hosts: *dev-extra-hosts
     restart: unless-stopped
+    stop_grace_period: 20s
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/health"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/health | grep -q '\"ok\":true'"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -82,19 +90,19 @@ services:
     environment:
       <<: *dev-common-env
     volumes:
+      # Bind mount persists public/uploads, storage/reconciliation, data/ on the host.
       - .:/app
       - dev_node_modules:/app/node_modules
       - dev_next_cache:/app/.next
-      - file_storage:/app/storage/uploads
     extra_hosts: *dev-extra-hosts
+    # Ready = Redis + Supabase only (not Socket.IO).
     depends_on:
       redis:
         condition: service_healthy
-      socket:
-        condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 30s
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health/ready | grep -q '\"ok\":true'"]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -102,6 +110,7 @@ services:
     networks:
       - itu
 
+  # BullMQ + Supabase — does not call web HTTP APIs.
   worker:
     build: *dev-build
     container_name: itu-dev-worker
@@ -115,9 +124,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      web:
-        condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 60s
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f lcr-sync-worker >/dev/null || exit 1"]
       interval: 30s
@@ -127,6 +135,7 @@ services:
     networks:
       - itu
 
+  # Calls POST http://web:3000/api/cron/lcr-v2-sync — requires web ready.
   cron:
     build: *dev-build
     container_name: itu-dev-cron
@@ -142,6 +151,7 @@ services:
       web:
         condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 20s
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f provider-sync-cron >/dev/null || exit 1"]
       interval: 30s
@@ -151,6 +161,7 @@ services:
     networks:
       - itu
 
+  # Supabase REST only — no web dependency.
   system-plans-availability:
     build: *dev-build
     container_name: itu-dev-system-plans-availability
@@ -161,10 +172,8 @@ services:
       <<: *dev-common-env
     volumes: *dev-volumes
     extra_hosts: *dev-extra-hosts
-    depends_on:
-      web:
-        condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 60s
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f system-plans-availability-worker >/dev/null || exit 1"]
       interval: 30s
@@ -174,6 +183,7 @@ services:
     networks:
       - itu
 
+  # Supabase REST only — no web dependency.
   system-plans-merge:
     build: *dev-build
     container_name: itu-dev-system-plans-merge
@@ -184,10 +194,8 @@ services:
       <<: *dev-common-env
     volumes: *dev-volumes
     extra_hosts: *dev-extra-hosts
-    depends_on:
-      web:
-        condition: service_healthy
     restart: unless-stopped
+    stop_grace_period: 60s
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f system-plans-duplicate-merge-worker >/dev/null || exit 1"]
       interval: 30s
@@ -201,7 +209,6 @@ volumes:
   redis_data:
   dev_node_modules:
   dev_next_cache:
-  file_storage:
 
 networks:
   itu:

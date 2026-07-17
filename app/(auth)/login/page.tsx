@@ -107,6 +107,12 @@ function LoginForm() {
       setTempToken(result.temp_token || null)
       setOtpStep('otp')
       setOtpTimer(25)
+      if (result.otp) {
+        console.log('[DEV OTP] Login email 2FA:', result.otp)
+        setDevOtp(result.otp)
+      } else {
+        setDevOtp('')
+      }
       return
     }
 
@@ -453,6 +459,7 @@ function LoginForm() {
                         throw new Error(data.error || data.message || 'otp_send_failed')
                       }
                       if (data.otp) {
+                        console.log('[DEV OTP] Login mobile:', data.otp)
                         setDevOtp(data.otp)
                       } else {
                         setDevOtp('')
@@ -549,6 +556,7 @@ function LoginForm() {
                           const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; otp?: string }
                           if (!res.ok || !data.ok) throw new Error(data.error || 'otp_send_failed')
                           if (data.otp) {
+                            console.log('[DEV OTP] Login mobile resend:', data.otp)
                             setDevOtp(data.otp)
                           } else {
                             setDevOtp('')

@@ -36,7 +36,29 @@ async function evalRateLimit(key: string, windowSeconds: number, limit: number):
   })
 }
 
-export async function rateLimit(opts: { key: string; limit: number; windowSeconds: number }) {
+export type RateLimitResult = {
+  ok: boolean
+  remaining: number
+  resetSeconds: number
+}
+
+/**
+ * Redis-backed fixed-window rate limiter.
+ *
+ * `failClosed` controls behavior when the limiter backend (Redis) is unavailable:
+ *  - false / omitted (default): fail OPEN — allow the request (use for non-sensitive
+ *    reads such as catalog/plans/operators).
+ *  - true: fail CLOSED — reject as if the limit were exhausted (use for sensitive
+ *    auth endpoints). Callers must treat `ok === false` identically regardless of
+ *    cause, i.e. always return HTTP 429 with Retry-After — never expose whether the
+ *    rejection was due to exhaustion or backend unavailability.
+ */
+export async function rateLimit(opts: {
+  key: string
+  limit: number
+  windowSeconds: number
+  failClosed?: boolean
+}): Promise<RateLimitResult> {
   try {
     const [current, remaining, ttl] = await evalRateLimit(opts.key, opts.windowSeconds, opts.limit)
 
@@ -46,6 +68,9 @@ export async function rateLimit(opts: { key: string; limit: number; windowSecond
       resetSeconds: Math.max(0, ttl),
     }
   } catch {
-    return { ok: true as const, remaining: opts.limit, resetSeconds: opts.windowSeconds }
+    if (opts.failClosed) {
+      return { ok: false, remaining: 0, resetSeconds: opts.windowSeconds }
+    }
+    return { ok: true, remaining: opts.limit, resetSeconds: opts.windowSeconds }
   }
 }

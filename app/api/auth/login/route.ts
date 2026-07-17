@@ -7,9 +7,11 @@ import { buildUserFromProfile } from '@/lib/auth/build-auth-user'
 import { cacheGetJson, cacheSetJson, cacheDel } from '@/lib/cache/redis'
 import { logLoginAudit, sendLoginOtp, sendSuperAdminLockoutAlert } from '@/lib/auth/audit'
 import { generateOtp } from '@/lib/security/otp'
+import { shouldExposeDevOtp } from '@/lib/security/expose-dev-otp'
 import { upsertTrustedDevice } from '@/lib/auth/trusted-devices'
 import { authCookieOptions } from '@/lib/auth/cookie-options'
 import { getRequestIp, requireCaptcha } from '@/lib/security/recaptcha-guard'
+import { rateLimit } from '@/lib/security/rate-limit'
 
 function cookieOptions() {
   return authCookieOptions()
@@ -70,6 +72,19 @@ export async function POST(req: Request) {
     const source = body?.source
     if (!email || !password) {
       return NextResponse.json({ ok: false, success: false, error: 'Missing fields', message: 'Missing fields' }, { status: 400 })
+    }
+
+    const rl = await rateLimit({
+      key: `rl:v1:login:${ipAddress}:${email}`,
+      limit: 10,
+      windowSeconds: 60,
+      failClosed: true,
+    })
+    if (!rl.ok) {
+      return NextResponse.json(
+        { ok: false, success: false, error: 'Too many attempts. Please try again later.', message: 'Too many attempts. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(rl.resetSeconds || 60) } },
+      )
     }
 
     const captcha = await requireCaptcha(req, captchaToken, ipAddress)
@@ -268,8 +283,6 @@ export async function POST(req: Request) {
 
       await logLoginAudit({ userId: user?.id, email, status: '2fa_required', ipAddress, country, userAgent })
 
-      const isDev = process.env.NODE_ENV !== 'production'
-
       return NextResponse.json({
         ok: true, // we say ok: true, but provide requires_2fa so frontend handles it
         requires_2fa: true,
@@ -277,7 +290,7 @@ export async function POST(req: Request) {
         temp_token: tempToken,
         totp_enabled: is2FAEnabled, // useful for frontend if admin needs to setup TOTP
         user: clientUser,
-        ...(isDev && otp ? { otp } : {}),
+        ...(shouldExposeDevOtp() && otp ? { otp } : {}),
       })
     }
 

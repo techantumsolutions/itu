@@ -42,8 +42,11 @@ const intervalMs = Math.max(
 const runOnce = process.env.SYSTEM_PLAN_DUPLICATE_MERGE_RUN_ONCE === '1'
 
 let running = false
+let shuttingDown = false
+let intervalHandle: ReturnType<typeof setInterval> | null = null
 
 async function runSweep() {
+  if (shuttingDown) return
   if (running) {
     console.log('[system-plans-duplicate-merge] previous sweep still running, skipping')
     return
@@ -64,18 +67,46 @@ async function runSweep() {
   }
 }
 
+async function shutdown(signal: string) {
+  if (shuttingDown) return
+  shuttingDown = true
+  console.log(`[system-plans-duplicate-merge] ${signal} received — stop scheduling new runs`)
+
+  if (intervalHandle) {
+    clearInterval(intervalHandle)
+    intervalHandle = null
+  }
+
+  if (running) {
+    console.log('[system-plans-duplicate-merge] waiting for in-flight sweep to finish')
+    while (running) {
+      await new Promise((r) => setTimeout(r, 100))
+    }
+  }
+
+  console.log('[system-plans-duplicate-merge] shutdown complete')
+  process.exit(0)
+}
+
 console.log(
   `[system-plans-duplicate-merge] starting (interval=${intervalMs}ms, runOnce=${runOnce})`,
 )
 
 async function main() {
+  process.on('SIGTERM', () => {
+    void shutdown('SIGTERM')
+  })
+  process.on('SIGINT', () => {
+    void shutdown('SIGINT')
+  })
+
   await runSweep()
 
-  if (!runOnce) {
-    setInterval(() => {
-      void runSweep()
-    }, intervalMs)
-  }
+  if (runOnce || shuttingDown) return
+
+  intervalHandle = setInterval(() => {
+    void runSweep()
+  }, intervalMs)
 }
 
 main().catch((error) => {

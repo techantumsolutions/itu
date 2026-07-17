@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { supabaseGetUser } from '@/lib/supabase/auth-rest'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
+import { verifyOtpSessionCookie } from '@/lib/auth/otp-session-cookie'
 import { parsePhoneNumberFromString } from 'libphonenumber-js/core'
 import metadata from 'libphonenumber-js/metadata.min.json'
 const actualMetadata = (metadata as any).default || metadata
@@ -21,8 +22,7 @@ export async function POST(req: Request) {
     }
 
     if (!userId) {
-      const om = cookie.match(/(?:^|;\s*)itu-user-id=([^;]+)/)
-      userId = om?.[1] ? decodeURIComponent(om[1]) : null
+      userId = verifyOtpSessionCookie(cookie)
     }
 
     if (!userId) {

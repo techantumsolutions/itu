@@ -1,4 +1,9 @@
-import { getPublicSocketServerUrl, getSocketBroadcastUrl, getSocketServerUrl } from '@/lib/tickets/socket-config'
+import {
+  getPublicSocketServerUrl,
+  getSocketBroadcastUrl,
+  getSocketServerUrl,
+  getBroadcastSecret,
+} from '@/lib/tickets/socket-config'
 
 describe('socket-config', () => {
   const env = process.env
@@ -33,5 +38,37 @@ describe('socket-config', () => {
     process.env.NEXT_PUBLIC_SOCKET_SERVER_URL = 'http://example.com:3001'
     process.env.NEXT_PUBLIC_APP_URL = 'http://194.164.150.223:4009'
     expect(getPublicSocketServerUrl()).toBe('http://example.com:3001')
+  })
+})
+
+describe('getBroadcastSecret', () => {
+  const env = process.env
+
+  beforeEach(() => {
+    process.env = { ...env, NODE_ENV: 'test' }
+    delete process.env.SOCKET_BROADCAST_SECRET
+  })
+
+  afterAll(() => {
+    process.env = env
+  })
+
+  it('returns the configured secret', () => {
+    process.env.SOCKET_BROADCAST_SECRET = 'super-secret'
+    expect(getBroadcastSecret()).toBe('super-secret')
+  })
+
+  it('fails fast in production when the secret is missing', () => {
+    process.env.NODE_ENV = 'production'
+    delete process.env.SOCKET_BROADCAST_SECRET
+    expect(() => getBroadcastSecret()).toThrow(/SOCKET_BROADCAST_SECRET is required/)
+  })
+
+  it('uses a documented dev fallback outside production when unset', () => {
+    process.env.NODE_ENV = 'development'
+    delete process.env.SOCKET_BROADCAST_SECRET
+    const secret = getBroadcastSecret()
+    expect(typeof secret).toBe('string')
+    expect(secret.length).toBeGreaterThan(0)
   })
 })

@@ -5,6 +5,7 @@ import { runtimeEnv } from '@/lib/env/runtime'
 import { toRazorpayMinorUnits, validateRazorpayPaymentAmount } from '@/lib/payments/razorpay-amount'
 import { getUserIdFromRequest } from '@/lib/auth/get-user-id-from-request'
 import { attachUserIdToCheckoutRecords } from '@/lib/topup/attach-checkout-user'
+import { resolveCheckoutPriceAuthority } from '@/lib/payments/checkout-price-authority'
 
 export async function POST(request: Request) {
   try {
@@ -29,10 +30,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields: planId, amount, mobileNumber' }, { status: 400 })
     }
 
-    const amountCheck = validateRazorpayPaymentAmount(amount, currency)
-    if (!amountCheck.ok) {
-      return NextResponse.json({ error: amountCheck.error, code: 'RAZORPAY_MIN_AMOUNT' }, { status: 400 })
-    }
     if (!checkoutSessionId) {
       return NextResponse.json({ error: 'Missing checkoutSessionId — provider must be selected before payment' }, { status: 400 })
     }
@@ -41,6 +38,37 @@ export async function POST(request: Request) {
     const keySecret = runtimeEnv('RAZORPAY_KEY_SECRET')
     if (!keyId || !keySecret) {
       return NextResponse.json({ error: 'Razorpay keys not configured' }, { status: 500 })
+    }
+
+    const userId = await getUserIdFromRequest(request)
+
+    // C2 + C4 (preliminary validation): the pending transaction is the source of
+    // truth. Recompute the charge and validate wallet / reward credits with
+    // server-side data only. Client `amount`, `usedWalletBalance`,
+    // `usedRewardPoints`, and any client fxRate are advisory only. The authoritative
+    // wallet/reward debit still happens at verify (see H2/H3).
+    const authority = await resolveCheckoutPriceAuthority({
+      userId,
+      checkoutSessionId,
+      payCurrency: currency,
+      requestedWalletAmount: usedWalletBalance,
+      walletCurrency,
+      requestedRewardPoints: usedRewardPoints,
+    })
+    if (!authority.validationResult.ok) {
+      const v = authority.validationResult
+      return NextResponse.json({ error: v.error, code: v.code }, { status: v.status })
+    }
+
+    // Server-authoritative charge (client under/over-charge is ignored).
+    const serverCharge = authority.razorpayCharge
+    const serverWalletCredit = authority.walletCredit
+    const serverRewardPoints = authority.rewardPoints
+    const serverWalletCurrency = authority.walletCurrency
+
+    const amountCheck = validateRazorpayPaymentAmount(serverCharge, currency)
+    if (!amountCheck.ok) {
+      return NextResponse.json({ error: amountCheck.error, code: 'RAZORPAY_MIN_AMOUNT' }, { status: 400 })
     }
 
     const orderPayload = {
@@ -73,9 +101,7 @@ export async function POST(request: Request) {
     }
     const razorpayOrder = { id: rpBody.id, amount: rpBody.amount ?? orderPayload.amount }
 
-    const userId = await getUserIdFromRequest(request)
-
-    // Insert into payment_orders table
+    // Insert into payment_orders table (server-validated amount + wallet/reward).
     const dbRes = await supabaseRest('payment_orders?select=id', {
       method: 'POST',
       headers: { Prefer: 'return=representation' },
@@ -86,16 +112,16 @@ export async function POST(request: Request) {
           mobile_number: mobileNumber,
           operator_id: operatorId,
           country_id: countryId,
-          amount,
+          amount: serverCharge,
           currency,
           status: 'created',
           user_id: userId || null,
           metadata: {
             razorpay_amount: razorpayOrder.amount,
-            used_wallet_balance: usedWalletBalance,
-            wallet_currency: walletCurrency,
+            used_wallet_balance: serverWalletCredit,
+            wallet_currency: serverWalletCurrency,
             system_plan_id: systemPlanId || null,
-            used_reward_points: usedRewardPoints,
+            used_reward_points: serverRewardPoints,
           },
         },
       ]),
@@ -141,7 +167,7 @@ export async function POST(request: Request) {
           typeof txnMeta.provider_selection_timestamp === 'string'
             ? txnMeta.provider_selection_timestamp
             : undefined,
-        totalPayable: amount,
+        totalPayable: serverCharge,
         paymentCurrency: currency,
         checkoutPricing: checkoutPricing
           ? {
@@ -173,7 +199,12 @@ export async function POST(request: Request) {
       })
     }
 
-    console.log('[PAYMENT LOG] payment initiated', { paymentOrderId, checkoutSessionId, amount, currency })
+    console.log('[PAYMENT LOG] payment initiated', {
+      paymentOrderId,
+      checkoutSessionId,
+      amount: serverCharge,
+      currency,
+    })
 
     return NextResponse.json({
       paymentOrderId,

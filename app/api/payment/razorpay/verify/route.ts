@@ -53,13 +53,20 @@ export async function POST(request: Request) {
     if (paymentOrderId) {
       const requestUserId = await getUserIdFromRequest(request)
 
-      // Mark payment_orders as paid (idempotent)
+      // Load the pending payment order before any state change (also used for C3).
       const poResBefore = await supabaseRest(
-        `payment_orders?id=eq.${enc(paymentOrderId)}&select=id,status,plan_id,mobile_number,operator_id,country_id,amount,currency,user_id,metadata,checkout_session_id,pending_transaction_id,lcr_attempt_id&limit=1`,
+        `payment_orders?id=eq.${enc(paymentOrderId)}&select=id,order_id,status,plan_id,mobile_number,operator_id,country_id,amount,currency,user_id,metadata,checkout_session_id,pending_transaction_id,lcr_attempt_id&limit=1`,
         { cache: 'no-store' },
       )
       const poRowsBefore = poResBefore.ok ? ((await poResBefore.json()) as Array<Record<string, unknown>>) : []
       const poBefore = poRowsBefore[0]
+
+      // C3: the Razorpay signature only proves ownership of `razorpay_order_id`.
+      // Ensure the client-supplied paymentOrderId actually belongs to that
+      // Razorpay order before marking paid / fulfilling.
+      if (poBefore && String(poBefore.order_id ?? '') !== razorpay_order_id) {
+        return NextResponse.json({ ok: false, error: 'Payment order mismatch' }, { status: 400 })
+      }
 
       if (poBefore?.status === 'paid') {
         const metadata = (poBefore.metadata && typeof poBefore.metadata === 'object' ? poBefore.metadata : {}) as Record<string, any>
@@ -109,15 +116,25 @@ export async function POST(request: Request) {
         }
       }
 
-      await supabaseRest(`payment_orders?id=eq.${enc(paymentOrderId)}`, {
-        method: 'PATCH',
-        headers: { Prefer: 'return=minimal' },
-        body: JSON.stringify({ status: 'paid', payment_id: razorpay_payment_id }),
-      })
+      // H1 (payment claim): atomically transition the pending order created/failed
+      // -> paid. PostgreSQL guarantees a single winner for this conditional UPDATE;
+      // only the winner performs the one-time wallet debit / reward redemption
+      // below. Provider fulfillment is separately guarded by the recharge attempt
+      // claim inside executeCheckout, so exactly-once holds without Redis.
+      const claimRes = await supabaseRest(
+        `payment_orders?id=eq.${enc(paymentOrderId)}&status=in.(created,failed)`,
+        {
+          method: 'PATCH',
+          headers: { Prefer: 'return=representation' },
+          body: JSON.stringify({ status: 'paid', payment_id: razorpay_payment_id }),
+        },
+      )
+      const claimRows = claimRes.ok ? ((await claimRes.json()) as Array<Record<string, unknown>>) : []
+      const claimed = claimRows.length > 0
 
       // Load payment order details for checkout execution
       const poRes = await supabaseRest(
-        `payment_orders?id=eq.${enc(paymentOrderId)}&select=id,plan_id,mobile_number,operator_id,country_id,amount,currency,user_id,metadata,checkout_session_id,pending_transaction_id&limit=1`,
+        `payment_orders?id=eq.${enc(paymentOrderId)}&select=id,status,plan_id,mobile_number,operator_id,country_id,amount,currency,user_id,metadata,checkout_session_id,pending_transaction_id&limit=1`,
         { cache: 'no-store' },
       )
       const poRows = poRes.ok ? ((await poRes.json()) as Array<Record<string, unknown>>) : []
@@ -127,6 +144,10 @@ export async function POST(request: Request) {
         return NextResponse.json({ ok: false, error: 'Payment order not found' }, { status: 404 })
       }
 
+      // H1: `claimed` is true only for the request that won the payment claim.
+      // One-time money movement (wallet debit + reward redemption) is gated on it.
+      // Losers still proceed to executeCheckout, where the recharge attempt claim
+      // makes them wait for and return the winner's actual terminal result.
       const metadata = (po.metadata && typeof po.metadata === 'object' ? po.metadata : {}) as Record<string, any>
       const effectiveUserId = po.user_id ? String(po.user_id) : requestUserId || undefined
       const checkoutSessionId =
@@ -140,8 +161,12 @@ export async function POST(request: Request) {
 
       const walletCurrency = metadata.wallet_currency ? String(metadata.wallet_currency).toUpperCase() : String(po.currency ?? 'INR')
 
-      // If logged in, credit the Razorpay amount to the user's wallet as a topup
-      if (effectiveUserId) {
+      // Only the payment-claim winner performs the one-time wallet debit.
+      // H2/H3: the debit is authoritative. The DB trigger now rejects any debit
+      // that would overdraw the wallet (insufficient balance / lost concurrent
+      // race), so we must detect a failed debit and refuse to call the provider.
+      let walletDebitFailed = false
+      if (claimed && effectiveUserId) {
         if (usedWalletBalance > 0) {
           if (walletCurrency !== String(po.currency ?? 'INR')) {
             let walletDeductionAmt = usedWalletBalance
@@ -158,7 +183,7 @@ export async function POST(request: Request) {
             }
 
             // Debit from the walletCurrency wallet
-            await supabaseRest('transactions', {
+            const debitRes = await supabaseRest('transactions', {
               method: 'POST',
               body: JSON.stringify([{
                 user_id: effectiveUserId,
@@ -176,26 +201,30 @@ export async function POST(request: Request) {
                   razorpay_payment_id: razorpay_payment_id,
                 }
               }])
-            }).catch((err) => console.error('Failed to insert exchange debit transaction:', err))
+            }).catch(() => null)
 
-            // Credit to the payment currency wallet
-            await supabaseRest('transactions', {
-              method: 'POST',
-              body: JSON.stringify([{
-                user_id: effectiveUserId,
-                type: 'topup',
-                amount: usedWalletBalance,
-                currency: String(po.currency ?? 'INR'),
-                status: 'completed',
-                description: `Exchange credit from ${walletCurrency} wallet for order ${po.id}`,
-                metadata: {
-                  hide_from_user: true,
-                }
-              }])
-            }).catch((err) => console.error('Failed to insert exchange credit transaction:', err))
+            if (!debitRes || !debitRes.ok) {
+              walletDebitFailed = true
+            } else {
+              // Credit to the payment currency wallet (only after a successful debit)
+              await supabaseRest('transactions', {
+                method: 'POST',
+                body: JSON.stringify([{
+                  user_id: effectiveUserId,
+                  type: 'topup',
+                  amount: usedWalletBalance,
+                  currency: String(po.currency ?? 'INR'),
+                  status: 'completed',
+                  description: `Exchange credit from ${walletCurrency} wallet for order ${po.id}`,
+                  metadata: {
+                    hide_from_user: true,
+                  }
+                }])
+              }).catch((err) => console.error('Failed to insert exchange credit transaction:', err))
+            }
           } else {
             // Debit from the walletCurrency wallet immediately for same currency
-            await supabaseRest('transactions', {
+            const debitRes = await supabaseRest('transactions', {
               method: 'POST',
               body: JSON.stringify([{
                 user_id: effectiveUserId,
@@ -214,9 +243,49 @@ export async function POST(request: Request) {
                   hide_from_user: true,
                 }
               }])
-            }).catch((err) => console.error('Failed to insert same-currency wallet deduction:', err))
+            }).catch(() => null)
+
+            if (!debitRes || !debitRes.ok) {
+              walletDebitFailed = true
+            }
           }
         }
+      }
+
+      // H2/H3: if the authoritative wallet debit failed, fail safely — do NOT call
+      // the provider. The card portion (if any) was already captured, so we leave
+      // payment_orders as 'paid' and mark the recharge terminal-failed. This makes
+      // the case recoverable by the existing admin refund / reconciliation path.
+      if (walletDebitFailed) {
+        const failureReason = 'INSUFFICIENT_WALLET_BALANCE'
+        console.error('[PAYMENT LOG] wallet debit failed — aborting recharge before provider', {
+          paymentOrderId,
+          checkoutSessionId,
+          failureReason,
+        })
+        if (checkoutSessionId) {
+          await supabaseRest(`transactions?id=eq.${enc(checkoutSessionId)}`, {
+            method: 'PATCH',
+            headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({ status: 'failed' }),
+          }).catch(() => {})
+          await supabaseRest(`recharge_orders?transaction_id=eq.${enc(checkoutSessionId)}`, {
+            method: 'PATCH',
+            headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({ status: 'failed', failure_reason: failureReason }),
+          }).catch(() => {})
+          await supabaseRest(`lcr_v2_recharge_attempts?distributor_ref=eq.${enc(checkoutSessionId)}`, {
+            method: 'PATCH',
+            headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({ status: 'failed', error: failureReason }),
+          }).catch(() => {})
+        }
+        return NextResponse.json({
+          ok: false,
+          transactionId: checkoutSessionId || undefined,
+          status: 'failed',
+          error: 'Wallet balance was insufficient to complete this payment. No recharge was made.',
+        })
       }
 
       // Execute full checkout: transaction → routing → provider → recharge
@@ -254,7 +323,7 @@ export async function POST(request: Request) {
         pendingTransactionId: checkoutSessionId || undefined,
       })
 
-      if (result.ok && effectiveUserId && usedRewardPoints > 0) {
+      if (claimed && result.ok && effectiveUserId && usedRewardPoints > 0) {
         const pointsResult = await redeemPoints(
           effectiveUserId,
           result.transactionId || checkoutSessionId || null,
