@@ -1,0 +1,67 @@
+name: Build and Deploy (Registry)
+
+on:
+  push:
+    branches:
+      - main  # Trigger build/deploy when pushing to the main branch
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH to VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /var/www/itu
+            
+            # Log in to GitHub Container Registry on the VPS
+            echo "${{ secrets.VPS_GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ secrets.VPS_GITHUB_USERNAME }} --password-stdin
+            
+            # Pull the latest compose configuration and migration scripts
+            git pull origin main
+            
+            # Pull the newly pushed image
+            docker compose -f docker-compose.prod.yml pull
+            
+            # Recreate containers with the new image
+            docker compose -f docker-compose.prod.yml up -d
+            
+            # Run the database migration script in production
+            npm run db:migrate:production
+            
+            # Clean up old docker images to save space
+            docker image prune -f
