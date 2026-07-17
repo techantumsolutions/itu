@@ -6,9 +6,24 @@
 name: itu-prod
 
 x-web-build: &web-build
-  image: ${IMAGE_WEB:-ghcr.io/sjmedialabs/itu/web:latest}
+  context: .
+  dockerfile: Dockerfile
+  args:
+    NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://194.164.150.223:4009/}
+    NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-http://194.164.150.223:8000}
+    NEXT_PUBLIC_RECAPTCHA_SITE_KEY: ${NEXT_PUBLIC_RECAPTCHA_SITE_KEY:-}
+    NEXT_PUBLIC_RECAPTCHA_ENABLED: ${NEXT_PUBLIC_RECAPTCHA_ENABLED:-false}
 
 x-sidecar-build: &sidecar-build
+  context: .
+  dockerfile: Dockerfile.sidecar
+
+x-web-base: &web-base
+  build: *web-build
+  image: ${IMAGE_WEB:-ghcr.io/sjmedialabs/itu/web:latest}
+
+x-sidecar-base: &sidecar-base
+  build: *sidecar-build
   image: ${IMAGE_SIDECAR:-ghcr.io/sjmedialabs/itu/sidecar:latest}
 
 x-prod-extra-hosts: &prod-extra-hosts
@@ -50,7 +65,7 @@ services:
 
   # Live tickets only — web readiness does not wait on socket.
   socket:
-    build: *sidecar-build
+    <<: *sidecar-base
     container_name: itu-prod-socket
     command: npm run socket:server
     ports:
@@ -76,7 +91,7 @@ services:
     networks: *prod-app-networks
 
   web:
-    build: *web-build
+    <<: *web-base
     container_name: itu-prod-web
     ports:
       - "4009:3000"
@@ -110,7 +125,7 @@ services:
 
   # BullMQ + Supabase — does not call web HTTP APIs.
   worker:
-    build: *sidecar-build
+    <<: *sidecar-base
     container_name: itu-prod-worker
     command: npm run lcr:worker
     env_file:
@@ -135,7 +150,7 @@ services:
 
   # Calls POST http://web:3000/api/cron/lcr-v2-sync — requires web ready.
   cron:
-    build: *sidecar-build
+    <<: *sidecar-base
     container_name: itu-prod-cron
     command: npm run cron:provider-sync
     env_file:
@@ -161,7 +176,7 @@ services:
 
   # Supabase REST only — no web dependency.
   system-plans-availability:
-    build: *sidecar-build
+    <<: *sidecar-base
     container_name: itu-prod-system-plans-availability
     command: npm run system-plans:availability
     env_file:
@@ -183,7 +198,7 @@ services:
 
   # Supabase REST only — no web dependency.
   system-plans-merge:
-    build: *sidecar-build
+    <<: *sidecar-base
     container_name: itu-prod-system-plans-merge
     command: npm run system-plans:merge-duplicates
     env_file:
