@@ -4,6 +4,7 @@ import { runtimeEnv } from '@/lib/env/runtime'
 import { assertStrongPassword } from '@/lib/validators/password-api'
 import { createAdminNotification } from '@/lib/notifications/admin-notifications'
 import { requireCaptcha } from '@/lib/security/recaptcha-guard'
+import { rateLimit } from '@/lib/security/rate-limit'
 
 export async function POST(req: Request) {
   try {
@@ -18,6 +19,20 @@ export async function POST(req: Request) {
 
     if (!token || !password) {
       return NextResponse.json({ ok: false, error: 'Missing token or password' }, { status: 400 })
+    }
+
+    const ip = (req.headers.get('x-forwarded-for') ?? '').split(',')[0]?.trim() || 'unknown'
+    const rl = await rateLimit({
+      key: `rl:v1:admin_reset_verify:${ip}:${token}`,
+      limit: 10,
+      windowSeconds: 60,
+      failClosed: true,
+    })
+    if (!rl.ok) {
+      return NextResponse.json(
+        { ok: false, error: 'Too many attempts. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(rl.resetSeconds || 60) } },
+      )
     }
 
     const passwordError = assertStrongPassword(password)

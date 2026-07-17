@@ -189,6 +189,7 @@ function InlineLoginDialog({
         throw new Error(data.error || 'Failed to send OTP')
       }
       if (data.otp) {
+        console.log('[DEV OTP] Topup mobile:', data.otp)
         setDevOtp(data.otp)
       } else {
         setDevOtp('')
@@ -264,7 +265,12 @@ function InlineLoginDialog({
       if (result.requires_2fa) {
         setRequires2FA(true)
         setTempToken(result.temp_token || '')
-        setDevEmailOtp(result.otp || '')
+        if (result.otp) {
+          console.log('[DEV OTP] Topup email 2FA:', result.otp)
+          setDevEmailOtp(result.otp)
+        } else {
+          setDevEmailOtp('')
+        }
         setEmailOtpValue('')
         setEmailOtpTimer(25)
       } else {

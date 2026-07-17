@@ -1,4 +1,9 @@
-import { getSocketBroadcastUrl, isSocketServerConfigured } from '@/lib/tickets/socket-config'
+import {
+  getSocketBroadcastUrl,
+  isSocketServerConfigured,
+  getBroadcastSecret,
+  BROADCAST_SECRET_HEADER,
+} from '@/lib/tickets/socket-config'
 
 type BroadcastPayload =
   | { type: 'message'; ticketId: string; data: unknown }
@@ -12,6 +17,7 @@ async function postBroadcast(payload: BroadcastPayload): Promise<void> {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        [BROADCAST_SECRET_HEADER]: getBroadcastSecret(),
       },
       body: JSON.stringify(payload),
     })

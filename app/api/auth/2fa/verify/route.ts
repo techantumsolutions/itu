@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { cacheGetJson, cacheDel } from '@/lib/cache/redis'
 import { logLoginAudit, sendNewAdminDeviceAlert } from '@/lib/auth/audit'
 import { upsertTrustedDevice } from '@/lib/auth/trusted-devices'
+import { rateLimit } from '@/lib/security/rate-limit'
 
 function cookieOptions() {
   const isProd = process.env.NODE_ENV === 'production'
@@ -30,6 +31,19 @@ export async function POST(req: Request) {
 
     if (!tempToken || !code) {
       return NextResponse.json({ ok: false, error: 'Missing token or code' }, { status: 400 })
+    }
+
+    const rl = await rateLimit({
+      key: `rl:v1:2fa_verify:${tempToken}`,
+      limit: 5,
+      windowSeconds: 60,
+      failClosed: true,
+    })
+    if (!rl.ok) {
+      return NextResponse.json(
+        { ok: false, error: 'Too many attempts. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(rl.resetSeconds || 60) } },
+      )
     }
 
     // Retrieve session

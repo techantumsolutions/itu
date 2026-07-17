@@ -3,6 +3,7 @@ import { supabaseGetUser } from '@/lib/supabase/auth-rest'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
 import { buildUserFromProfile } from '@/lib/auth/build-auth-user'
+import { verifyOtpSessionCookie } from '@/lib/auth/otp-session-cookie'
 import fs from 'fs'
 import path from 'path'
 
@@ -22,9 +23,8 @@ export async function POST(req: Request) {
     }
 
     if (!userId) {
-      // Fallback: check if we have the fallback itu-user-id cookie
-      const om = cookie.match(/(?:^|;\s*)itu-user-id=([^;]+)/)
-      userId = om?.[1] ? decodeURIComponent(om[1]) : null
+      // Fallback: verified OTP session cookie
+      userId = verifyOtpSessionCookie(cookie)
     }
 
     if (!userId) {

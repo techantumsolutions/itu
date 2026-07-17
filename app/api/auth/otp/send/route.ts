@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { generateOtp, storeOtp } from '@/lib/security/otp'
+import { shouldExposeDevOtp } from '@/lib/security/expose-dev-otp'
 import { rateLimit } from '@/lib/security/rate-limit'
 import { requireCaptcha } from '@/lib/security/recaptcha-guard'
 
@@ -34,12 +35,14 @@ export async function POST(req: Request) {
     const otp = generateOtp()
     await storeOtp(phone, otp)
 
-    // TODO: integrate SMS provider. Never return OTP in production.
-    const isDev = process.env.NODE_ENV !== 'production'
-    return NextResponse.json({ ok: true, ...(isDev ? { otp } : {}) })
+    // TODO: integrate SMS provider. Never return OTP in real production without SHOW_DEV_OTP.
+    const exposeOtp = shouldExposeDevOtp()
+    if (exposeOtp) {
+      console.log(`\n========================================\n[DEV ONLY] SMS OTP FOR ${phone}: ${otp}\n========================================\n`)
+    }
+    return NextResponse.json({ ok: true, ...(exposeOtp ? { otp } : {}) })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'otp_send_failed'
     return NextResponse.json({ ok: false, error: msg }, { status: 500 })
   }
 }
-

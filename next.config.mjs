@@ -44,6 +44,8 @@ const SECURITY_HEADERS = [
 ]
 
 const nextConfig = {
+  // Production Docker web image uses Next standalone output (Phase 3D).
+  output: 'standalone',
   // Razorpay uses axios + native Node HTTPS; bundling it breaks outbound API calls in dev/prod.
   serverExternalPackages: ['razorpay'],
   poweredByHeader: false,

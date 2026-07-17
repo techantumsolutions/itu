@@ -1,5 +1,6 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { runtimeEnv } from '@/lib/env/runtime'
+import { shouldExposeDevOtp } from '@/lib/security/expose-dev-otp'
 import nodemailer from 'nodemailer'
 import { UAParser } from 'ua-parser-js'
 import { cookies, headers } from 'next/headers'
@@ -234,7 +235,7 @@ export async function sendLoginOtp({ email, otp }: { email: string; otp: string 
   const smtpPort = parseInt(runtimeEnv('SMTP_PORT') || '587', 10)
   const smtpUser = runtimeEnv('SMTP_USER')
   const smtpPass = runtimeEnv('SMTP_PASS')
-  const isDev = process.env.NODE_ENV !== 'production'
+  const exposeOtp = shouldExposeDevOtp()
 
   const html = `
     <div style="font-family: sans-serif; padding: 20px; color: #333;">
@@ -247,10 +248,11 @@ export async function sendLoginOtp({ email, otp }: { email: string; otp: string 
     </div>
   `
 
+  if (exposeOtp) {
+    console.log(`\n========================================\n[DEV ONLY] LOGIN OTP FOR ${email}: ${otp}\n========================================\n`)
+  }
+
   if (!smtpHost || !smtpUser || !smtpPass || smtpHost === 'smtp.example.com') {
-    if (isDev) {
-      console.log(`\n========================================\n[DEV ONLY] LOGIN OTP FOR ${email}: ${otp}\n========================================\n`)
-    }
     return
   }
 
@@ -272,7 +274,7 @@ export async function sendLoginOtp({ email, otp }: { email: string; otp: string 
       html,
     })
   } catch (mailErr) {
-    if (isDev) {
+    if (exposeOtp) {
       console.log(`\n========================================\n[DEV ONLY] LOGIN OTP FOR ${email}: ${otp}\n========================================\n`)
     }
     console.error('Failed to send login OTP:', mailErr)

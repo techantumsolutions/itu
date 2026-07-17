@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { cacheGetJson, cacheSetJson } from '@/lib/cache/redis'
 import { generateOtp } from '@/lib/security/otp'
+import { shouldExposeDevOtp } from '@/lib/security/expose-dev-otp'
 import { runtimeEnv } from '@/lib/env/runtime'
 import nodemailer from 'nodemailer'
 
@@ -40,10 +41,10 @@ export async function POST(req: Request) {
     const smtpPort = parseInt(runtimeEnv('SMTP_PORT') || '587', 10)
     const smtpUser = runtimeEnv('SMTP_USER')
     const smtpPass = runtimeEnv('SMTP_PASS')
-    const isDev = process.env.NODE_ENV !== 'production'
+    const exposeOtp = shouldExposeDevOtp()
 
     if (!smtpHost || !smtpUser || !smtpPass || smtpHost === 'smtp.example.com') {
-      if (isDev) {
+      if (exposeOtp) {
         console.warn(`[DEV ONLY] SMTP host is placeholder or missing. Logging OTP to console.`)
         console.log(`\n========================================\n[DEV ONLY] NEW REGISTRATION OTP FOR ${email}: ${otp}\n========================================\n`)
       } else {
@@ -80,7 +81,7 @@ export async function POST(req: Request) {
           `,
         })
       } catch (mailErr) {
-        if (isDev) {
+        if (exposeOtp) {
           console.warn(`[DEV ONLY] Failed to send email via SMTP, logging OTP to console fallback.`, mailErr)
           console.log(`\n========================================\n[DEV ONLY] NEW REGISTRATION OTP FOR ${email}: ${otp}\n========================================\n`)
         } else {
@@ -89,9 +90,14 @@ export async function POST(req: Request) {
       }
     }
 
+    if (exposeOtp) {
+      console.log(`\n========================================\n[DEV ONLY] NEW REGISTRATION OTP FOR ${email}: ${otp}\n========================================\n`)
+    }
+
     return NextResponse.json({
       ok: true,
       message: 'New OTP sent successfully',
+      ...(exposeOtp ? { otp } : {}),
     })
   } catch (e: any) {
     console.error('Resending OTP failed:', e)

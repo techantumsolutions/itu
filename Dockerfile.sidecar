@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+# Shared sidecar image (socket, BullMQ worker, cron, system-plans) — Phase 3E cache mounts.
+
+FROM node:22-alpine AS base
+# wget  — socket HEALTHCHECK (compose)
+# procps — pgrep HEALTHCHECK for worker/cron/system-plans (compose)
+RUN apk add --no-cache libc6-compat wget procps \
+  && corepack enable \
+  && corepack prepare pnpm@9.15.9 --activate
+WORKDIR /app
+
+FROM base AS deps
+COPY package.json pnpm-lock.yaml ./
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1
+
+RUN addgroup --system --gid 1001 nodejs \
+  && adduser --system --uid 1001 --ingroup nodejs nextjs
+
+# Lockfiles first (metadata), then deps, then runtime source — maximizes cache hits.
+COPY --chown=nextjs:nodejs package.json pnpm-lock.yaml tsconfig.json ./
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --chown=nextjs:nodejs scripts ./scripts
+COPY --chown=nextjs:nodejs lib ./lib
+
+USER nextjs
+
+# Intentionally no CMD / ENTRYPOINT — compose supplies the process command.

@@ -1,6 +1,7 @@
 import { supabaseGetUser } from '@/lib/supabase/auth-rest'
 import { runtimeEnv } from '@/lib/env/runtime'
 import { isAccessTokenInvalidated } from '@/lib/auth/trusted-devices'
+import { verifyOtpUserId } from '@/lib/auth/otp-session-cookie'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -38,8 +39,8 @@ export async function getUserIdFromRequest(request: Request): Promise<string | n
     }
   }
 
-  const otpUserId = readCookie(cookie, 'itu-user-id')
-  if (otpUserId && UUID_RE.test(otpUserId)) return otpUserId
+  const otpUserId = verifyOtpUserId(readCookie(cookie, 'itu-user-id'))
+  if (otpUserId) return otpUserId
 
   return readInsecureHeaderUserId(request)
 }

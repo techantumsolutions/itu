@@ -2,6 +2,7 @@
   "name": "my-project",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "pnpm@9.15.9",
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
     "build": "next build",
@@ -34,7 +35,13 @@
     "docker:dev:detach": "docker compose -f docker-compose.dev.yml up -d --build",
     "docker:prod": "docker compose -f docker-compose.prod.yml up -d --build",
     "docker:down": "docker compose -f docker-compose.dev.yml down",
-    "docker:smoke": "tsx --tsconfig tsconfig.json scripts/docker-smoke-test.ts"
+    "docker:smoke": "tsx --tsconfig tsconfig.json scripts/docker-smoke-test.ts",
+    "docker:validate:sidecar": "node scripts/docker-sidecar-validate.mjs",
+    "docker:audit:sidecar-imports": "node scripts/audit-sidecar-imports.mjs",
+    "docker:build:web": "docker build -f Dockerfile -t itu-web:phase3e .",
+    "docker:build:sidecar": "docker build -f Dockerfile.sidecar -t itu-sidecar:phase3e .",
+    "docker:validate:phase3d": "node scripts/docker-phase3d-validate.mjs",
+    "docker:measure:phase3e": "node scripts/docker-phase3e-measure.mjs"
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "^5.2.0",

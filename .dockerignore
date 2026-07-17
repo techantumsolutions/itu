@@ -1,23 +1,60 @@
+# Dependencies & build output
 node_modules
 .next
 out
+dist
+build
+.turbo
+coverage
+.nyc_output
+
+# VCS / editor
 .git
 .gitignore
+.vscode
+.idea
+
+# Docker metadata (not needed inside build context)
 .dockerignore
 Dockerfile*
 docker-compose*
+
+# Env & secrets (injected at runtime)
+.env
+.env.*
+!.env.example
+
+# Package manager noise (pnpm is canonical; npm lock kept on disk for later CI migration)
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
-.env
-.env.local
-.env.development
-.env.test
-.env.production
+package-lock.json
+
+# Runtime / local data — must not bake into images (volumes handle these)
+data
+storage
+public/uploads
+docker-data
+volumes
+supabase-local
+
+# Ops / debug trees not required for next build or sidecar TS compile
+scratch
+supabase
+docs
+README.md
+
+# Test files (not needed at image build time)
+**/*.test.ts
+**/*.test.tsx
+**/__tests__
+
+# Legacy scan artifacts
 api_scan_results.json
 api_scan_results.csv
 api_inventory.csv
 api_inventory_analysis.md
 scripts/scan-apis.ts
 scripts/generate-csv.ts
+detect-log.jsonl

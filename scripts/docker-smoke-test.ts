@@ -25,9 +25,11 @@ async function main() {
   const args = process.argv.slice(2)
   const webBase = args.includes('--web') ? args[args.indexOf('--web') + 1] : 'http://localhost:3010'
   const socketBase = args.includes('--socket') ? args[args.indexOf('--socket') + 1] : 'http://localhost:3001'
+  const base = webBase.replace(/\/$/, '')
 
   const checks = await Promise.all([
-    checkUrl('web /api/health', `${webBase.replace(/\/$/, '')}/api/health`),
+    checkUrl('web /api/health (live)', `${base}/api/health`),
+    checkUrl('web /api/health/ready', `${base}/api/health/ready`),
     checkUrl('socket /health', `${socketBase.replace(/\/$/, '')}/health`),
   ])
 

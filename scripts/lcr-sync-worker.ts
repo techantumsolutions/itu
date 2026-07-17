@@ -39,6 +39,33 @@ async function main() {
     // eslint-disable-next-line no-console
     console.error('[lcr-sync-worker] failed', job?.id, err)
   })
+
+  let shuttingDown = false
+
+  async function shutdown(signal: string) {
+    if (shuttingDown) return
+    shuttingDown = true
+    // eslint-disable-next-line no-console
+    console.log(`[lcr-sync-worker] ${signal} received — stop accepting new jobs`)
+    try {
+      // BullMQ: pause fetch of new jobs and wait for the active job to finish.
+      await worker.close()
+      // eslint-disable-next-line no-console
+      console.log('[lcr-sync-worker] shutdown complete')
+      process.exit(0)
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('[lcr-sync-worker] shutdown error', error)
+      process.exit(1)
+    }
+  }
+
+  process.on('SIGTERM', () => {
+    void shutdown('SIGTERM')
+  })
+  process.on('SIGINT', () => {
+    void shutdown('SIGINT')
+  })
 }
 
 void main()

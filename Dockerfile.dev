@@ -1,17 +1,30 @@
+# syntax=docker/dockerfile:1
+# Dev image with hot reload (bind-mounted source). BuildKit pnpm cache (Phase 3E).
+
 FROM node:22-alpine
 
-RUN apk add --no-cache libc6-compat procps wget
+RUN apk add --no-cache libc6-compat procps wget \
+  && corepack enable \
+  && corepack prepare pnpm@9.15.9 --activate
 
 WORKDIR /app
 
-COPY package.json package-lock.json* ./
+COPY package.json pnpm-lock.yaml ./
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
 
-RUN npm ci
+ARG NEXT_PUBLIC_APP_URL
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_RECAPTCHA_SITE_KEY
+ARG NEXT_PUBLIC_RECAPTCHA_ENABLED=false
 
-ENV NEXT_TELEMETRY_DISABLED=1
-ENV HOSTNAME=0.0.0.0
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL \
+    NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
+    NEXT_PUBLIC_RECAPTCHA_SITE_KEY=$NEXT_PUBLIC_RECAPTCHA_SITE_KEY \
+    NEXT_PUBLIC_RECAPTCHA_ENABLED=$NEXT_PUBLIC_RECAPTCHA_ENABLED \
+    NEXT_TELEMETRY_DISABLED=1 \
+    HOSTNAME=0.0.0.0
 
 EXPOSE 3000 3001
 
-# Source is bind-mounted in docker-compose.dev.yml for hot reload.
-CMD ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]
+CMD ["pnpm", "run", "dev"]

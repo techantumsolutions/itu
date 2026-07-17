@@ -4,6 +4,7 @@ import { rateLimit } from '@/lib/security/rate-limit'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import crypto from 'crypto'
 import { createAdminNotification } from '@/lib/notifications/admin-notifications'
+import { signOtpUserId } from '@/lib/auth/otp-session-cookie'
 import { parsePhoneNumberFromString } from 'libphonenumber-js/core'
 import { CountryCode } from 'libphonenumber-js'
 import metadata from 'libphonenumber-js/metadata.min.json'
@@ -19,18 +20,23 @@ function getIp(req: Request): string {
 export async function POST(req: Request) {
   try {
     const ip = getIp(req)
-    const rl = await rateLimit({ key: `rl:v1:otp_verify:${ip}`, limit: 10, windowSeconds: 60 })
+    const body = (await req.json().catch(() => null)) as { phone?: string; otp?: string } | null
+    const phone = (body?.phone ?? '').trim()
+    const otp = (body?.otp ?? '').trim()
+    if (!phone || !otp) return NextResponse.json({ ok: false, error: 'missing_fields' }, { status: 400 })
+
+    const rl = await rateLimit({
+      key: `rl:v1:otp_verify:${ip}:${phone}`,
+      limit: 5,
+      windowSeconds: 60,
+      failClosed: true,
+    })
     if (!rl.ok) {
       return NextResponse.json(
         { ok: false, error: 'rate_limited', resetSeconds: rl.resetSeconds },
         { status: 429, headers: { 'Retry-After': String(rl.resetSeconds || 60) } },
       )
     }
-
-    const body = (await req.json().catch(() => null)) as { phone?: string; otp?: string } | null
-    const phone = (body?.phone ?? '').trim()
-    const otp = (body?.otp ?? '').trim()
-    if (!phone || !otp) return NextResponse.json({ ok: false, error: 'missing_fields' }, { status: 400 })
 
     const result = await verifyOtp(phone, otp)
     if (!result.ok) return NextResponse.json(result, { status: 400 })
@@ -86,7 +92,7 @@ export async function POST(req: Request) {
     }
 
     const res = NextResponse.json({ ok: true, user: { id: userId, phone } })
-    res.cookies.set('itu-user-id', userId, {
+    res.cookies.set('itu-user-id', signOtpUserId(userId), {
       httpOnly: true,
       sameSite: 'lax',
       secure: process.env.NODE_ENV === 'production',

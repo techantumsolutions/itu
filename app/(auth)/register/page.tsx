@@ -66,6 +66,7 @@ function RegisterForm() {
   // OTP states
   const [otpValue, setOtpValue] = useState('')
   const [otpTimer, setOtpTimer] = useState(30)
+  const [devOtp, setDevOtp] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [sendingOtp, setSendingOtp] = useState(false)
   const [verifyingOtp, setVerifyingOtp] = useState(false)
@@ -164,6 +165,13 @@ function RegisterForm() {
         throw new Error(data.error || data.message || 'Failed to send verification code. Please try again.')
       }
 
+      if (typeof data.otp === 'string' && data.otp) {
+        console.log('[DEV OTP] Registration:', data.otp)
+        setDevOtp(data.otp)
+      } else {
+        setDevOtp('')
+      }
+
       setOtpValue('')
       setOtpTimer(30)
       setStep('otp')
@@ -214,6 +222,12 @@ function RegisterForm() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.ok) {
         throw new Error(data.error || 'Failed to resend code.')
+      }
+      if (typeof data.otp === 'string' && data.otp) {
+        console.log('[DEV OTP] Registration resend:', data.otp)
+        setDevOtp(data.otp)
+      } else {
+        setDevOtp('')
       }
       setOtpValue('')
       setOtpTimer(30)
@@ -448,6 +462,12 @@ function RegisterForm() {
                 {error ? <div className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700 whitespace-pre-line">{error}</div> : null}
 
                 <div className="mx-auto w-full max-w-sm space-y-6 pb-2">
+                  {devOtp ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-xs text-amber-800">
+                      [Development Mode] Your OTP is:{' '}
+                      <strong className="text-sm font-bold text-amber-900">{devOtp}</strong>
+                    </div>
+                  ) : null}
                   <div className="flex justify-center">
                     <InputOTP maxLength={6} value={otpValue} onChange={setOtpValue} containerClassName="justify-center gap-2">
                       <InputOTPGroup className="gap-2">
@@ -500,6 +520,7 @@ function RegisterForm() {
                     onClick={() => {
                       setStep('form')
                       setOtpValue('')
+                      setDevOtp('')
                       setError('')
                     }}
                   >

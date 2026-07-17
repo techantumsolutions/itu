@@ -3,6 +3,7 @@ import { supabaseRest } from '@/lib/db/supabase-rest'
 import { supabaseGetUser } from '@/lib/supabase/auth-rest'
 import { runtimeEnv } from '@/lib/env/runtime'
 import { validateRazorpayPaymentAmount } from '@/lib/payments/razorpay-amount'
+import { verifyOtpSessionCookie } from '@/lib/auth/otp-session-cookie'
 
 async function getUserIdFromRequest(request: Request): Promise<string | null> {
   const cookie = request.headers.get('cookie') ?? ''
@@ -19,10 +20,8 @@ async function getUserIdFromRequest(request: Request): Promise<string | null> {
     }
   }
 
-  // 2. Try OTP/guest login user ID
-  const om = cookie.match(/(?:^|;\s*)itu-user-id=([^;]+)/)
-  const otpUserId = om?.[1] ? decodeURIComponent(om[1]) : ''
-  return otpUserId || null
+  // 2. Try verified OTP/guest login user ID
+  return verifyOtpSessionCookie(cookie)
 }
 
 export async function POST(request: Request) {
