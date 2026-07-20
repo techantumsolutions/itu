@@ -314,7 +314,7 @@ export default function PublicLayout({
           className={cn(
             'pointer-events-auto flex w-full max-w-7xl items-center gap-2 py-2 pl-2 pr-2 transition-[background-color,box-shadow,border-color,border-radius] duration-200 sm:gap-3 sm:pl-4 md:py-1 md:pl-6',
             navBarSolid
-              ? 'rounded-full border border-neutral-800/50 bg-neutral-950/95 shadow-[0_10px_40px_-12px_rgba(0,0,0,0.5)] backdrop-blur-xl'
+              ? 'rounded-full border border-indigo-700/50 bg-indigo-600/95 shadow-[0_10px_40px_-12px_rgba(79,70,229,0.3)] backdrop-blur-xl'
               : 'border-transparent bg-transparent',
           )}
         >
