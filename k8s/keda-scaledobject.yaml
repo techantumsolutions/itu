@@ -1,0 +1,21 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: itu-worker-scaler
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: itu-worker
+  minReplicaCount: 0 # Scales down to 0 replicas if the queue is empty to save resources
+  maxReplicaCount: 10 # Caps the maximum number of worker pods at 10
+  cooldownPeriod: 300 # Wait for 5 minutes of no work before scaling down
+  triggers:
+    - type: redis
+      metadata:
+        # Address of your external Redis running in Docker Compose
+        addressFromEnv: REDIS_URL # Resolves REDIS_URL environment variable from configMap
+        # Scaler parameters
+        listName: "bull:provider-sync:wait" # BullMQ queue waiting list in Redis
+        listLength: "5"                     # Add 1 replica per 5 items waiting in the queue
