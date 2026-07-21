@@ -2,26 +2,26 @@
 @import 'tw-animate-css';
 
 :root {
-  /* Landing palette (mock UI): navy + sky blue + orange CTAs */
+  /* Brand palette — primary CTA / highlights */
+  --brand-orange: #e96c32;
   --landing-navy: #071933;
   --landing-navy-mid: #0d2744;
-  --landing-orange: #f27420;
-  /* Navy hero / ITU mock CTA orange */
+  --landing-orange: #e96c32;
+  /* Navy hero / CTA orange */
   --hero-navy: #0b1b3d;
-  --hero-cta-orange: #f15a2b;
+  --hero-cta-orange: #e96c32;
   --brand-red: #e30613;
   --landing-sky: #e8f4fc;
   --landing-footer: #e8eaed;
 
-  /* Reference landing: light grey canvas + brand red #E30613 */
   --background: #f8f9fa;
   --foreground: oklch(0.22 0.02 260);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.22 0.02 260);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.22 0.02 260);
-  --primary: oklch(0.54 0.23 29);
-  --primary-foreground: oklch(1 0 0);
+  --primary: #e96c32;
+  --primary-foreground: #ffffff;
   --secondary: oklch(0.96 0.01 260);
   --secondary-foreground: oklch(0.3 0.02 260);
   --muted: oklch(0.94 0.008 260);
@@ -32,8 +32,8 @@
   --destructive-foreground: oklch(1 0 0);
   --border: oklch(0.9 0.006 260);
   --input: oklch(0.9 0.006 260);
-  --ring: oklch(0.54 0.23 29);
-  --chart-1: oklch(0.54 0.23 29);
+  --ring: #e96c32;
+  --chart-1: #e96c32;
   --chart-2: oklch(0.65 0.15 280);
   --chart-3: oklch(0.45 0.18 160);
   --chart-4: oklch(0.75 0.15 80);
@@ -41,12 +41,12 @@
   --radius: 0.75rem;
   --sidebar: oklch(1 0 0);
   --sidebar-foreground: oklch(0.22 0.02 260);
-  --sidebar-primary: oklch(0.54 0.23 29);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.96 0.02 29);
-  --sidebar-accent-foreground: oklch(0.54 0.23 29);
+  --sidebar-primary: #e96c32;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #fff4ee;
+  --sidebar-accent-foreground: #e96c32;
   --sidebar-border: oklch(0.92 0.006 260);
-  --sidebar-ring: oklch(0.54 0.23 29);
+  --sidebar-ring: #e96c32;
   --success: oklch(0.45 0.18 160);
   --success-foreground: oklch(1 0 0);
   --warning: oklch(0.75 0.15 80);

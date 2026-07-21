@@ -523,7 +523,7 @@ export default function PublicLayout({
                 className={cn(
                   'h-9 shrink-0 px-6 text-[11px] font-bold uppercase tracking-[0.12em]',
                   isTransparentHeaderPage
-                    ? 'rounded-lg border-0 bg-[var(--hero-cta-orange)] text-white shadow-[0_10px_26px_-8px_rgba(241,90,43,0.55)] hover:bg-[var(--hero-cta-orange)]/92'
+                    ? 'rounded-lg border-0 bg-[var(--hero-cta-orange)] text-white shadow-[0_10px_26px_-8px_rgba(233,108,50,0.55)] hover:bg-[var(--hero-cta-orange)]/92'
                     : 'rounded-full bg-primary text-primary-foreground shadow-[0_6px_20px_-4px_rgba(227,6,19,0.45)] hover:bg-primary/90',
                 )}
                 asChild

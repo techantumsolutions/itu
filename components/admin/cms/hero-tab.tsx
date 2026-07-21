@@ -206,7 +206,7 @@ export function HeroTab() {
                     id="hero-accent"
                     value={content.hero.accentLineColor}
                     onChange={(e) => updateHero({ accentLineColor: e.target.value })}
-                    placeholder="#f15a2b or empty for default"
+                    placeholder="#E96C32 or empty for default"
                     className="max-w-[16rem]"
                   />
                   <p className="text-xs text-muted-foreground">Styles the second line of the title.</p>
