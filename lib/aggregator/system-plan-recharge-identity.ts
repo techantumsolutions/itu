@@ -68,9 +68,11 @@ export function groupPlansByCountryOperatorSystemPrice(
   for (const plan of plans) {
     const operatorId = String(plan.system_operator_id ?? '').trim()
     const countryCode = (String(plan.country_code ?? 'UNK').trim().toUpperCase()) || 'UNK'
-    const amount = normalizeDisplayAmount(plan.amount)
+    const amountRaw = plan.amount
+    if (amountRaw == null) continue
+    const amount = normalizeDisplayAmount(amountRaw)
     const currency = String(plan.currency ?? '').trim().toUpperCase()
-    if (!operatorId || amount == null || !currency) continue
+    if (!operatorId || !currency) continue
 
     const key = `${countryCode}:${operatorId}:${currency}:${amount}`
     if (!groups.has(key)) groups.set(key, [])

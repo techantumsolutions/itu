@@ -43,7 +43,7 @@ export async function POST(req: Request) {
 
     // Persist OTP user in DB (profiles) so it works across browsers/devices.
     let userId: string = crypto.randomUUID()
-    const parsed = parsePhoneNumberFromString(phone, undefined, actualMetadata)
+    const parsed = parsePhoneNumberFromString(phone, actualMetadata)
     let nationalNumber = phone.replace(/[^\d]/g, '')
     let dialCode = '91'
     let countryIso = 'IN'

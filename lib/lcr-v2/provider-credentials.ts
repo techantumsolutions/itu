@@ -40,9 +40,15 @@ export function parseCredentialsEncrypted(
     if (token) {
       return { kind: 'bearer', token }
     }
+
+    const kindRaw = typeof authObj.kind === 'string' ? authObj.kind : 'apiKey'
+    const kind =
+      kindRaw === 'basic' || kindRaw === 'bearer' || kindRaw === 'custom' || kindRaw === 'apiKey'
+        ? kindRaw
+        : 'apiKey'
     
     return {
-      kind: authObj.kind || 'apiKey',
+      kind,
       apiKey,
       apiSecret,
       clientId,

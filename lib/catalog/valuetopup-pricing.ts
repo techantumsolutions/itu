@@ -1,4 +1,4 @@
-import { extractPricingFromRaw } from '@/lib/admin/provider-pricing-extractor'
+import { extractPricingFromRaw } from '@/lib/pricing/provider-pricing-extractor'
 import type { WholesalePricing } from '@/lib/catalog/provider-wholesale-pricing'
 
 /** ValueTopup distributor wallet / settlement currency (faceValueInWalletCurrency is always EUR). */

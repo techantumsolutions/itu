@@ -5,7 +5,11 @@ import {
   LCR_BASE_CURRENCY,
   loadCatalogExchangeRates,
 } from '@/lib/routing/exchange-rates'
-import { convertUsingEurBaseRates, type EurBaseRates } from '@/lib/topup/currency-conversion'
+import {
+  convertUsingEurBaseRates,
+  fetchEurBaseRates,
+  type EurBaseRates,
+} from '@/lib/checkout/currency-conversion'
 import type { RechargeProcessingFeeConfig } from '@/lib/settings/recharge-processing-fees'
 
 const MONTHLY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000
@@ -27,7 +31,7 @@ export function getMonthlyRechargeLimitEur(config: RechargeProcessingFeeConfig):
   return max > 0 && Number.isFinite(max) ? Math.round(max * 100) / 100 : null
 }
 
-/** Convert an amount into EUR using catalog rates (preferred) or EUR-base open rates. */
+/** Convert an amount into EUR using live FX → catalog rates → static fallbacks. */
 export async function convertAmountToEur(
   amount: number,
   currency: string,
@@ -37,8 +41,16 @@ export async function convertAmountToEur(
   const from = (currency || 'EUR').trim().toUpperCase()
   if (from === 'EUR' || from === LCR_BASE_CURRENCY) return amount
 
-  if (eurBaseRates) {
-    const viaOpen = convertUsingEurBaseRates(amount, from, 'EUR', eurBaseRates)
+  let rates = eurBaseRates
+  if (rates) {
+    const viaOpen = convertUsingEurBaseRates(amount, from, 'EUR', rates)
+    if (viaOpen != null && Number.isFinite(viaOpen)) return viaOpen
+  }
+
+  // Always try live EUR-base rates when caller didn't supply (or currency missing from map).
+  rates = await fetchEurBaseRates()
+  if (rates) {
+    const viaOpen = convertUsingEurBaseRates(amount, from, 'EUR', rates)
     if (viaOpen != null && Number.isFinite(viaOpen)) return viaOpen
   }
 
@@ -56,7 +68,6 @@ export async function convertAmountToEur(
     /* fall through */
   }
 
-  // Last resort: invert fallback (fallback values are approx 1 FROM → EUR)
   const fb = getFallbackExchangeRates()[from]
   if (fb != null && fb > 0) return amount * fb
 
@@ -148,7 +159,13 @@ export async function getMonthlyRechargeUsage(input: {
 
 export type MonthlyLimitCheckResult =
   | { ok: true; usage: MonthlyRechargeUsage; planPriceEur: number }
-  | { ok: false; error: string; usage: MonthlyRechargeUsage; planPriceEur: number }
+  | {
+      ok: false
+      code: 'FX_CONVERSION_FAILED' | 'PLAN_EXCEEDS_BAND' | 'MONTHLY_LIMIT_EXCEEDED'
+      error: string
+      usage: MonthlyRechargeUsage
+      planPriceEur: number
+    }
 
 /**
  * Enforce that plan face value (in EUR) fits within the rolling 30-day EUR recharge cap.
@@ -176,6 +193,7 @@ export async function assertWithinMonthlyRechargeLimit(input: {
   if (planPriceEur == null) {
     return {
       ok: false,
+      code: 'FX_CONVERSION_FAILED',
       error: `Unable to convert recharge amount to EUR for limit checks (${input.planCurrency}).`,
       usage,
       planPriceEur: 0,
@@ -189,6 +207,7 @@ export async function assertWithinMonthlyRechargeLimit(input: {
   if (planPriceEur > usage.limitEur + 1e-9) {
     return {
       ok: false,
+      code: 'PLAN_EXCEEDS_BAND',
       error: `This recharge (€${planPriceEur.toFixed(2)}) exceeds the maximum allowed recharge band of €${usage.limitEur.toFixed(2)}.`,
       usage,
       planPriceEur,
@@ -199,7 +218,8 @@ export async function assertWithinMonthlyRechargeLimit(input: {
     const remaining = usage.remainingEur ?? 0
     return {
       ok: false,
-      error: `Monthly recharge limit reached. In the last 30 days you used €${usage.usedEur.toFixed(2)} of €${usage.limitEur.toFixed(2)}. Remaining: €${remaining.toFixed(2)}. Limits reset on a rolling 30-day window.`,
+      code: 'MONTHLY_LIMIT_EXCEEDED',
+      error: `Your monthly recharge limit is exceeded. You have used €${usage.usedEur.toFixed(2)} of €${usage.limitEur.toFixed(2)} in the last 30 days. Remaining this month: €${remaining.toFixed(2)}.`,
       usage,
       planPriceEur,
     }

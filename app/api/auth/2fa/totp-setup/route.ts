@@ -38,7 +38,7 @@ export async function POST(req: Request) {
 
     // generate secret
     const secret = generateSecret()
-    const otpauthUrl = generateURI({ secret, accountName: user?.email || 'Admin', issuer: 'ITU Admin' })
+    const otpauthUrl = generateURI({ secret, label: user?.email || 'Admin', issuer: 'ITU Admin' })
 
     // Save secret to database (but keep enabled = false until verified)
     try {

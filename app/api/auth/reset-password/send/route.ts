@@ -106,7 +106,7 @@ export async function POST(req: Request) {
                     
                     <!-- Button -->
                     <div style="text-align: center; margin: 32px 0;">
-                      <a href="${resetUrl}" style="background-color: #f15a2b; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-size: 15px; font-weight: 600; display: inline-block; box-shadow: 0 4px 12px rgba(241, 90, 43, 0.25);">Reset Password</a>
+                      <a href="${resetUrl}" style="background-color: #E96C32; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-size: 15px; font-weight: 600; display: inline-block; box-shadow: 0 4px 12px rgba(233, 108, 50, 0.25);">Reset Password</a>
                     </div>
                     
                     <p style="color: #4a5568; font-size: 14px; margin-bottom: 16px;">This link is valid for <strong>15 minutes</strong>. If you did not request a password reset, please ignore this email; your account remains secure.</p>

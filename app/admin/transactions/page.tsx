@@ -29,7 +29,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Search, Filter, Download, MoreHorizontal, Eye, RefreshCw, RotateCcw } from 'lucide-react'
 import { useAuthStore } from '@/lib/stores'
-import { clientHasAdminPermission } from '@/lib/auth/client-features'
+import { clientCanRefundTransactions } from '@/lib/auth/client-features'
 import { useProviderDisplay } from '@/components/admin/provider-display-context'
 import { toast } from 'sonner'
 import { resolveTransactionDisplayStatus } from '@/lib/transactions/display-status'
@@ -149,7 +149,7 @@ export default function AdminTransactionsPage() {
   const [refundDialogOpen, setRefundDialogOpen] = useState(false)
   const [refundTransaction, setRefundTransaction] = useState<AdminTransaction | null>(null)
   const [refunding, setRefunding] = useState(false)
-  const canRefund = !!(user && clientHasAdminPermission(user, 'customers.edit'))
+  const canRefund = clientCanRefundTransactions(user)
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchQuery.trim()), 300)
@@ -202,7 +202,11 @@ export default function AdminTransactionsPage() {
       })
       const data = await res.json()
       if (res.ok && data.ok) {
-        toast.success('Refund credited to user wallet successfully!')
+        toast.success(
+          data.idempotent
+            ? 'Refund was already completed (idempotent).'
+            : 'Refund credited to user wallet successfully!',
+        )
         setRefundDialogOpen(false)
         setRefreshTrigger((prev) => prev + 1)
       } else {

@@ -1,4 +1,4 @@
-import { extractPricingFromRaw } from '@/lib/admin/provider-pricing-extractor'
+import { extractPricingFromRaw } from '@/lib/pricing/provider-pricing-extractor'
 import { resolveWholesalePricing } from '@/lib/catalog/provider-wholesale-pricing'
 
 export type ProviderRawPlanRow = {

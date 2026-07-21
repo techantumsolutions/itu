@@ -1,4 +1,6 @@
-import crypto from 'crypto'
+import { getRequestId, newRequestId } from '@/lib/observability/context'
+import { outboundFetch, providerCircuitKey } from '@/lib/http/outbound-fetch'
+import { cacheGetJson, cacheSetJson } from '@/lib/cache/redis'
 
 export interface ApiRequestConfig {
   baseUrl: string
@@ -26,20 +28,20 @@ export interface EndpointConfig {
   pagination?: 'none' | 'page_header'
 }
 
-let oauthTokenCache = new Map<string, { token: string; expiresAt: number }>()
+const OAUTH_CACHE_PREFIX = 'provider:oauth:v1:'
 
 async function getOAuth2Token(config: ApiRequestConfig): Promise<string> {
   const tokenUrl = config.authParams.tokenUrl || 'https://idp.ding.com/connect/token'
   const clientId = config.authParams.clientId || ''
   const clientSecret = config.authParams.clientSecret || ''
   
-  const cacheKey = `${tokenUrl}:${clientId}`
-  const cached = oauthTokenCache.get(cacheKey)
+  const cacheKey = `${OAUTH_CACHE_PREFIX}${tokenUrl}:${clientId}`
+  const cached = await cacheGetJson<{ token: string; expiresAt: number }>(cacheKey)
   if (cached && cached.expiresAt > Date.now()) {
     return cached.token
   }
 
-  const response = await fetch(tokenUrl, {
+  const response = await outboundFetch(tokenUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -49,6 +51,8 @@ async function getOAuth2Token(config: ApiRequestConfig): Promise<string> {
       client_id: clientId,
       client_secret: clientSecret,
     }),
+    timeoutMs: config.timeoutMs ?? 15_000,
+    circuitKey: providerCircuitKey('oauth', tokenUrl),
   })
 
   if (!response.ok) {
@@ -57,7 +61,8 @@ async function getOAuth2Token(config: ApiRequestConfig): Promise<string> {
 
   const data = await response.json()
   const expiresAt = Date.now() + (data.expires_in - 60) * 1000
-  oauthTokenCache.set(cacheKey, { token: data.access_token, expiresAt })
+  const ttlSec = Math.max(30, Math.floor((expiresAt - Date.now()) / 1000))
+  await cacheSetJson(cacheKey, { token: data.access_token, expiresAt }, ttlSec)
   return data.access_token
 }
 
@@ -106,10 +111,12 @@ async function executeRequestOnce(
   body?: unknown,
   timeoutMs?: number
 ): Promise<any> {
+  const correlationId = getRequestId() || newRequestId()
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
-    'X-Correlation-Id': crypto.randomUUID(),
+    'X-Correlation-Id': correlationId,
+    'X-Request-ID': correlationId,
     ...(endpoint.headers || {})
   }
 
@@ -164,28 +171,40 @@ async function executeRequestOnce(
   const queryStr = queryParams.toString()
   const finalUrl = queryStr ? `${cleanBaseUrl}${urlPath}?${queryStr}` : `${cleanBaseUrl}${urlPath}`
 
-  // 3. Request options with timeout
-  const controller = new AbortController()
-  const timeoutId = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null
-
+  // 3. Request options with timeout + keep-alive + circuit breaker
   try {
-    const response = await fetch(finalUrl, {
+    let host = 'unknown'
+    try {
+      host = new URL(finalUrl).host
+    } catch {
+      /* ignore */
+    }
+    const response = await outboundFetch(finalUrl, {
       method: endpoint.method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
-      signal: controller.signal,
-      cache: 'no-store'
+      timeoutMs,
+      circuitKey: providerCircuitKey('generic', host),
     })
 
     if (!response.ok) {
+      try {
+        const { recordProviderCall } = await import('@/lib/observability/metrics')
+        recordProviderCall(apiConfig.baseUrl, false)
+      } catch { /* ignore */ }
       const text = await response.text().catch(() => '')
       throw new Error(`HTTP ${response.status} - ${text || response.statusText}`)
     }
 
+    try {
+      const { recordProviderCall } = await import('@/lib/observability/metrics')
+      recordProviderCall(apiConfig.baseUrl, true)
+    } catch { /* ignore */ }
+
     const data = await response.json()
     return data
   } finally {
-    if (timeoutId) clearTimeout(timeoutId)
+    // timeout handled inside outboundFetch
   }
 }
 

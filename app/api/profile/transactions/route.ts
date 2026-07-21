@@ -73,9 +73,9 @@ export async function GET(request: Request) {
     for (const row of rawRows) {
       const rechargeOrder = row.recharge_orders?.[0] ?? null
       if (!rechargeOrder?.operator_name) {
-        let opId = row.metadata?.operator_id
-        if (typeof opId === 'string' && opId.trim()) {
-          opId = opId.trim()
+        const rawOpId = row.metadata?.operator_id
+        if (typeof rawOpId === 'string' && rawOpId.trim()) {
+          const opId = rawOpId.trim()
           unresolvedOperatorIds.add(opId)
           if (opId.startsWith('system:')) {
             unresolvedOperatorIds.add(opId.slice(7))
@@ -147,9 +147,9 @@ export async function GET(request: Request) {
     const transactions = filteredRows.map((row) => {
       const mapped = mapTransaction(row)
       if (!mapped.metadata?.carrierName) {
-        let opId = row.metadata?.operator_id
-        if (typeof opId === 'string' && opId.trim()) {
-          opId = opId.trim()
+        const rawOpId = row.metadata?.operator_id
+        if (typeof rawOpId === 'string' && rawOpId.trim()) {
+          const opId = rawOpId.trim()
           const resolvedName = operatorNameMap.get(opId) || (opId.startsWith('system:') ? operatorNameMap.get(opId.slice(7)) : null)
           if (resolvedName) {
             mapped.metadata = {

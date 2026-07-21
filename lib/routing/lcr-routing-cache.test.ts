@@ -8,6 +8,21 @@ import {
   getCachedCountryIso3,
 } from '@/lib/routing/lcr-routing-cache'
 
+const mem = new Map<string, unknown>()
+
+jest.mock('@/lib/cache/redis', () => ({
+  cacheGetJson: jest.fn(async (key: string) => mem.get(key) ?? null),
+  cacheSetJson: jest.fn(async (key: string, value: unknown) => {
+    mem.set(key, value)
+  }),
+  cacheDelByPrefix: jest.fn(async (prefix: string) => {
+    for (const k of [...mem.keys()]) {
+      if (k.startsWith(prefix)) mem.delete(k)
+    }
+    return 0
+  }),
+}))
+
 jest.mock('@/lib/routing/repository', () => ({
   getLcrEngineSettings: jest.fn().mockResolvedValue({
     id: 's1',
@@ -36,8 +51,9 @@ jest.mock('@/lib/routing/repository', () => ({
 import { getLcrEngineSettings, listRoutingRules, listProviderPriorities } from '@/lib/routing/repository'
 
 describe('lcr-routing-cache', () => {
-  beforeEach(() => {
-    clearLcrRoutingCaches()
+  beforeEach(async () => {
+    mem.clear()
+    await clearLcrRoutingCaches()
     jest.clearAllMocks()
   })
 
@@ -59,15 +75,15 @@ describe('lcr-routing-cache', () => {
     expect(listProviderPriorities).toHaveBeenCalledTimes(1)
   })
 
-  it('caches country ISO3 lookups in-memory', () => {
-    setCachedCountryIso3('IN', 'IND')
-    expect(getCachedCountryIso3('IN')).toBe('IND')
-    expect(getCachedCountryIso3('in')).toBe('IND')
+  it('caches country ISO3 lookups in Redis', async () => {
+    await setCachedCountryIso3('IN', 'IND')
+    expect(await getCachedCountryIso3('IN')).toBe('IND')
+    expect(await getCachedCountryIso3('in')).toBe('IND')
   })
 
   it('clears all caches', async () => {
     await getCachedLcrEngineSettings()
-    clearLcrRoutingCaches()
+    await clearLcrRoutingCaches()
     await getCachedLcrEngineSettings()
     expect(getLcrEngineSettings).toHaveBeenCalledTimes(2)
   })

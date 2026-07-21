@@ -187,7 +187,7 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
     return { ok: false, status: 'failed', error: 'Pending transaction not found' }
   }
 
-  if (txn.status !== 'pending_payment' && txn.status !== 'pending') {
+  if (txn.status !== 'pending_payment' && txn.status !== 'pending' && txn.status !== 'processing') {
     if (txn.status === 'completed') {
       const meta = (txn.metadata && typeof txn.metadata === 'object' ? txn.metadata : {}) as Record<string, unknown>
       const points = await getEarnedPoints(pendingTransactionId).catch(() => 0)
@@ -476,8 +476,6 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
       planId: input.planId,
       routingStrategy: routingDecision.routing_strategy,
       routingRuleMatched: routingDecision.routing_rule_matched ? 'Yes' : 'No',
-      selectedProvider: providerId,
-      providerPlanId: lockedCandidate.providerPlanId,
       ...candidatePricingLog(lockedCandidate),
       executionResult: 'RECHARGE_SUCCESS',
       attemptNumber: 1,
@@ -534,7 +532,7 @@ export async function executePostPaymentRecharge(input: CheckoutInput): Promise<
     operatorCode,
     planId: input.planId,
     routingStrategy: routingDecision.routing_strategy,
-    selectedProvider: providerId,
+    routingRuleMatched: routingDecision.routing_rule_matched ? 'Yes' : 'No',
     ...candidatePricingLog(lockedCandidate),
     executionResult: 'RECHARGE_FAILED',
     failureReason: exec.error,

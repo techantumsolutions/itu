@@ -8,17 +8,9 @@ import {
   resolveProviderCostAmount,
   resolveProviderCostCurrency,
 } from '@/lib/reports/fx'
+import { cacheGetJson, cacheSetJson } from '@/lib/cache/redis'
 
-// Simple TTL cache (60s) to avoid redundant DB round-trips
-const _cache = new Map<string, { ts: number; data: unknown }>()
-const TTL = 60_000
-function cacheGet(k: string): unknown | null {
-  const h = _cache.get(k)
-  if (!h) return null
-  if (Date.now() - h.ts > TTL) { _cache.delete(k); return null }
-  return h.data
-}
-function cacheSet(k: string, d: unknown) { _cache.set(k, { ts: Date.now(), data: d }) }
+const COUNTRY_REPORT_CACHE_TTL_SECONDS = 60
 
 function n(v: unknown): number { const x = Number(v); return Number.isFinite(x) ? x : 0 }
 function pct(a: number, b: number) { return b > 0 ? parseFloat(((a / b) * 100).toFixed(1)) : 0 }
@@ -129,8 +121,8 @@ export async function POST(request: Request) {
     ''
   ).toUpperCase().trim()
 
-  const cacheKey = `country:${body.reportType ?? 'destination_country'}:${from}:${to}:${search}:${countryFilter}:${pageNum}:${pageSize}:${body.sort?.column}:${body.sort?.direction}`
-  const cached = cacheGet(cacheKey)
+  const cacheKey = `report:country:${body.reportType ?? 'destination_country'}:${from}:${to}:${search}:${countryFilter}:${pageNum}:${pageSize}:${body.sort?.column}:${body.sort?.direction}`
+  const cached = await cacheGetJson<unknown>(cacheKey)
   if (cached) return NextResponse.json(cached)
 
   const df = dateFilters(from, to)
@@ -491,6 +483,6 @@ export async function POST(request: Request) {
   const pagedRows = allRows.slice((pageNum - 1) * pageSize, pageNum * pageSize)
 
   const result = { rows: pagedRows, pagination: { page: pageNum, pageSize, total }, summaryCards, chartData }
-  cacheSet(cacheKey, result)
+  await cacheSetJson(cacheKey, result, COUNTRY_REPORT_CACHE_TTL_SECONDS)
   return NextResponse.json(result)
 }

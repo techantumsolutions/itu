@@ -5,6 +5,15 @@ import {
   getBroadcastSecret,
 } from '@/lib/tickets/socket-config'
 
+function setNodeEnv(value: string) {
+  Object.defineProperty(process.env, 'NODE_ENV', {
+    value,
+    configurable: true,
+    writable: true,
+    enumerable: true,
+  })
+}
+
 describe('socket-config', () => {
   const env = process.env
 
@@ -59,13 +68,13 @@ describe('getBroadcastSecret', () => {
   })
 
   it('fails fast in production when the secret is missing', () => {
-    process.env.NODE_ENV = 'production'
+    setNodeEnv('production')
     delete process.env.SOCKET_BROADCAST_SECRET
     expect(() => getBroadcastSecret()).toThrow(/SOCKET_BROADCAST_SECRET is required/)
   })
 
   it('uses a documented dev fallback outside production when unset', () => {
-    process.env.NODE_ENV = 'development'
+    setNodeEnv('development')
     delete process.env.SOCKET_BROADCAST_SECRET
     const secret = getBroadcastSecret()
     expect(typeof secret).toBe('string')

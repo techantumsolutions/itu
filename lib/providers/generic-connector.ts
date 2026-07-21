@@ -26,13 +26,13 @@ function asArr(v: unknown): unknown[] {
   return Array.isArray(v) ? v : []
 }
 
-function getPathValue(obj: any, path: string): any {
+function getPathValue(obj: unknown, path: string | undefined): unknown {
   if (!obj || !path) return undefined
   const parts = path.split('.')
-  let current = obj
+  let current: unknown = obj
   for (const part of parts) {
-    if (current == null) return undefined
-    current = current[part]
+    if (current == null || typeof current !== 'object') return undefined
+    current = (current as Record<string, unknown>)[part]
   }
   return current
 }
@@ -66,6 +66,8 @@ export interface BuiltInProviderConfig {
     countryIso3: string
     operatorRef: string
     operatorName?: string
+    name?: string
+    description?: string
     service?: string
     planType?: string
     retailAmount: string
@@ -335,7 +337,7 @@ export const genericConnector: ProviderConnector = {
 
         // Prices
         const retailAmount = num(getPathValue(p, m.retailAmount)) || 0
-        const retailCurrency = text(getPathValue(p, m.retailCurrency)) || 'USD'
+        const retailCurrency = text(m.retailCurrency ? getPathValue(p, m.retailCurrency) : undefined) || 'USD'
 
         let wholesaleAmount = retailAmount
         if (m.wholesaleAmount) {
@@ -346,7 +348,7 @@ export const genericConnector: ProviderConnector = {
           }
         }
         wholesaleAmount = Math.round(wholesaleAmount * 100) / 100
-        const wholesaleCurrency = text(getPathValue(p, m.wholesaleCurrency)) || retailCurrency
+        const wholesaleCurrency = text(m.wholesaleCurrency ? getPathValue(p, m.wholesaleCurrency) : undefined) || retailCurrency
 
         // Service & Plan Type mapping
         let service = 'Mobile'
@@ -407,8 +409,8 @@ export const genericConnector: ProviderConnector = {
           retailCurrency,
           wholesaleAmount,
           wholesaleCurrency,
-          destinationAmount: num(getPathValue(p, m.destinationAmount)),
-          destinationUnit: text(getPathValue(p, m.destinationUnit)) || undefined,
+          destinationAmount: m.destinationAmount ? num(getPathValue(p, m.destinationAmount)) : undefined,
+          destinationUnit: m.destinationUnit ? text(getPathValue(p, m.destinationUnit)) || undefined : undefined,
           validityDays,
           benefits,
           requiredFields: planType === 'PIN' ? [] : [['account']],

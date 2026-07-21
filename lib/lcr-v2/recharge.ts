@@ -231,15 +231,7 @@ export async function processLcrV2Recharge(request: Request, body: LcrV2Recharge
   let chain = [
     decision.selected,
     ...(retrySettings?.autoFailover === false ? [] : decision.fallbacks),
-  ].filter(Boolean) as Array<{
-    providerId: string
-    providerPlanId: string
-    providerCode?: string
-    providerName?: string
-    price?: number
-    currency?: string
-    providerPriority?: number
-  }>
+  ].filter((c): c is NonNullable<typeof c> => Boolean(c))
 
   if (chain.length > maxHops) {
     chain = chain.slice(0, maxHops)
@@ -254,6 +246,8 @@ export async function processLcrV2Recharge(request: Request, body: LcrV2Recharge
     cost: number
     source: 'RULE' | 'LCR'
     ok: boolean
+    skipped?: boolean
+    skipReason?: string
     error?: string
     errorCode?: string
     errorMessage?: string

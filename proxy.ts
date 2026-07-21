@@ -12,6 +12,7 @@ import {
   LOCALE_COOKIE_LANGUAGE,
   LOCALE_COOKIE_MANUAL,
 } from '@/lib/locale/locale-cookies'
+import { REQUEST_ID_HEADER, resolveRequestId } from '@/lib/observability/request-id'
 
 type IpApiResponse = {
   country_code?: string
@@ -40,35 +41,49 @@ async function geoFromIpApi(ip: string): Promise<{ country: string | null; curre
   return { country, currency, language }
 }
 
+/** Attach X-Request-ID to request + response (Next 16 uses proxy.ts, not middleware.ts). */
+function nextWithRequestId(request: NextRequest, requestId: string): NextResponse {
+  const requestHeaders = new Headers(request.headers)
+  requestHeaders.set(REQUEST_ID_HEADER, requestId)
+  const response = NextResponse.next({
+    request: { headers: requestHeaders },
+  })
+  response.headers.set(REQUEST_ID_HEADER, requestId)
+  return response
+}
+
 export async function proxy(request: NextRequest) {
+  const requestId = resolveRequestId(request.headers.get(REQUEST_ID_HEADER))
   const { pathname } = request.nextUrl
 
   if (pathname.startsWith('/api')) {
-    return NextResponse.next()
+    return nextWithRequestId(request, requestId)
   }
 
   if (pathname.startsWith('/_next') || pathname.startsWith('/static')) {
-    return NextResponse.next()
+    return nextWithRequestId(request, requestId)
   }
 
   // File-like public assets (fonts, images, etc.)
   if (pathname.includes('.')) {
-    return NextResponse.next()
+    return nextWithRequestId(request, requestId)
   }
 
   // OAuth / Supabase-style callbacks: pass through without touching cookies.
   if (pathname.startsWith('/auth')) {
-    return NextResponse.next()
+    return nextWithRequestId(request, requestId)
   }
 
   const manual = request.cookies.get(LOCALE_COOKIE_MANUAL)?.value === '1'
-  if (manual) return NextResponse.next()
+  if (manual) return nextWithRequestId(request, requestId)
 
   const existingCountry = request.cookies.get(LOCALE_COOKIE_COUNTRY)?.value
   const existingLanguage = request.cookies.get(LOCALE_COOKIE_LANGUAGE)?.value
   const existingCurrency = request.cookies.get(LOCALE_COOKIE_CURRENCY)?.value
 
-  if (existingCountry && existingLanguage && existingCurrency) return NextResponse.next()
+  if (existingCountry && existingLanguage && existingCurrency) {
+    return nextWithRequestId(request, requestId)
+  }
 
   const h = request.headers
   const extended = request as RequestWithGeo
@@ -102,7 +117,7 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  const res = NextResponse.next()
+  const res = nextWithRequestId(request, requestId)
   res.headers.set('x-country', detected.country)
   if (!existingCountry) res.cookies.set(LOCALE_COOKIE_COUNTRY, detected.country, { path: '/', sameSite: 'lax', maxAge: 60 * 60 * 24 * 365 })
   if (!existingCurrency) res.cookies.set(LOCALE_COOKIE_CURRENCY, detected.currency, { path: '/', sameSite: 'lax', maxAge: 60 * 60 * 24 * 365 })
@@ -113,6 +128,8 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     // api + full _next tree + favicon + common static extensions (fonts/images)
-    '/((?!api|_next|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|map|woff2?|ttf|otf|eot)$).*)',
+    // Request-ID still applies via early returns above for /api when matched;
+    // broaden matcher so API also gets correlation IDs.
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|map|woff2?|ttf|otf|eot)$).*)',
   ],
 }

@@ -26,7 +26,7 @@ import {
 import { TicketStatusBadge } from '@/components/ticket-status-badge'
 import { apiAdminListTickets } from '@/lib/tickets/client-api'
 import type { Ticket, TicketStatus } from '@/lib/tickets/types'
-import { isClientAdminUser } from '@/lib/tickets/auth-headers'
+import { isClientAdminUser } from '@/lib/auth/client-role'
 import { toast } from 'sonner'
 
 export default function AdminSupportTicketsPage() {

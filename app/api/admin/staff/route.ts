@@ -178,7 +178,7 @@ export async function POST(request: Request) {
 
                     <!-- Button -->
                     <div style="text-align: center; margin: 32px 0;">
-                      <a href="${inviteUrl}" style="background-color: #f15a2b; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-size: 15px; font-weight: 600; display: inline-block; box-shadow: 0 4px 12px rgba(241, 90, 43, 0.25);">Set Up Your Password</a>
+                      <a href="${inviteUrl}" style="background-color: #E96C32; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 12px; font-size: 15px; font-weight: 600; display: inline-block; box-shadow: 0 4px 12px rgba(233, 108, 50, 0.25);">Set Up Your Password</a>
                     </div>
                     
                     <p style="color: #4a5568; font-size: 14px; margin-bottom: 16px;">This setup link is valid for <strong>24 hours</strong>. If you did not expect this invitation, please ignore this email.</p>

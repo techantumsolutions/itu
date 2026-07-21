@@ -1,3 +1,5 @@
+import { outboundFetch, providerCircuitKey } from '@/lib/http/outbound-fetch'
+
 function readEnv(name: string): string | undefined {
   const v = process.env[name]
   return v?.trim() || undefined
@@ -256,14 +258,15 @@ export async function fetchDtoneProductsPage(
   params.set('per_page', String(perPage))
   if (query?.countryIsoCode) params.set('country_iso_code', query.countryIsoCode.toUpperCase())
 
-  const response = await fetch(`${baseUrl}/v1/products?${params.toString()}`, {
+  const response = await outboundFetch(`${baseUrl}/v1/products?${params.toString()}`, {
     method: 'GET',
     headers: {
       Authorization: `Basic ${auth}`,
       Accept: 'application/json',
       'Content-Type': 'application/json',
     },
-    cache: 'no-store',
+    timeoutMs: 30_000,
+    circuitKey: providerCircuitKey('dtone', new URL(baseUrl).host),
   })
 
   if (!response.ok) {
@@ -322,15 +325,16 @@ export async function fetchDtoneMobileNumberLookup(
   const { apiKey, apiSecret, baseUrl } = resolveDtoneCredentials(creds)
   const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString('base64')
 
-  const response = await fetch(`${baseUrl}/v1/lookup/mobile-number`, {
+  const response = await outboundFetch(`${baseUrl}/v1/lookup/mobile-number`, {
     method: 'POST',
     headers: {
       Authorization: `Basic ${auth}`,
       Accept: 'application/json',
       'Content-Type': 'application/json',
     },
-    cache: 'no-store',
     body: JSON.stringify(payload),
+    timeoutMs: 20_000,
+    circuitKey: providerCircuitKey('dtone', new URL(baseUrl).host),
   })
 
   if (!response.ok) {
@@ -362,15 +366,16 @@ export async function createDtoneTransaction(
     credit_party_identifier: input.credit_party_identifier,
   }
 
-  const response = await fetch(`${baseUrl}${transactionPath}`, {
+  const response = await outboundFetch(`${baseUrl}${transactionPath}`, {
     method: 'POST',
     headers: {
       Authorization: `Basic ${auth}`,
       Accept: 'application/json',
       'Content-Type': 'application/json',
     },
-    cache: 'no-store',
     body: JSON.stringify(body),
+    timeoutMs: 45_000,
+    circuitKey: providerCircuitKey('dtone', new URL(baseUrl).host),
   })
 
   const textBody = await response.text().catch(() => '')

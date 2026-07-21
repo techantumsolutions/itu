@@ -1,0 +1,252 @@
+# Pull request + reusable quality gates.
+# Required status check name for branch protection: "CI Gate"
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write
+  pull-requests: read
+  security-events: write
+
+jobs:
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-pnpm
+      - name: Run ESLint
+        run: pnpm run lint
+
+  typecheck:
+    name: TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-pnpm
+      - name: Run TypeScript check
+        run: pnpm run typecheck
+
+  test:
+    name: Unit tests + coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-pnpm
+      - name: Run Jest with coverage
+        run: pnpm run test:coverage
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
+
+  audit:
+    name: Production dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-pnpm
+      - name: pnpm audit (production, high+)
+        # PR/dev workflow: soft by default. Set CI_AUDIT_STRICT=true to hard-fail.
+        # Production deploy workflow always hard-fails (see deploy.yml).
+        continue-on-error: ${{ vars.CI_AUDIT_STRICT != 'true' }}
+        run: pnpm run audit:prod
+
+  secret-scan:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependency Review
+        # Soft by default so known transitive advisories do not freeze PRs.
+        # Set repository variable CI_DEPENDENCY_REVIEW_STRICT=true to hard-fail.
+        uses: actions/dependency-review-action@v4
+        continue-on-error: ${{ vars.CI_DEPENDENCY_REVIEW_STRICT != 'true' }}
+        with:
+          fail-on-severity: high
+
+  build-app:
+    name: Build + standalone verify
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test, audit, secret-scan]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-pnpm
+      - name: Load public build env defaults
+        run: |
+          grep -v '^\s*#' .github/production.build.env | grep -v '^\s*$' >> "$GITHUB_ENV"
+          [ -n "${{ vars.NEXT_PUBLIC_APP_URL }}" ] && echo "NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL }}" >> "$GITHUB_ENV"
+          [ -n "${{ vars.NEXT_PUBLIC_SUPABASE_URL }}" ] && echo "NEXT_PUBLIC_SUPABASE_URL=${{ vars.NEXT_PUBLIC_SUPABASE_URL }}" >> "$GITHUB_ENV"
+          [ -n "${{ vars.NEXT_PUBLIC_RECAPTCHA_SITE_KEY }}" ] && echo "NEXT_PUBLIC_RECAPTCHA_SITE_KEY=${{ vars.NEXT_PUBLIC_RECAPTCHA_SITE_KEY }}" >> "$GITHUB_ENV"
+          [ -n "${{ vars.NEXT_PUBLIC_RECAPTCHA_ENABLED }}" ] && echo "NEXT_PUBLIC_RECAPTCHA_ENABLED=${{ vars.NEXT_PUBLIC_RECAPTCHA_ENABLED }}" >> "$GITHUB_ENV"
+      - name: Validate build env
+        run: |
+          test -n "$NEXT_PUBLIC_APP_URL" || { echo "::error::NEXT_PUBLIC_APP_URL missing"; exit 1; }
+          test -n "$NEXT_PUBLIC_SUPABASE_URL" || { echo "::error::NEXT_PUBLIC_SUPABASE_URL missing"; exit 1; }
+      - name: Next.js production build
+        run: pnpm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+          NEXT_PUBLIC_APP_URL: ${{ env.NEXT_PUBLIC_APP_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ env.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_RECAPTCHA_SITE_KEY: ${{ env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY }}
+          NEXT_PUBLIC_RECAPTCHA_ENABLED: ${{ env.NEXT_PUBLIC_RECAPTCHA_ENABLED }}
+      - name: Verify standalone output
+        run: |
+          test -f .next/standalone/server.js
+          test -d .next/standalone/node_modules
+          test -d .next/static
+          test -d public
+          echo "Standalone build OK"
+
+  docker-build:
+    name: Docker build (no push)
+    runs-on: ubuntu-latest
+    needs: [build-app]
+    # Skip dependency-review when not a PR (workflow_call from deploy).
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load public build env defaults
+        run: |
+          grep -v '^\s*#' .github/production.build.env | grep -v '^\s*$' >> "$GITHUB_ENV"
+          [ -n "${{ vars.NEXT_PUBLIC_APP_URL }}" ] && echo "NEXT_PUBLIC_APP_URL=${{ vars.NEXT_PUBLIC_APP_URL }}" >> "$GITHUB_ENV"
+          [ -n "${{ vars.NEXT_PUBLIC_SUPABASE_URL }}" ] && echo "NEXT_PUBLIC_SUPABASE_URL=${{ vars.NEXT_PUBLIC_SUPABASE_URL }}" >> "$GITHUB_ENV"
+          [ -n "${{ vars.NEXT_PUBLIC_RECAPTCHA_SITE_KEY }}" ] && echo "NEXT_PUBLIC_RECAPTCHA_SITE_KEY=${{ vars.NEXT_PUBLIC_RECAPTCHA_SITE_KEY }}" >> "$GITHUB_ENV"
+          [ -n "${{ vars.NEXT_PUBLIC_RECAPTCHA_ENABLED }}" ] && echo "NEXT_PUBLIC_RECAPTCHA_ENABLED=${{ vars.NEXT_PUBLIC_RECAPTCHA_ENABLED }}" >> "$GITHUB_ENV"
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build web image (cache only)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          load: true
+          tags: itu-web:ci
+          cache-from: type=gha,scope=itu-web
+          cache-to: type=gha,mode=max,scope=itu-web
+          build-args: |
+            NEXT_PUBLIC_APP_URL=${{ env.NEXT_PUBLIC_APP_URL }}
+            NEXT_PUBLIC_SUPABASE_URL=${{ env.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_RECAPTCHA_SITE_KEY=${{ env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY }}
+            NEXT_PUBLIC_RECAPTCHA_ENABLED=${{ env.NEXT_PUBLIC_RECAPTCHA_ENABLED }}
+      - name: Build sidecar image (cache only)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.sidecar
+          push: false
+          load: true
+          tags: itu-sidecar:ci
+          cache-from: type=gha,scope=itu-sidecar
+          cache-to: type=gha,mode=max,scope=itu-sidecar
+      - name: Trivy scan web image
+        # PR/dev workflow: soft by default. Set CI_TRIVY_STRICT=true to hard-fail.
+        # Production deploy workflow always hard-fails (see deploy.yml).
+        # Use v-prefixed tag; unprefixed 0.28.0 was removed after Aqua supply-chain remediation.
+        uses: aquasecurity/trivy-action@v0.36.0
+        continue-on-error: ${{ vars.CI_TRIVY_STRICT != 'true' }}
+        with:
+          image-ref: itu-web:ci
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+      - name: Trivy scan sidecar image
+        uses: aquasecurity/trivy-action@v0.36.0
+        continue-on-error: ${{ vars.CI_TRIVY_STRICT != 'true' }}
+        with:
+          image-ref: itu-sidecar:ci
+          format: table
+          exit-code: '1'
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+  # Single required check for branch protection ("CI Gate").
+  ci-gate:
+    name: CI Gate
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - lint
+      - typecheck
+      - test
+      - audit
+      - secret-scan
+      - dependency-review
+      - build-app
+      - docker-build
+    steps:
+      - name: Enforce all CI jobs succeeded
+        run: |
+          echo "lint=${{ needs.lint.result }}"
+          echo "typecheck=${{ needs.typecheck.result }}"
+          echo "test=${{ needs.test.result }}"
+          echo "audit=${{ needs.audit.result }}"
+          echo "secret-scan=${{ needs.secret-scan.result }}"
+          echo "dependency-review=${{ needs.dependency-review.result }}"
+          echo "build-app=${{ needs.build-app.result }}"
+          echo "docker-build=${{ needs.docker-build.result }}"
+
+          fail=0
+          # Lint / typecheck / tests are always mandatory (no soft-fail).
+          for r in \
+            "${{ needs.lint.result }}" \
+            "${{ needs.typecheck.result }}" \
+            "${{ needs.test.result }}" \
+            "${{ needs.secret-scan.result }}" \
+            "${{ needs.build-app.result }}" \
+            "${{ needs.docker-build.result }}"
+          do
+            if [ "$r" != "success" ]; then
+              echo "::error::Required job result was '$r' (expected success)"
+              fail=1
+            fi
+          done
+
+          # Audit remains configurable via CI_AUDIT_STRICT (continue-on-error on the job step).
+          # When soft, the job still reports success; when strict, a High/Critical finding fails the job.
+          audit="${{ needs.audit.result }}"
+          if [ "$audit" != "success" ]; then
+            echo "::error::audit failed ($audit)"
+            fail=1
+          fi
+
+          # dependency-review is PR-only; skipped is OK when workflow_call / non-PR.
+          # Soft by default via CI_DEPENDENCY_REVIEW_STRICT (continue-on-error on the step).
+          dr="${{ needs.dependency-review.result }}"
+          if [ "$dr" != "success" ] && [ "$dr" != "skipped" ]; then
+            echo "::error::dependency-review failed ($dr)"
+            fail=1
+          fi
+
+          exit $fail

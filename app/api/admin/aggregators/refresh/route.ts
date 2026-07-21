@@ -8,7 +8,7 @@ import {
 import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 
 export async function GET(request: Request) {
-  const denied = await requireAdminPermission(request, 'integrations.view')
+  const denied = await requireAdminPermission(request, 'operators.view')
   if (denied) return denied
 
   const latest = getLatestRefreshRun()
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const denied = await requireAdminPermission(request, 'integrations.edit')
+  const denied = await requireAdminPermission(request, 'operators.edit')
   if (denied) return denied
 
   try {

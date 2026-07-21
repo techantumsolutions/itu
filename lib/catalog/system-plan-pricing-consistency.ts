@@ -74,15 +74,15 @@ export async function buildSystemPlanPricingConsistencyReport(
 
   const rows: ProviderPricingConsistencyRow[] = authoritative.providers.map((auth) => {
     const internal = internalByKey.get(authoritativePricingKey(auth.providerId, auth.providerPlanId))
-    const pricingMismatch =
+    const pricingMismatch = Boolean(
       internal != null &&
-      ((internal.provider_price != null &&
-        auth.provider_wholesale_amount != null &&
-        Math.abs(internal.provider_price - auth.provider_wholesale_amount) > 0.02) ||
-        (internal.provider_currency &&
-          auth.provider_wholesale_currency &&
-          internal.provider_currency.toUpperCase() !== auth.provider_wholesale_currency.toUpperCase()))
-
+        ((internal.provider_price != null &&
+          auth.provider_wholesale_amount != null &&
+          Math.abs(internal.provider_price - auth.provider_wholesale_amount) > 0.02) ||
+          (Boolean(internal.provider_currency) &&
+            Boolean(auth.provider_wholesale_currency) &&
+            internal.provider_currency!.toUpperCase() !== auth.provider_wholesale_currency!.toUpperCase())),
+    )
     if (pricingMismatch) {
       errors.push(
         `Pricing mismatch ${auth.providerName}: authoritative=${auth.provider_wholesale_amount} ${auth.provider_wholesale_currency} internal_mapping=${internal?.provider_price} ${internal?.provider_currency}`,

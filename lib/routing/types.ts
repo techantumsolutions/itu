@@ -25,6 +25,8 @@ export type RoutingRuleRow = {
   ruleName: string
   countryId: string | null
   operatorId: string | null
+  /** Resolved from system_operators when operatorId is a UUID. */
+  operatorName?: string | null
   productType: string | null
   providerId: string
   providerCode?: string
@@ -83,7 +85,7 @@ import type { ProviderPayloadStrategy } from '@/lib/routing/provider-payload-str
 
 export type RoutingProviderCandidate = {
   providerId: string
-  providerPlanId?: string
+  providerPlanId: string
   providerCode?: string
   providerName?: string
   /** @deprecated Use provider_wholesale_amount — kept for routing logs */
@@ -118,4 +120,10 @@ export type RoutingResolveResult = {
   ruleApplied: string
   settings: LcrEngineSettings | null
   logId?: string
+  /** Why routing chose / failed to choose a provider (observability). */
+  routing_decision_reason?: string
+  internal_plan_id?: string
+  mapping_count?: number
+  candidate_provider_count?: number
+  eligible_provider_count?: number
 }

@@ -7,7 +7,7 @@ import { useAuthStore } from '@/lib/stores'
 import { useIdleTimeout } from '@/hooks/use-idle-timeout'
 import { getLoginPathForRole } from '@/lib/auth/session-idle-config'
 import { clearPagePasswordUnlocks } from '@/lib/auth/page-password-storage'
-import { isClientAdminUser } from '@/lib/tickets/auth-headers'
+import { isClientAdminUser } from '@/lib/auth/client-role'
 
 const AUTH_PATH_PREFIXES = [
   '/login',

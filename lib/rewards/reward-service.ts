@@ -1,5 +1,5 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
-import { convertUsingEurBaseRates } from '@/lib/topup/currency-conversion'
+import { convertUsingEurBaseRates } from '@/lib/checkout/currency-conversion'
 
 interface RewardRule {
   id: string

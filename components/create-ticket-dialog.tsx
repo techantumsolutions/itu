@@ -29,7 +29,7 @@ import { toast } from 'sonner'
 import {
   SUPPORT_BOT_CATEGORIES,
   type SupportBotCategory,
-} from '@/lib/support-bot/qa'
+} from '@/lib/support-bot/categories'
 
 const CATEGORY_LABELS: Record<SupportBotCategory, string> = {
   general: 'General',

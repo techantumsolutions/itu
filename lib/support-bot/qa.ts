@@ -1,15 +1,10 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
+import {
+  SUPPORT_BOT_CATEGORIES,
+  type SupportBotCategory,
+} from '@/lib/support-bot/categories'
 
-export const SUPPORT_BOT_CATEGORIES = [
-  'general',
-  'transaction',
-  'payment',
-  'recharge',
-  'account',
-  'other',
-] as const
-
-export type SupportBotCategory = (typeof SUPPORT_BOT_CATEGORIES)[number]
+export { SUPPORT_BOT_CATEGORIES, type SupportBotCategory } from '@/lib/support-bot/categories'
 
 export type SupportBotQa = {
   id: string

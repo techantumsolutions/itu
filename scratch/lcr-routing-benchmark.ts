@@ -50,7 +50,7 @@ async function runBatch(label: string, useCache: boolean) {
     process.exit(1)
   }
 
-  if (!useCache) clearLcrRoutingCaches()
+  if (!useCache) void clearLcrRoutingCaches()
 
   const { fetch: originalFetch } = globalThis
   let restCalls = 0
@@ -109,10 +109,10 @@ async function runBatch(label: string, useCache: boolean) {
 async function main() {
   console.log('LCR Routing Benchmark — 100 simulations per mode\n')
 
-  clearLcrRoutingCaches()
+  await clearLcrRoutingCaches()
   const cold = await runBatch('cold (cache cleared, sim 1 cold rest)', false)
 
-  clearLcrRoutingCaches()
+  await clearLcrRoutingCaches()
   // Warm: first call populates cache, remaining 99 hit cache
   const warm = await runBatch('warm (30s TTL cache, sims 2-100 cached)', true)
 

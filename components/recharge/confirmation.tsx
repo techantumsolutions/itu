@@ -23,7 +23,7 @@ export function Confirmation() {
     processRecharge,
   } = useRechargeStore()
 
-  const { balance, deduct } = useWalletStore()
+  const { balance } = useWalletStore()
 
   const formatCurrency = (amount: number, currency: string) => {
     return new Intl.NumberFormat("en-US", {

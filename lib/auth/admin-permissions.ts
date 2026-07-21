@@ -9,6 +9,7 @@ export const ADMIN_PERMISSION_KEYS = [
   'providers.create',
   'providers.edit',
   'providers.sync',
+  'providers.execute',
   'providers.delete',
   'providers.show_names',
   'operators.view',
@@ -51,6 +52,7 @@ export const ADMIN_PERMISSION_KEYS = [
   'reconciliation.view',
   'reconciliation.edit',
   'transactions.view',
+  'transactions.refund',
   'reports.view',
   'analytics.view',
   'statistics.view',
@@ -96,6 +98,7 @@ export const ADMIN_PERMISSION_LABELS: Record<AdminPermissionKey, string> = {
   'providers.create': 'Providers — Create',
   'providers.edit': 'Providers — Edit',
   'providers.sync': 'Providers — Sync',
+  'providers.execute': 'Providers — Execute sandbox recharge',
   'providers.delete': 'Providers — Delete',
   'providers.show_names': 'Providers — Show provider names (off = P1, P2 labels)',
   'operators.view': 'Operators — View',
@@ -138,6 +141,7 @@ export const ADMIN_PERMISSION_LABELS: Record<AdminPermissionKey, string> = {
   'reconciliation.view': 'Reconciliation — View',
   'reconciliation.edit': 'Reconciliation — Edit',
   'transactions.view': 'Transactions — View',
+  'transactions.refund': 'Transactions — Refund to wallet',
   'reports.view': 'Reports — View',
   'analytics.view': 'Analytics — View',
   'statistics.view': 'Statistics — View',
@@ -162,6 +166,7 @@ export const ADMIN_PERMISSION_GROUPS: { module: string; keys: AdminPermissionKey
       'providers.create',
       'providers.edit',
       'providers.sync',
+      'providers.execute',
       'providers.delete',
     ],
   },
@@ -189,7 +194,7 @@ export const ADMIN_PERMISSION_GROUPS: { module: string; keys: AdminPermissionKey
   { module: 'Support Tickets', keys: ['tickets.view', 'tickets.edit'] },
   { module: 'Ads', keys: ['ads.view', 'ads.create', 'ads.edit', 'ads.delete'] },
   { module: 'Reconciliation', keys: ['reconciliation.view', 'reconciliation.edit'] },
-  { module: 'Transactions', keys: ['transactions.view'] },
+  { module: 'Transactions', keys: ['transactions.view', 'transactions.refund'] },
   { module: 'Reports', keys: ['reports.view'] },
   { module: 'Settings', keys: ['settings.view', 'settings.edit'] },
   { module: 'Jobs & Applications', keys: ['jobs.view', 'jobs.create', 'jobs.edit'] },
@@ -333,7 +338,12 @@ export function normalizePermissionsJson(raw: unknown): Record<AdminPermissionKe
   return migrateLegacyPermissions(raw)
 }
 
-/** Legacy admins with null permissions keep full module access (pre-migration behaviour). */
+/**
+ * Resolve whether an admin role may use a permission key.
+ * - super_admin: always allow
+ * - admin: allow only when the permission is explicitly true
+ * - null / missing permission map: deny (never implicit full access)
+ */
 export function hasAdminPermission(params: {
   appRole: string
   adminPermissions: Record<string, boolean> | null
@@ -342,7 +352,7 @@ export function hasAdminPermission(params: {
   const role = (params.appRole ?? '').trim().toLowerCase()
   if (role === 'super_admin') return true
   if (role !== 'admin') return false
-  if (params.adminPermissions == null) return true
+  if (params.adminPermissions == null) return false
 
   const migrated = migrateLegacyPermissions(params.adminPermissions)
   return migrated[params.permission] === true

@@ -47,7 +47,8 @@ const nextConfig = {
   // Production Docker web image uses Next standalone output (Phase 3D).
   output: 'standalone',
   // Razorpay uses axios + native Node HTTPS; bundling it breaks outbound API calls in dev/prod.
-  serverExternalPackages: ['razorpay'],
+  // Observability packages stay external so workers/scripts can resolve them too.
+  serverExternalPackages: ['razorpay', 'prom-client', '@sentry/nextjs', 'bullmq', 'ioredis'],
   poweredByHeader: false,
   // Next 16 blocks cross-origin HMR/dev assets unless the host is listed.
   // Include LAN IPs so phones/other PCs can open http://192.168.x.x:3000 in development.

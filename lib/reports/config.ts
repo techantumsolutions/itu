@@ -42,7 +42,7 @@ export interface ReportSourceConfig {
    * e.g. ["type=eq.recharge", "status=neq.draft"]
    */
   staticFilters?: string[]
-  /** Maximum rows to fetch for aggregated reports (default 50000). */
+  /** Maximum rows to fetch for aggregated reports (default/capped 10000). */
   fetchLimit?: number
 }
 

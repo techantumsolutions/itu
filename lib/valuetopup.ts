@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import { outboundFetch, providerCircuitKey } from '@/lib/http/outbound-fetch'
 
 function readEnv(name: string): string | undefined {
   const v = process.env[name]
@@ -114,7 +115,7 @@ async function valuetopupFetch<T>(
   const url = query ? `${creds.baseUrl}${input.path}?${query}` : `${creds.baseUrl}${input.path}`
   const auth = Buffer.from(`${creds.apiKey}:${creds.hmacSecret}`).toString('base64')
   
-  const response = await fetch(url, {
+  const response = await outboundFetch(url, {
     method: input.method,
     headers: {
       Authorization: `Basic ${auth}`,
@@ -122,7 +123,8 @@ async function valuetopupFetch<T>(
       'Content-Type': 'application/json',
     },
     body: bodyJson || undefined,
-    cache: 'no-store',
+    timeoutMs: 30_000,
+    circuitKey: providerCircuitKey('valuetopup', new URL(creds.baseUrl).host),
   })
 
   const text = await response.text().catch(() => '')

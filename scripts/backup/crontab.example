@@ -1,0 +1,25 @@
+# Example host crontab for production backup host (Linux).
+# Install: crontab -e  → paste after adjusting paths and secrets.
+#
+# Prefer loading secrets from a root-only env file, e.g. /etc/itu/backup.env:
+#   BACKUP_ENCRYPTION_KEY=...
+#   DATABASE_URL=...
+#   DIRECT_URL=...
+#   REDIS_PASSWORD=...
+#   SUPABASE_URL=...
+#   SUPABASE_SERVICE_ROLE_KEY=...
+#   SUPABASE_STORAGE_VOLUME=supabase_storage-data   # if self-hosted
+#   BACKUP_ROOT=/var/backups/itu
+#   BACKUP_RETENTION_DAYS=30
+
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+
+# Daily full backup at 02:15 UTC
+15 2 * * * . /etc/itu/backup.env; cd /opt/itu && ./scripts/backup/backup-all.sh >>/var/log/itu-backup.log 2>&1
+
+# Verify latest backup at 03:00 UTC
+0 3 * * * . /etc/itu/backup.env; cd /opt/itu && ./scripts/backup/verify-backup.sh >>/var/log/itu-backup-verify.log 2>&1
+
+# Weekly restore drill reminder (no auto-restore): Mondays 09:00 UTC
+0 9 * * 1 echo "ITU: schedule staging restore drill — see docs/RESTORE.md" | mail -s "ITU DR drill" ops@example.com 2>/dev/null || true

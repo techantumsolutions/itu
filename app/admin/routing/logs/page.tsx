@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { formatMoney, formatProviderCostDual } from '@/lib/routing/log-pricing'
-import { formatPlanRechargeValue } from '@/lib/catalog/plan-recharge-value'
+import { formatPlanRechargeValue } from '@/lib/catalog/format-plan-recharge-value'
 import { useProviderDisplay } from '@/components/admin/provider-display-context'
 import { cn } from '@/lib/utils'
 

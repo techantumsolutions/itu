@@ -1,11 +1,10 @@
 'use client'
 
-import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useCallback, useImperativeHandle, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Loader2 } from 'lucide-react'
 import { isRecaptchaEnabled } from '@/lib/security/recaptcha-config'
 import { cn } from '@/lib/utils'
-import type ReCAPTCHA from 'react-google-recaptcha'
 
 const GoogleRecaptcha = dynamic(() => import('react-google-recaptcha'), {
   ssr: false,
@@ -40,7 +39,7 @@ function resolveSiteKey(): string {
 
 export const RecaptchaCheckbox = forwardRef<RecaptchaCheckboxHandle, RecaptchaCheckboxProps>(
   function RecaptchaCheckbox({ onTokenChange, className, disabled = false }, ref) {
-    const recaptchaRef = useRef<ReCAPTCHA | null>(null)
+    const [widgetKey, setWidgetKey] = useState(0)
     const [loading, setLoading] = useState(true)
     const [widgetError, setWidgetError] = useState<string | null>(null)
 
@@ -54,7 +53,7 @@ export const RecaptchaCheckbox = forwardRef<RecaptchaCheckboxHandle, RecaptchaCh
       clearToken()
       setWidgetError(null)
       setLoading(true)
-      recaptchaRef.current?.reset()
+      setWidgetKey((k) => k + 1)
     }, [clearToken])
 
     useImperativeHandle(ref, () => ({ reset, clearToken }), [reset, clearToken])
@@ -81,7 +80,7 @@ export const RecaptchaCheckbox = forwardRef<RecaptchaCheckboxHandle, RecaptchaCh
         ) : null}
         <div className={disabled ? 'pointer-events-none opacity-50' : undefined}>
           <GoogleRecaptcha
-            ref={recaptchaRef}
+            key={widgetKey}
             sitekey={siteKey}
             onChange={(token) => {
               setLoading(false)

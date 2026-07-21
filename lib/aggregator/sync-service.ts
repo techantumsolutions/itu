@@ -1,5 +1,5 @@
 import { getConnector } from '@/lib/providers/registry'
-import type { NormalizedPlan, ProviderConfig } from '@/lib/providers/types'
+import type { NormalizedPlan, NormalizedBenefit, ProviderConfig } from '@/lib/providers/types'
 import { fingerprintPlan } from '@/lib/uti/normalize'
 import {
   dbCreateInternalPlan,
@@ -183,7 +183,7 @@ export async function syncAggregatorProvider(
     await validateCountriesTable()
     const countryRegistry = await loadCountryRegistry()
     const dynamicMode = await canUseDynamicClassification().catch(() => false)
-    const { trustedOperators, domainRegistry, nonTelecomRegistry } = await aggLoadCatalogIntelligenceRegistries().catch(() => ({
+    const { trustedOperators, domainRegistry, nonTelecomRegistry } = await aggLoadCatalogIntelligenceRegistries().catch((): Awaited<ReturnType<typeof aggLoadCatalogIntelligenceRegistries>> => ({
       trustedOperators: [],
       domainRegistry: [],
       nonTelecomRegistry: [],
@@ -326,7 +326,7 @@ export async function syncAggregatorProvider(
         planDecision = 'ACCEPTED'
       } else if (planIntel.catalogStatus === 'REVIEW' || planIntel.catalogStatus === 'QUARANTINED' || planResult.classification === 'UNKNOWN') {
         planDecision = 'PENDING_REVIEW'
-      } else if (planResult.confidence >= 0.90 && planResult.classification !== 'UNKNOWN') {
+      } else if (planResult.confidence >= 0.90) {
         planDecision = 'ACCEPTED'
       } else if (planResult.confidence >= 0.60) {
         planDecision = 'PENDING_REVIEW'
@@ -605,6 +605,7 @@ export async function syncAggregatorProvider(
 
       if (!systemOperatorId) {
         const systemOperatorInput = buildSystemOperatorInput(plans[0], telecomOperatorName)
+        if (!systemOperatorInput) continue
         systemOperatorInput.operatorDomain = operatorPromotion.operatorDomain
         systemOperatorInput.operatorDomainConfidence = operatorPromotion.operatorDomainConfidence
         systemOperatorInput.domainClassificationSource =
@@ -976,11 +977,19 @@ export function rawPlanToNormalized(raw: any, systemOperatorId: string, telecomO
     category: fields.type || fields.serviceName || 'Mobile',
     subcategory: fields.subserviceName || '',
     planType: fields.type || 'Plan',
-    benefits: fields.benefits.map((b: any) => ({
-      type: String(b.type || b.benefitType || '').toUpperCase(),
-      amountBase: Number(b.amountBase || b.amount || 0),
-      unit: String(b.unit || '').toUpperCase()
-    })),
+    benefits: fields.benefits.map((b: { type?: string; benefitType?: string; amountBase?: number; amount?: number; unit?: string }): NormalizedBenefit => {
+      const rawType = String(b.type || b.benefitType || '').toUpperCase()
+      const type: NormalizedBenefit['type'] =
+        rawType === 'DATA' || rawType === 'VOICE' || rawType === 'SMS' || rawType === 'BONUS' ||
+        rawType === 'COMBO' || rawType === 'AIRTIME'
+          ? rawType
+          : 'OTHER'
+      return {
+        type,
+        amountBase: Number(b.amountBase || b.amount || 0),
+        unit: String(b.unit || '').toUpperCase(),
+      }
+    }),
     requiredFields: [],
     retailAmount: Number(raw.amount || raw.retailAmount || 0),
     retailCurrency: String(raw.currency || raw.retailCurrency || 'USD'),
@@ -991,11 +1000,11 @@ export function rawPlanToNormalized(raw: any, systemOperatorId: string, telecomO
 
 export async function runLocalOperatorSync(providerId?: string) {
   console.log(`[Local Sync] Starting local operator sync...`)
-  const { trustedOperators, domainRegistry, nonTelecomRegistry } = await aggLoadCatalogIntelligenceRegistries().catch(() => ({
-    trustedOperators: [],
-    domainRegistry: [],
-    nonTelecomRegistry: [],
-  }))
+  const { trustedOperators, domainRegistry, nonTelecomRegistry } = await aggLoadCatalogIntelligenceRegistries().catch((): Awaited<ReturnType<typeof aggLoadCatalogIntelligenceRegistries>> => ({
+      trustedOperators: [],
+      domainRegistry: [],
+      nonTelecomRegistry: [],
+    }))
   const catalogEngine = new CatalogIntelligenceEngine(trustedOperators, domainRegistry, nonTelecomRegistry)
   const providers = await aggListProviders()
   const activeProviders = providerId && providerId !== 'ALL'

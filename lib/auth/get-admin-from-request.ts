@@ -1,7 +1,6 @@
-import { supabaseGetUser } from '@/lib/supabase/auth-rest'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { buildUserFromProfile, type ProfileRow } from '@/lib/auth/build-auth-user'
-import { isAccessTokenInvalidated } from '@/lib/auth/trusted-devices'
+import { resolveSupabaseUserFromAccessToken } from '@/lib/auth/session-cache'
 
 export async function fetchProfileForUser(userId: string): Promise<ProfileRow | null> {
   try {
@@ -36,9 +35,8 @@ export async function getAdminFromAccessCookie(request: Request) {
   const m = cookie.match(/(?:^|;\s*)sb-access-token=([^;]+)/)
   const token = m?.[1] ? decodeURIComponent(m[1]) : ''
   if (!token) return null
-  const u = await supabaseGetUser(token)
+  const u = await resolveSupabaseUserFromAccessToken(token)
   if (!u?.id) return null
-  if (await isAccessTokenInvalidated(u.id, token)) return null
   const profile = await fetchProfileForUser(u.id)
   const user = buildUserFromProfile(u, profile)
   return { token, supabaseUser: u, profile, user }

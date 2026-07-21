@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server'
 import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { logAdminActivity } from '@/lib/auth/audit'
 import { isStrongPassword, PASSWORD_API_ERROR_MESSAGE } from '@/lib/validators/password'
 
 export async function GET(request: Request) {
+  const denied = await requireAdminPermission(request, 'settings.view')
+  if (denied) return denied
+
   const ctx = await getAdminFromAccessCookie(request)
-  if (!ctx?.user || (ctx.user.role !== 'admin' && ctx.user.role !== 'super_admin')) {
+  if (!ctx?.user) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 

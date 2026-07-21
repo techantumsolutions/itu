@@ -1,5 +1,14 @@
 import { requireBearerSecret, requireHeaderSecret, blockInProduction } from '@/lib/security/require-secret'
 
+function setNodeEnv(value: string) {
+  Object.defineProperty(process.env, 'NODE_ENV', {
+    value,
+    configurable: true,
+    writable: true,
+    enumerable: true,
+  })
+}
+
 describe('requireBearerSecret', () => {
   const env = process.env
 
@@ -20,7 +29,7 @@ describe('requireBearerSecret', () => {
   })
 
   it('rejects requests in production when secret is unset', () => {
-    process.env.NODE_ENV = 'production'
+    setNodeEnv('production')
     const request = new Request('http://localhost/api/cron/test')
     const res = requireBearerSecret(request, 'CRON_SECRET')
     expect(res?.status).toBe(503)
@@ -66,6 +75,10 @@ describe('requireHeaderSecret', () => {
 
 describe('blockInProduction', () => {
   const env = process.env
+
+  beforeEach(() => {
+    process.env = { ...env }
+  })
 
   afterAll(() => {
     process.env = env

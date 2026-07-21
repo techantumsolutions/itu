@@ -174,7 +174,7 @@ function mapPlanType(
 }
 
 function removeOperatorName(text: string, operatorName: string): string {
-  let val = (text ?? '').trim()
+  const val = (text ?? '').trim()
   if (!val || !operatorName || operatorName.toLowerCase() === 'unknown') return val
 
   const escapedOp = operatorName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')
@@ -496,7 +496,7 @@ export async function fetchPublicOperators(countryInput: string): Promise<Public
       code: p.code,
       name: p.name,
       shortName: p.short_name ?? p.name,
-      countryCode: p.country_iso,
+      countryCode: p.country_id,
       countryIso3,
       logo: p.logo_url,
       validationRegex: p.validation_regex,
@@ -715,7 +715,10 @@ export async function fetchPublicPlans(input: {
         offset: 0,
         mobileCatalogOnly: true,
       })) as Record<string, unknown>[]
-      const activeMobilePlans = rows.filter((row) => isMobileCatalogPlan(row as { status?: string; service_domain?: string }))
+      const activeMobilePlans = rows
+        .filter((row) => isMobileCatalogPlan(row as { status?: string; service_domain?: string }))
+        .map((row) => ({ ...row, id: String(row.id) }))
+        .filter((row) => Boolean(row.id))
       const eligibleRows = await filterWebsiteEligibleSystemPlans(activeMobilePlans, operatorId)
       if (eligibleRows.length) {
         const mappedDetails = await batchLoadSystemPlanMappedDetails(

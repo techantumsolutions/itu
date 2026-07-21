@@ -1,18 +1,17 @@
 import { NextResponse } from 'next/server'
-import { logAdminActivity } from '@/lib/auth/audit'
 import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import {
   loadRechargeProcessingFeeConfig,
   saveRechargeProcessingFeeConfig,
   validateRechargeProcessingFeeRanges,
 } from '@/lib/settings/recharge-processing-fees'
 import { getMonthlyRechargeLimitEur } from '@/lib/settings/recharge-monthly-limit'
+import { logAdminActivity } from '@/lib/auth/audit'
 
 export async function GET(request: Request) {
-  const ctx = await getAdminFromAccessCookie(request)
-  if (!ctx?.user || (ctx.user.role !== 'admin' && ctx.user.role !== 'super_admin')) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const denied = await requireAdminPermission(request, 'settings.view')
+  if (denied) return denied
 
   try {
     const config = await loadRechargeProcessingFeeConfig()

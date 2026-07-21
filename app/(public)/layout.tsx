@@ -73,6 +73,7 @@ export default function PublicLayout({
     setManualOverride,
   } = useLocalePreferencesStore()
   const [countries, setCountries] = useState<Country[]>([])
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   const region =
     countries.find((c) => c.code === regionCode) ??
@@ -83,9 +84,14 @@ export default function PublicLayout({
   const currency = NAV_CURRENCIES.find((c) => c.code === currencyCode) ?? NAV_CURRENCIES[0]!
 
   const handleSignOut = () => {
+    setMobileNavOpen(false)
     logout()
     router.push('/')
   }
+
+  useEffect(() => {
+    setMobileNavOpen(false)
+  }, [pathname])
 
   useEffect(() => {
     document.documentElement.lang = languageCode
@@ -282,10 +288,10 @@ export default function PublicLayout({
       onHeroTop
         ? active
           ? 'text-[var(--hero-cta-orange)]'
-          : 'text-white/95 hover:bg-white/10'
+          : 'text-white/95 hover:text-white'
         : active
-          ? 'text-neutral-950 font-bold'
-          : 'text-neutral-800 hover:bg-neutral-900/10 hover:text-neutral-955',
+          ? 'text-primary'
+          : 'text-neutral-700 hover:text-neutral-950',
     )
 
   const headerChromeBtn = onHeroTop
@@ -326,7 +332,12 @@ export default function PublicLayout({
             {navLinks.map((item) => {
               const active = item.match(pathname)
               return (
-                <Link key={item.href} href={item.href} className={navClass(active)}>
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? 'page' : undefined}
+                  className={navClass(active)}
+                >
                   {item.label}
                 </Link>
               )
@@ -512,7 +523,7 @@ export default function PublicLayout({
                 className={cn(
                   'h-9 shrink-0 px-6 text-[11px] font-bold uppercase tracking-[0.12em]',
                   isTransparentHeaderPage
-                    ? 'rounded-lg border-0 bg-[var(--hero-cta-orange)] text-white shadow-[0_10px_26px_-8px_rgba(241,90,43,0.55)] hover:bg-[var(--hero-cta-orange)]/92'
+                    ? 'rounded-lg border-0 bg-[var(--hero-cta-orange)] text-white shadow-[0_10px_26px_-8px_rgba(233,108,50,0.55)] hover:bg-[var(--hero-cta-orange)]/92'
                     : 'rounded-full bg-primary text-primary-foreground shadow-[0_6px_20px_-4px_rgba(227,6,19,0.45)] hover:bg-primary/90',
                 )}
                 asChild
@@ -597,7 +608,7 @@ export default function PublicLayout({
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Sheet>
+            <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
               <SheetTrigger asChild>
                 <Button
                   variant="ghost"
@@ -606,6 +617,7 @@ export default function PublicLayout({
                     'size-9 shrink-0 rounded-full lg:hidden',
                     onHeroTop ? 'text-white hover:bg-white/10' : 'text-neutral-700 hover:bg-neutral-100/90',
                   )}
+                  aria-label="Open navigation menu"
                 >
                   <Menu className="size-5" />
                 </Button>
@@ -619,9 +631,11 @@ export default function PublicLayout({
                       <Link
                         key={item.href}
                         href={item.href}
+                        onClick={() => setMobileNavOpen(false)}
+                        aria-current={active ? 'page' : undefined}
                         className={cn(
                           'rounded-2xl px-4 py-3 text-sm font-semibold uppercase tracking-[0.12em]',
-                          active ? 'bg-neutral-100 text-neutral-900' : 'text-neutral-600 hover:bg-neutral-50',
+                          active ? 'text-primary' : 'text-neutral-600 hover:text-neutral-900',
                         )}
                       >
                         {item.label}
@@ -633,25 +647,54 @@ export default function PublicLayout({
                     <>
                       <Link
                         href="/login"
-                        className="rounded-2xl bg-primary px-4 py-3 text-center text-sm font-bold uppercase tracking-[0.12em] text-primary-foreground shadow-md"
+                        onClick={() => setMobileNavOpen(false)}
+                        aria-current={pathname.startsWith('/login') ? 'page' : undefined}
+                        className={cn(
+                          'rounded-2xl px-4 py-3 text-center text-sm font-bold uppercase tracking-[0.12em] shadow-md',
+                          pathname.startsWith('/login')
+                            ? 'bg-primary text-primary-foreground ring-2 ring-primary/30'
+                            : 'bg-primary text-primary-foreground',
+                        )}
                       >
                         Login
                       </Link>
                       <Link
                         href="/register"
-                        className="rounded-2xl px-4 py-3 text-center text-sm font-semibold text-primary hover:bg-neutral-50"
+                        onClick={() => setMobileNavOpen(false)}
+                        aria-current={pathname.startsWith('/register') ? 'page' : undefined}
+                        className={cn(
+                          'rounded-2xl px-4 py-3 text-center text-sm font-semibold',
+                          pathname.startsWith('/register')
+                            ? 'text-primary'
+                            : 'text-primary/80 hover:text-primary',
+                        )}
                       >
                         Create account
                       </Link>
                     </>
                   ) : (
                     <>
-                      <Link href="/account" className="rounded-2xl px-4 py-3 text-sm font-semibold hover:bg-neutral-50">
+                      <Link
+                        href="/account"
+                        onClick={() => setMobileNavOpen(false)}
+                        aria-current={pathname === '/account' ? 'page' : undefined}
+                        className={cn(
+                          'rounded-2xl px-4 py-3 text-sm font-semibold',
+                          pathname === '/account' ? 'text-primary' : 'text-neutral-700 hover:text-neutral-950',
+                        )}
+                      >
                         My account
                       </Link>
                       <Link
                         href="/account/transactions"
-                        className="rounded-2xl px-4 py-3 text-sm font-semibold hover:bg-neutral-50"
+                        onClick={() => setMobileNavOpen(false)}
+                        aria-current={pathname.startsWith('/account/transactions') ? 'page' : undefined}
+                        className={cn(
+                          'rounded-2xl px-4 py-3 text-sm font-semibold',
+                          pathname.startsWith('/account/transactions')
+                            ? 'text-primary'
+                            : 'text-neutral-700 hover:text-neutral-950',
+                        )}
                       >
                         Transactions
                       </Link>

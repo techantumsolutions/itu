@@ -11,7 +11,7 @@
  *  - High-limit fetch for aggregated reports
  */
 
-import type { ReportConfig, FilterMapping } from './config'
+import type { ReportConfig, FilterMapping, FilterOperator } from './config'
 import type { ReportFilters, ReportSort } from './types'
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -37,9 +37,10 @@ export function buildQuery(
   const table     = config.source.table
   const select    = config.source.select
   const dateCol   = config.dateColumn ?? 'created_at'
-  const isAgg     = !!config.aggregation
-  const fetchLimit = config.source.fetchLimit ?? 50000
-  const loadAll = isAgg || (config.source.fetchLimit != null && config.source.fetchLimit >= 10000)
+  const isAgg = !!config.aggregation
+  // Aggregated reports still need a bounded working set; list reports always paginate server-side.
+  const fetchLimit = Math.min(config.source.fetchLimit ?? 10_000, 10_000)
+  const loadAll = isAgg
 
   // ── Build filter string ──────────────────────────────────────────────────
   const filterParts: string[] = []
@@ -60,9 +61,7 @@ export function buildQuery(
     filterParts.push(fm)
   }
 
-  // Search — only push to PostgREST when NOT loadAll.
-  // loadAll reports (Transactions, Provider, Operator, User, …) search in memory
-  // after enrichment so transaction IDs / emails / resolved names all match.
+  // Search — push to PostgREST for list reports; aggregated reports search after group-by.
   // Skip UUID columns — ilike on uuid often 400s in PostgREST.
   if (!loadAll && filters.search?.trim() && config.searchColumns?.length) {
     const term = encodeURIComponent(filters.search.trim())
@@ -88,15 +87,10 @@ export function buildQuery(
   const sortDir = sort?.direction ?? config.defaultSort.direction
 
   if (loadAll) {
-    // Fetch all data; aggregation / client pagination happens in memory.
-    // Aggregated reports must not ORDER BY computed keys (e.g. ltv) — use date column.
-    if (isAgg) {
-      dataQuery += `&order=${dateCol}.desc&limit=${fetchLimit}`
-    } else {
-      dataQuery += `&order=${sortCol}.${sortDir}&limit=${fetchLimit}`
-    }
+    // Aggregation path: first page marker only — runner walks pages via fetchPostgrestPages.
+    dataQuery += `&order=${dateCol}.desc&limit=${fetchLimit}`
   } else {
-    // Server-side sort + pagination
+    // Server-side sort + pagination (list reports)
     dataQuery += `&order=${sortCol}.${sortDir}`
     dataQuery += `&limit=${pageSize}&offset=${(page - 1) * pageSize}`
   }
@@ -131,10 +125,10 @@ function serverSideFilters(
   }
 
   // 2. Apply dynamic minAmount/maxAmount if they are not explicitly mapped
-  if (!mappedKeys.has('minAmount') && filters.minAmount !== undefined && filters.minAmount !== null && filters.minAmount !== '') {
+  if (!mappedKeys.has('minAmount') && filters.minAmount !== undefined && filters.minAmount !== null) {
     parts.push(`amount=gte.${encodeURIComponent(String(filters.minAmount))}`)
   }
-  if (!mappedKeys.has('maxAmount') && filters.maxAmount !== undefined && filters.maxAmount !== null && filters.maxAmount !== '') {
+  if (!mappedKeys.has('maxAmount') && filters.maxAmount !== undefined && filters.maxAmount !== null) {
     parts.push(`amount=lte.${encodeURIComponent(String(filters.maxAmount))}`)
   }
 

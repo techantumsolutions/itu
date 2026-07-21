@@ -107,7 +107,8 @@ function mappingRawResolvable(
 /**
  * Website eligibility:
  * system_plan.status=ACTIVE AND system_operator.status=ACTIVE
- * AND EXISTS(plan_mappings) AND provider_plan_raw_id can be resolved.
+ * AND EXISTS(plan_mappings) AND provider_plan_raw_id can be resolved
+ * AND at least one mapped LCR provider is active.
  */
 export async function filterWebsiteEligibleSystemPlans<T extends { id: string }>(
   plans: T[],
@@ -132,6 +133,21 @@ export async function filterWebsiteEligibleSystemPlans<T extends { id: string }>
 
   if (!mappings.length) return []
 
+  const providerIds = [...new Set(mappings.map((m) => m.service_provider_id).filter(Boolean))]
+  const activeProviderIds = new Set<string>()
+  for (let i = 0; i < providerIds.length; i += 50) {
+    const chunk = providerIds.slice(i, i + 50)
+    const provRes = await supabaseRest(
+      `lcr_providers?id=in.(${chunk.map(enc).join(',')})&is_active=eq.true&select=id`,
+      { cache: 'no-store' },
+    )
+    if (!provRes.ok) continue
+    const rows = (await provRes.json()) as Array<{ id?: string }>
+    for (const row of rows) {
+      if (row.id) activeProviderIds.add(row.id)
+    }
+  }
+
   const rawIds = mappings
     .map((mapping) => mapping.provider_plan_raw_id)
     .filter((id): id is string => Boolean(id))
@@ -153,10 +169,12 @@ export async function filterWebsiteEligibleSystemPlans<T extends { id: string }>
     const planMappings = mappingsByPlan.get(plan.id) ?? []
     if (!planMappings.length) continue
 
-    const hasResolvableMapping = planMappings.some((mapping) =>
-      mappingRawResolvable(mapping, existingRawIds, stableRawKeys),
+    const hasRoutableProvider = planMappings.some(
+      (mapping) =>
+        activeProviderIds.has(mapping.service_provider_id) &&
+        mappingRawResolvable(mapping, existingRawIds, stableRawKeys),
     )
-    if (hasResolvableMapping) eligibleIds.add(plan.id)
+    if (hasRoutableProvider) eligibleIds.add(plan.id)
   }
 
   return plans.filter((plan) => eligibleIds.has(plan.id))

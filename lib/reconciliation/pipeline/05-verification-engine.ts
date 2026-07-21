@@ -1,7 +1,7 @@
 import { NormalizedSupplierRow, ReconciliationDetails, ReconciliationItemStatus } from '../types';
 import { PlatformLookups } from './04-matching-engine';
 import { RECONCILIATION_CONFIG } from '../config';
-import { extractProviderCost } from '@/lib/admin/margin-utils';
+import { extractProviderCost } from '@/lib/finance/margin-utils';
 
 export interface VerificationResult {
   matchedTx: any | null;
@@ -181,14 +181,18 @@ export class VerificationEngine {
       ?? (typeof txnMeta?.selected_provider_currency === 'string' ? txnMeta.selected_provider_currency : null)
 
     // Never fall back to customer payment (tx.amount) for wholesale cost.
+    // Prefer metadata provider cost → receive_amount → send_amount (wholesale).
     const fromMetaNum = Number(metaProviderCost)
     const fromReceive = Number(ro?.receive_amount)
+    const fromSend = Number(ro?.send_amount)
     const recordedCost = ro
       ? (Number.isFinite(fromMetaNum) && fromMetaNum > 0
           ? fromMetaNum
           : Number.isFinite(fromReceive) && fromReceive > 0
             ? fromReceive
-            : 0)
+            : Number.isFinite(fromSend) && fromSend > 0
+              ? fromSend
+              : 0)
       : 0
     const recordedCurrency = ro
       ? (metaProviderCostCurrency || ro.receive_currency || ro.send_currency || matchedTx.currency)

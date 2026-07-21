@@ -38,14 +38,34 @@ import type {
   RoutingResolveResult,
   RoutingRuleRow,
 } from '@/lib/routing/types'
+import { ISO2_TO_ISO3, ISO3_TO_ISO2 } from '@/lib/lcr/countries'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
 }
 
+/** Match provider supported_countries whether stored as ISO2 (IN) or ISO3 (IND). */
+function providerSupportsCountry(
+  supported: string[] | undefined,
+  countryIso3Or2: string,
+): boolean {
+  if (!supported?.length) return true
+  const country = (countryIso3Or2 || '').trim().toUpperCase()
+  if (!country) return true
+  const aliases = new Set<string>([country])
+  if (country.length === 2) {
+    const iso3 = ISO2_TO_ISO3[country]
+    if (iso3) aliases.add(iso3)
+  } else if (country.length === 3) {
+    const iso2 = ISO3_TO_ISO2[country]
+    if (iso2) aliases.add(iso2)
+  }
+  return supported.some((c) => aliases.has(String(c).trim().toUpperCase()))
+}
+
 export async function normalizeCountryToIso3(countryId: string): Promise<string> {
   const code = (countryId || '').trim().toUpperCase()
-  const cached = getCachedCountryIso3(code)
+  const cached = await getCachedCountryIso3(code)
   if (cached) return cached
 
   if (code.length === 2) {
@@ -58,7 +78,7 @@ export async function normalizeCountryToIso3(countryId: string): Promise<string>
         const rows = await res.json() as Array<{ id: string }>
         if (rows?.[0]?.id) {
           const iso3 = rows[0].id.toUpperCase()
-          setCachedCountryIso3(code, iso3)
+          await setCachedCountryIso3(code, iso3)
           return iso3
         }
       }
@@ -66,7 +86,7 @@ export async function normalizeCountryToIso3(countryId: string): Promise<string>
       // fallback
     }
   }
-  setCachedCountryIso3(code, code)
+  await setCachedCountryIso3(code, code)
   return code
 }
 
@@ -84,7 +104,7 @@ export async function resolveSystemOperator(
     return { id: op, name: op || 'Unknown' }
   }
 
-  const cached = getCachedOperator(countryIso3, op)
+  const cached = await getCachedOperator(countryIso3, op)
   if (cached) return cached
 
   let lookupId = op
@@ -110,7 +130,7 @@ export async function resolveSystemOperator(
           id: `system:${rows[0].id}`,
           name: rows[0].system_operator_name,
         }
-        setCachedOperator(countryIso3, op, info)
+        await setCachedOperator(countryIso3, op, info)
         return info
       }
     }
@@ -119,7 +139,7 @@ export async function resolveSystemOperator(
   }
 
   const fallback = { id: op, name: op }
-  setCachedOperator(countryIso3, op, fallback)
+  await setCachedOperator(countryIso3, op, fallback)
   return fallback
 }
 
@@ -326,6 +346,7 @@ function evaluateCandidates(
         providerId,
         providerName,
         providerCode,
+        providerPlanId: '',
         activeStatus,
         onlineStatus,
         mappingExists,
@@ -373,8 +394,12 @@ function evaluateCandidates(
       authoritative.provider_wholesale_amount > 0
         ? authoritative.provider_wholesale_amount
         : Infinity
+    // Provider wholesale is EUR-base for LCR; default when raw catalog omits currency.
     const provider_wholesale_currency =
-      (authoritative.provider_wholesale_currency ?? '').trim().toUpperCase() || undefined
+      (authoritative.provider_wholesale_currency ?? '').trim().toUpperCase() ||
+      (Number.isFinite(provider_wholesale_amount) && provider_wholesale_amount !== Infinity
+        ? LCR_BASE_CURRENCY
+        : undefined)
     const destination_face_value =
       typeof authoritative.destination_face_value === 'number' &&
       authoritative.destination_face_value > 0
@@ -399,8 +424,8 @@ function evaluateCandidates(
         margin,
         providerPriority: priority,
         eligible: false,
-        filterReason: 'PROVIDER_DISABLED',
-        reason: 'PROVIDER_DISABLED',
+        filterReason: 'MAPPING_DISABLED',
+        reason: 'MAPPING_DISABLED',
       }
     }
 
@@ -431,7 +456,7 @@ function evaluateCandidates(
     }
 
     const supported = (prov.supported_countries as string[] | undefined) ?? []
-    if (eligible && supported.length && country && !supported.some((c) => c.toUpperCase() === country)) {
+    if (eligible && !providerSupportsCountry(supported, country)) {
       filterReason = 'COUNTRY_NOT_SUPPORTED'
       eligible = false
     }
@@ -673,7 +698,7 @@ export class RoutingEngineService {
     // Candidate providers count (providers that have a mapping)
     const candidate_provider_count = evaluated.filter((e) => e.mappingExists).length
     // Eligible providers count
-    let eligible = evaluated.filter((e) => e.eligible)
+    const eligible = evaluated.filter((e) => e.eligible)
     const eligible_provider_count = eligible.length
 
     console.log(`[ROUTING] candidate_provider_count: ${candidate_provider_count} | eligible_provider_count: ${eligible_provider_count}`)
@@ -712,7 +737,19 @@ export class RoutingEngineService {
 
     // 4. Verify at least one passes eligibility checks
     if (eligible_provider_count === 0) {
-      console.log(`[ROUTING] NO_ELIGIBLE_PROVIDER: All candidates filtered out`)
+      const filtered = evaluated
+        .filter((e) => e.mappingExists)
+        .map((e) => ({
+          providerId: e.providerId,
+          providerName: e.providerName,
+          providerPlanId: e.providerPlanId,
+          activeStatus: e.activeStatus,
+          onlineStatus: e.onlineStatus,
+          filterReason: e.filterReason || e.reason || 'UNKNOWN',
+          wholesale: e.provider_wholesale_amount ?? e.price,
+          currency: e.provider_wholesale_currency ?? e.currency,
+        }))
+      console.log('[ROUTING] NO_ELIGIBLE_PROVIDER: All candidates filtered out', filtered)
       const logId = schemaReady
         ? await insertDetailedRoutingLog({
             transactionId: normalizedInput.transactionId ?? '',
@@ -723,6 +760,7 @@ export class RoutingEngineService {
             routingRuleMatched: 'No',
             executionResult: 'NO_ELIGIBLE_PROVIDER',
             verificationMappingCount: mapping_count,
+            failureReason: filtered.map((f) => `${f.providerName}:${f.filterReason}`).join('; '),
           })
         : null
 

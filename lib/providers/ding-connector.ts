@@ -64,7 +64,7 @@ export const dingConnector: ProviderConnector = {
       process.env.DING_API_BASE_URL = config.baseUrl
     }
 
-    let countries = options?.countries || config.supportedCountries || []
+    const countries = options?.countries || config.supportedCountries || []
     console.log('[Ding Sync] Initial resolved countries list:', countries)
 
     const rawPlans: RawPlanRecord[] = []

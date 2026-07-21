@@ -1,7 +1,6 @@
-import { supabaseGetUser } from '@/lib/supabase/auth-rest'
 import { runtimeEnv } from '@/lib/env/runtime'
-import { isAccessTokenInvalidated } from '@/lib/auth/trusted-devices'
 import { verifyOtpUserId } from '@/lib/auth/otp-session-cookie'
+import { resolveUserIdFromAccessToken } from '@/lib/auth/session-cache'
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -22,6 +21,9 @@ function readInsecureHeaderUserId(request: Request): string | null {
 /**
  * Resolve the authenticated user id for payment/checkout APIs.
  * Order: sb-access-token cookie → itu-user-id cookie → (dev only) x-user-id header when ALLOW_INSECURE_USER_HEADERS=true.
+ *
+ * Access-token path uses request/Redis/JWT-local caches (see session-cache) to avoid
+ * repeated remote /auth/v1/user calls; invalidation checks are still enforced.
  */
 export async function getUserIdFromRequest(request: Request): Promise<string | null> {
   const cookie = request.headers.get('cookie') ?? ''
@@ -29,11 +31,8 @@ export async function getUserIdFromRequest(request: Request): Promise<string | n
   const token = readCookie(cookie, 'sb-access-token')
   if (token) {
     try {
-      const user = await supabaseGetUser(token)
-      if (user?.id) {
-        if (await isAccessTokenInvalidated(user.id, token)) return null
-        return user.id
-      }
+      const userId = await resolveUserIdFromAccessToken(token)
+      if (userId) return userId
     } catch {
       // ignore invalid/expired token
     }
@@ -45,19 +44,5 @@ export async function getUserIdFromRequest(request: Request): Promise<string | n
   return readInsecureHeaderUserId(request)
 }
 
-export type ClientAuthUser = {
-  id: string
-  email?: string | null
-  name?: string | null
-  role?: string | null
-}
-
-/** Headers sent by the browser when auth cookies are unavailable (e.g. HTTP + Secure cookies). */
-export function buildUserAuthHeaders(user: ClientAuthUser | null | undefined): Record<string, string> {
-  if (!user?.id) return {}
-  const headers: Record<string, string> = { 'x-user-id': user.id }
-  if (user.email) headers['x-user-email'] = user.email
-  if (user.name) headers['x-user-name'] = user.name
-  if (user.role) headers['x-user-role'] = user.role
-  return headers
-}
+export type { ClientAuthUser } from '@/lib/auth/client-auth-headers'
+export { buildUserAuthHeaders } from '@/lib/auth/client-auth-headers'

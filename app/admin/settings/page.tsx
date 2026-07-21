@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useAuthStore } from "@/lib/stores"
-import { isClientSuperAdmin } from "@/lib/tickets/auth-headers"
+import { isClientSuperAdmin } from "@/lib/auth/client-role"
 import { clientHasAdminPermission } from "@/lib/auth/client-features"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
@@ -1308,10 +1308,9 @@ function SettingsContent() {
                                 readOnly={!canEditSettings}
                               />
                             </div>
-                            <div className="space-y-2">
-                              <Label htmlFor={`fee-max-${range.id}`}>
+                            <div className="">
+                              <Label htmlFor={`fee-max-${range.id}`} className="pb-2">
                                 Max amount (EUR){' '}
-                                <span className="text-muted-foreground font-normal">(blank = no limit)</span>
                               </Label>
                               <Input
                                 id={`fee-max-${range.id}`}
@@ -1328,6 +1327,7 @@ function SettingsContent() {
                                 }}
                                 readOnly={!canEditSettings}
                               />
+                                <span className="text-muted-foreground font-normal">(blank = no limit)</span>
                             </div>
                             <div className="space-y-2">
                               <Label htmlFor={`fee-tax-${range.id}`}>Tax (%)</Label>

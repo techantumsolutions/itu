@@ -1,4 +1,4 @@
-import { extractPricingFromRaw } from '@/lib/admin/provider-pricing-extractor'
+import { extractPricingFromRaw } from '@/lib/pricing/provider-pricing-extractor'
 import type { NormalizedPlan } from '@/lib/providers/types'
 import { isValueTopupSkuRaw, resolveValueTopupPricing, resolveValueTopupWholesaleFromRow } from '@/lib/catalog/valuetopup-pricing'
 
@@ -214,7 +214,9 @@ export function resolveWholesalePricing(input: {
 
   return {
     wholesaleAmount,
-    wholesaleCurrency,
+    wholesaleCurrency:
+      wholesaleCurrency ??
+      (wholesaleAmount != null && wholesaleAmount > 0 ? 'EUR' : null),
     destinationAmount,
     destinationCurrency,
   }

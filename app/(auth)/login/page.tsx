@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useAuthStore } from '@/lib/stores'
-import { isClientAdminUser } from '@/lib/tickets/auth-headers'
+import { isClientAdminUser } from '@/lib/auth/client-role'
 import { useCMSStore } from '@/lib/cms-store'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { readLocaleCookiesFromDocument } from '@/lib/locale/locale-cookies'
@@ -453,7 +453,12 @@ function LoginForm() {
                           captchaToken: loginCaptcha.captchaToken,
                         }),
                       })
-                      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; otp?: string }
+                      const data = (await res.json().catch(() => ({}))) as {
+                        ok?: boolean
+                        error?: string
+                        message?: string
+                        otp?: string
+                      }
                       if (!res.ok || !data.ok) {
                         loginCaptcha.resetCaptcha()
                         throw new Error(data.error || data.message || 'otp_send_failed')

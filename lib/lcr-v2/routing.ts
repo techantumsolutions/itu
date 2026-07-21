@@ -1,24 +1,26 @@
 import { resolveProvider } from '@/lib/routing/routing-engine-service'
-import type { LcrEngineSettings, RoutingType } from '@/lib/routing/types'
+import type { LcrEngineSettings, RoutingProviderCandidate, RoutingType } from '@/lib/routing/types'
 
 export type LcrV2Decision = {
   internalPlanId: string
-  selected: {
+  selected: RoutingProviderCandidate | null
+  fallbacks: RoutingProviderCandidate[]
+  evaluated: Array<{
     providerId: string
-    providerPlanId: string
-    providerCode?: string
-    providerName?: string
+    eligible: boolean
+    reason?: string
+    score?: number
     price?: number
     currency?: string
-  } | null
-  fallbacks: Array<{ providerId: string; providerPlanId: string; price?: number; currency?: string }>
-  evaluated: Array<{ providerId: string; eligible: boolean; reason?: string; score?: number; price?: number; currency?: string }>
+  }>
   ruleApplied: string
   routingType?: RoutingType
   ruleId?: string
   ruleName?: string
   logId?: string
   settings?: LcrEngineSettings | null
+  routing_decision_reason?: string
+  mapping_count?: number
 }
 
 /** Backward-compatible adapter: delegates to centralized RoutingEngineService. */
@@ -43,22 +45,8 @@ export async function routeInternalPlan(input: {
 
   return {
     internalPlanId: input.internalPlanId,
-    selected: result.selected
-      ? {
-          providerId: result.selected.providerId,
-          providerPlanId: result.selected.providerPlanId,
-          providerCode: result.selected.providerCode,
-          providerName: result.selected.providerName,
-          price: result.selected.price,
-          currency: result.selected.currency,
-        }
-      : null,
-    fallbacks: result.fallbacks.map((f) => ({
-      providerId: f.providerId,
-      providerPlanId: f.providerPlanId,
-      price: f.price,
-      currency: f.currency,
-    })),
+    selected: result.selected,
+    fallbacks: result.fallbacks,
     evaluated: result.evaluated.map((e) => ({
       providerId: e.providerId,
       eligible: e.eligible,
@@ -73,5 +61,7 @@ export async function routeInternalPlan(input: {
     ruleName: result.ruleName,
     logId: result.logId,
     settings: result.settings,
+    routing_decision_reason: result.routing_decision_reason,
+    mapping_count: result.mapping_count,
   }
 }

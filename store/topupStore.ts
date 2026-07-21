@@ -56,6 +56,14 @@ type TopupSessionState = {
   rechargeStatus: 'idle' | 'pending' | 'success' | 'failed'
   errorMessage: string
   rewardPointsEarned: number
+  /** When set, summary may render without a checkout session (limit / soft block). */
+  checkoutBlock: {
+    code: 'MONTHLY_LIMIT_EXCEEDED' | 'PLAN_EXCEEDS_BAND' | 'FX_CONVERSION_FAILED'
+    message: string
+    usedEur?: number
+    remainingEur?: number | null
+    limitEur?: number | null
+  } | null
 }
 
 type TopupSessionActions = {
@@ -71,6 +79,10 @@ type TopupSessionActions = {
     selectedProviderName?: string
     operatorProviderId?: string
   }) => void
+  setCheckoutBlock: (
+    block: TopupSessionState['checkoutBlock'],
+  ) => void
+  clearCheckoutBlock: () => void
   setOrderId: (orderId: string) => void
   setTransactionResult: (result: {
     transactionId?: string
@@ -106,6 +118,7 @@ const initialState: TopupSessionState = {
   rechargeStatus: 'idle',
   errorMessage: '',
   rewardPointsEarned: 0,
+  checkoutBlock: null,
 }
 
 type PersistedTopupSession = Pick<
@@ -131,6 +144,7 @@ type PersistedTopupSession = Pick<
   | 'rechargeStatus'
   | 'errorMessage'
   | 'rewardPointsEarned'
+  | 'checkoutBlock'
 >
 
 function migratePersistedTopupSession(persistedState: unknown): PersistedTopupSession {
@@ -161,6 +175,7 @@ function migratePersistedTopupSession(persistedState: unknown): PersistedTopupSe
     rechargeStatus: state.rechargeStatus ?? initialState.rechargeStatus,
     errorMessage: state.errorMessage ?? initialState.errorMessage,
     rewardPointsEarned: state.rewardPointsEarned ?? initialState.rewardPointsEarned,
+    checkoutBlock: state.checkoutBlock ?? initialState.checkoutBlock,
   }
 }
 
@@ -209,7 +224,10 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
           providerName: payload.selectedProviderName ?? get().providerName,
           operatorProviderId: payload.operatorProviderId ?? get().operatorProviderId,
           orderId: payload.rechargeOrderId ?? get().orderId,
+          checkoutBlock: null,
         }),
+      setCheckoutBlock: (block) => set({ checkoutBlock: block, checkoutSessionId: '' }),
+      clearCheckoutBlock: () => set({ checkoutBlock: null }),
       setTransactionResult: (result) =>
         set({
           transactionId: result.transactionId ?? get().transactionId,
@@ -224,7 +242,7 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
     }),
     {
       name: 'topup-session-v1',
-      version: 4,
+      version: 5,
       migrate: (persistedState) => migratePersistedTopupSession(persistedState),
       partialize: (s) => ({
         countryCode: s.countryCode,
@@ -248,6 +266,7 @@ export const useTopupStore = create<TopupSessionState & TopupSessionActions>()(
         rechargeStatus: s.rechargeStatus,
         errorMessage: s.errorMessage,
         rewardPointsEarned: s.rewardPointsEarned,
+        checkoutBlock: s.checkoutBlock,
       }),
     },
   ),

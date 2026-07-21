@@ -2,8 +2,12 @@
  * Lightweight readiness probes for container orchestration.
  * Connectivity only — no catalog/business queries.
  */
-import { runtimeEnv } from '@/lib/env/runtime'
 import Redis from 'ioredis'
+import {
+  buildRedisOptions,
+  validateProductionRedisAuth,
+} from '@/lib/cache/redis-connection'
+import { runtimeEnv } from '@/lib/env/runtime'
 
 const PROBE_TIMEOUT_MS = 2_000
 
@@ -21,15 +25,24 @@ function normalizeSupabaseBaseUrl(raw: string): string {
 
 /** Redis PING with a short-lived client (does not reuse the app cache client). */
 export async function checkRedis(): Promise<DependencyCheck> {
-  const url = runtimeEnv('REDIS_URL')?.trim()
-  if (!url) return { ok: false, detail: 'REDIS_URL missing' }
+  const auth = validateProductionRedisAuth()
+  if (!auth.ok) return auth
 
-  const client = new Redis(url, {
-    maxRetriesPerRequest: 0,
-    enableReadyCheck: true,
-    connectTimeout: PROBE_TIMEOUT_MS,
-    lazyConnect: true,
-  })
+  let opts: ReturnType<typeof buildRedisOptions>
+  try {
+    opts = buildRedisOptions({
+      connectTimeout: PROBE_TIMEOUT_MS,
+      maxRetriesPerRequest: 0,
+      enableReadyCheck: true,
+      lazyConnect: true,
+    })
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : 'redis_auth_invalid' }
+  }
+  if (!opts) return { ok: false, detail: 'REDIS_URL missing' }
+
+  const { url, ...rest } = opts
+  const client = new Redis(url, rest)
 
   try {
     await client.connect()

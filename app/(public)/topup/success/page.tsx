@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import { useTopupStore } from '@/store/topupStore'
 import { Download, RotateCcw, Sparkles } from 'lucide-react'
 import { buildInternationalMobile } from '@/lib/lcr/countries'
-import { formatPlanRechargeValue } from '@/lib/catalog/plan-recharge-value'
+import { formatPlanRechargeValue } from '@/lib/catalog/format-plan-recharge-value'
 import { ConfettiCelebration } from '@/components/confetti-celebration'
 
 export default function TopupSuccessPage() {

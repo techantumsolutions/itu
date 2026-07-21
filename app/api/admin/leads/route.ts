@@ -89,7 +89,7 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const denied = await requireAdminPermission(req, 'customers.delete')
+  const denied = await requireAdminPermission(req, 'customers.edit')
   if (denied) return denied
 
   try {

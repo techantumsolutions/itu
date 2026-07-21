@@ -1,7 +1,14 @@
 # Production stack — split images (Phase 3D):
 #   web     → Dockerfile (Next.js standalone)
 #   sidecars → Dockerfile.sidecar
-# Usage: docker compose -f docker-compose.prod.yml up -d --build
+#
+# Deploy always pins immutable SHA tags via IMAGE_WEB / IMAGE_SIDECAR
+# (see scripts/deploy-prod.sh). :latest is only a local/default convenience.
+#
+#   IMAGE_WEB=ghcr.io/.../web:<sha> IMAGE_SIDECAR=ghcr.io/.../sidecar:<sha> \
+#     docker compose --env-file .deploy/images.env -f docker-compose.prod.yml up -d
+#
+# Usage (local build fallback): docker compose -f docker-compose.prod.yml up -d --build
 
 name: itu-prod
 
@@ -37,24 +44,53 @@ x-prod-app-networks: &prod-app-networks
 x-prod-common-env: &prod-common-env
   NODE_ENV: production
   NODE_OPTIONS: --dns-result-order=ipv4first
+  # AUTH: requirepass on redis + REDIS_PASSWORD for clients (lib/cache/redis-connection injects into URL).
+  REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required for production Redis AUTH}
   REDIS_URL: redis://redis:6379
   # Server-side API via Kong on supabase_network_itu (internal :8000, not host :54421).
   # Overrides .env SUPABASE_URL=http://127.0.0.1:54421 which only works on the Windows host.
   # Browser/CSP continues to use NEXT_PUBLIC_SUPABASE_URL from .env (host-mapped URL).
   SUPABASE_URL: http://supabase-kong:8000
-  # Temporary: return OTP in API responses so screens can display it without email/SMS.
-  # Set false / remove before real production with working mail delivery.
-  SHOW_DEV_OTP: "true"
+  # Never expose OTPs in production API responses (overrides any SHOW_DEV_OTP in .env).
+  SHOW_DEV_OTP: "false"
+  # Observability — version tag for logs/Sentry (set by deploy via .deploy/images.env DEPLOY_SHA when present).
+  APP_VERSION: ${DEPLOY_SHA:-unknown}
+  APP_ENV: production
+  LOG_FORMAT: json
+  SERVICE_NAME: itu-web
 
 services:
   redis:
     image: redis:7-alpine
     container_name: itu-prod-redis
+    # Persistence: AOF (every second) + RDB snapshots for crash recovery.
+    # Cache data is rebuildable; persistence protects BullMQ job state across restarts.
+    command:
+      [
+        "redis-server",
+        "--requirepass",
+        "${REDIS_PASSWORD:?REDIS_PASSWORD is required for production Redis AUTH}",
+        "--appendonly",
+        "yes",
+        "--appendfsync",
+        "everysec",
+        "--save",
+        "900 1",
+        "--save",
+        "300 10",
+        "--save",
+        "60 10000",
+        "--dir",
+        "/data",
+      ]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required for production Redis AUTH}
     volumes:
       - redis_data:/data
     restart: always
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # REDISCLI_AUTH avoids putting the password on the process argv list as -a.
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -102,7 +138,7 @@ services:
       SOCKET_SERVER_URL: http://socket:3001
       CRON_PROVIDER_SYNC_BASE_URL: http://web:3000
     volumes:
-      # Align with app write paths (profile/ticket uploads, reconciliation, tickets JSON).
+      # Reconciliation / local data only. Profile & ticket uploads use Supabase Storage (no sticky volume needed).
       - app_public_uploads:/app/public/uploads
       - app_storage_reconciliation:/app/storage/reconciliation
       - app_data:/app/data

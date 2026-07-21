@@ -295,7 +295,6 @@ export async function runFullSyncPipeline(providerId: string, options?: SyncCata
           serviceProviderId: providerId,
           syncType: 'provider',
           stage: 'full-sync',
-          status,
           startedAt: fullSyncStartedAt,
           ...payload,
         }).catch(() => {})

@@ -36,6 +36,10 @@ async function main() {
   if (!runtimeEnv('SUPABASE_ANON_KEY')) {
     console.warn('Warning: SUPABASE_ANON_KEY is not set — email login will fail until you add it from Supabase → Settings → API.')
   }
+  if (!(process.env.ADMIN_BOOTSTRAP_PASSWORD || '').trim()) {
+    console.error('Missing ADMIN_BOOTSTRAP_PASSWORD in .env (required to create or reset the super admin)')
+    process.exit(1)
+  }
 
   const resetPassword = process.argv.includes('--reset-password')
   const result = await bootstrapSuperAdmin({ resetPassword })
@@ -52,11 +56,7 @@ async function main() {
   if (result.created || result.passwordReset) {
     console.log('Sign in at /admin/login with:')
     console.log(`  Email:    ${result.email}`)
-    console.log(
-      result.passwordSource === 'env'
-        ? '  Password: ADMIN_BOOTSTRAP_PASSWORD from .env'
-        : '  Password: 1234567890 (dev default)',
-    )
+    console.log('  Password: ADMIN_BOOTSTRAP_PASSWORD from .env')
   } else {
     console.log('Existing credentials were preserved. Use --reset-password to force a password reset.')
   }

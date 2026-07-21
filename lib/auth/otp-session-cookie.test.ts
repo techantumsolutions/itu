@@ -7,6 +7,15 @@ import {
 const USER_ID = '11111111-1111-4111-8111-111111111111'
 const OTHER_ID = '22222222-2222-4222-8222-222222222222'
 
+function setNodeEnv(value: string) {
+  Object.defineProperty(process.env, 'NODE_ENV', {
+    value,
+    configurable: true,
+    writable: true,
+    enumerable: true,
+  })
+}
+
 describe('otp-session-cookie', () => {
   const env = process.env
 
@@ -72,21 +81,21 @@ describe('otp-session-cookie', () => {
   })
 
   it('fails fast in production when OTP_SESSION_SECRET is missing', () => {
-    process.env.NODE_ENV = 'production'
+    setNodeEnv('production')
     delete process.env.OTP_SESSION_SECRET
     expect(() => signOtpUserId(USER_ID)).toThrow(/OTP_SESSION_SECRET is required/)
     expect(() => verifyOtpUserId(`${USER_ID}.sig`)).toThrow(/OTP_SESSION_SECRET is required/)
   })
 
   it('works in production when OTP_SESSION_SECRET is set', () => {
-    process.env.NODE_ENV = 'production'
+    setNodeEnv('production')
     process.env.OTP_SESSION_SECRET = 'prod-secret'
     const signed = signOtpUserId(USER_ID)
     expect(verifyOtpUserId(signed)).toBe(USER_ID)
   })
 
   it('uses the documented dev fallback outside production without a secret', () => {
-    process.env.NODE_ENV = 'development'
+    setNodeEnv('development')
     delete process.env.OTP_SESSION_SECRET
     const signed = signOtpUserId(USER_ID)
     expect(verifyOtpUserId(signed)).toBe(USER_ID)

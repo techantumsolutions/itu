@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from 'react'
 import { useAuthStore } from '@/lib/stores'
-import { isClientAdminUser } from '@/lib/tickets/auth-headers'
+import { isClientAdminUser } from '@/lib/auth/client-role'
 import { clientCanShowProviderNames } from '@/lib/auth/client-features'
 import {
   buildProviderLabelMaps,

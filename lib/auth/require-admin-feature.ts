@@ -59,8 +59,12 @@ const LEGACY_MODULE: Record<LegacyFeature, string> = {
   help: 'settings',
 }
 
-/** Modules with only a view action — mutations require view permission. */
-const VIEW_ONLY_MODULES = new Set(['transactions', 'routing_logs'])
+/**
+ * Modules with only a view action (no create/edit/delete keys).
+ * Do NOT put modules with financial mutations here — view must never authorize money moves.
+ * Transactions refunds use explicit `transactions.refund` / `wallet.manage`.
+ */
+const VIEW_ONLY_MODULES = new Set(['routing_logs'])
 
 /** Modules that use `.manage` instead of `.create` for writes. */
 const MANAGE_MODULES = new Set(['wallet'])
@@ -121,6 +125,7 @@ export async function adminCanManageProviders(request: Request): Promise<boolean
     'providers.create',
     'providers.edit',
     'providers.sync',
+    'providers.execute',
     'providers.delete',
   ])
 }

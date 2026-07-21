@@ -93,22 +93,19 @@ export async function POST(request: Request) {
 
     const restFilterString = filterParts.length > 0 ? `&${filterParts.join('&')}` : ''
 
-    // ── Execute Queries for Current and Previous Periods ───────────────────
-    const currentQuery = `transactions?select=amount,status,created_at,metadata&created_at=gte.${fromStr}T00:00:00Z&created_at=lte.${toStr}T23:59:59Z&limit=50000${restFilterString}`
-    const previousQuery = `transactions?select=amount,status,created_at,metadata&created_at=gte.${prevFromStr}T00:00:00Z&created_at=lte.${prevToStr}T23:59:59Z&limit=50000${restFilterString}`
+    const { fetchPostgrestPages } = await import('@/lib/db/postgrest-paginate')
+    const currentBase = `transactions?select=amount,status,created_at,metadata&created_at=gte.${fromStr}T00:00:00Z&created_at=lte.${toStr}T23:59:59Z${restFilterString}`
+    const previousBase = `transactions?select=amount,status,created_at,metadata&created_at=gte.${prevFromStr}T00:00:00Z&created_at=lte.${prevToStr}T23:59:59Z${restFilterString}`
 
-    const [currentRes, previousRes, apiLogsRes] = await Promise.all([
-      supabaseRest(currentQuery, { cache: 'no-store' }),
-      supabaseRest(previousQuery, { cache: 'no-store' }),
+    const [currentRowsRaw, previousRowsRaw, apiLogsRes] = await Promise.all([
+      fetchPostgrestPages<Record<string, any>>({ pathWithQuery: currentBase, pageSize: 500, maxRows: 10_000 }),
+      fetchPostgrestPages<Record<string, any>>({ pathWithQuery: previousBase, pageSize: 500, maxRows: 10_000 }),
       supabaseRest(`agg_api_logs?select=latency_ms,created_at&created_at=gte.${fromStr}T00:00:00Z&created_at=lte.${toStr}T23:59:59Z&limit=5000`, { cache: 'no-store' }),
     ])
 
-    let currentRows: any[] = []
-    let previousRows: any[] = []
+    const currentRows: any[] = currentRowsRaw
+    const previousRows: any[] = previousRowsRaw
     let apiLogs: any[] = []
-
-    if (currentRes.ok) currentRows = await currentRes.json().catch(() => [])
-    if (previousRes.ok) previousRows = await previousRes.json().catch(() => [])
     if (apiLogsRes.ok) apiLogs = await apiLogsRes.json().catch(() => [])
 
     // Helper: calculate metrics from transaction rows

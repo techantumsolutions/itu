@@ -398,8 +398,11 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
     providerName: string
     providerPlanId: string
     cost: number
+    currency?: string | null
     source: 'RULE' | 'LCR'
     ok: boolean
+    skipped?: boolean
+    skipReason?: string
     error?: string
     errorCode?: string
     errorMessage?: string
@@ -476,7 +479,7 @@ export async function executeCheckout(input: CheckoutInput): Promise<CheckoutRes
       attemptsLog.push({ 
         providerId: candidate.providerId, 
         providerName: candidate.providerId,
-        providerPlanId: candidate.providerPlanId, 
+        providerPlanId: candidate.providerPlanId ?? '', 
         cost: candidate.provider_wholesale_amount ?? candidate.price ?? 0,
         currency: candidate.provider_wholesale_currency ?? candidate.currency ?? null,
         source: currentSource,

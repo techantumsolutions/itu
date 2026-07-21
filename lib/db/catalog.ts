@@ -78,7 +78,18 @@ export async function dbFetchPlans(countryIso: string, operatorCode?: string | n
   return res.json()
 }
 
-export function pickOperatorForPhone(operators: OperatorRow[], localDigits: string): OperatorRow | null {
+export type PhoneOperatorCandidate = Pick<
+  OperatorRow,
+  'code' | 'name' | 'short_name' | 'logo_url' | 'validation_regex' | 'region_code' | 'is_default'
+> & {
+  country_id?: string
+  country_iso?: string
+}
+
+export function pickOperatorForPhone(
+  operators: PhoneOperatorCandidate[],
+  localDigits: string,
+): PhoneOperatorCandidate | null {
   const digits = localDigits.replace(/\D/g, '')
   if (!digits) return null
 

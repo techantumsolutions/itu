@@ -569,7 +569,7 @@ async function loadPlatformItuSnapshot(filters: ReportFilters): Promise<{
     const select =
       'id,status,payment_status,created_at,transaction_id,send_amount,send_currency,receive_amount,receive_currency,transactions(amount,currency,status,metadata)'
     const query =
-      `recharge_orders?select=${encodeURIComponent(select)}&${dateParts.join('&')}&order=created_at.asc&limit=50000`
+      `recharge_orders?select=${encodeURIComponent(select)}&${dateParts.join('&')}&order=created_at.asc&limit=10000`
 
     const res = await supabaseRest(query, { cache: 'no-store' })
     if (!res.ok) return { gross: 0, cost: 0, refund: 0 }
@@ -705,7 +705,7 @@ function convertRawAmountsToEur(
     if (Array.isArray(r.transactions)) {
       r.transactions = (r.transactions as Record<string, unknown>[]).map((t) => {
         const cur = String(t.currency ?? payCurrency).toUpperCase()
-        const next = { ...t, amount: t.amount != null ? toEur(n(t.amount), cur) : t.amount }
+        const next: Record<string, unknown> = { ...t, amount: t.amount != null ? toEur(n(t.amount), cur) : t.amount }
         const tMeta = t.metadata as Record<string, unknown> | null | undefined
         if (tMeta && typeof tMeta === 'object') {
           const m = { ...tMeta }
@@ -721,7 +721,7 @@ function convertRawAmountsToEur(
     } else if (r.transactions && typeof r.transactions === 'object') {
       const t = r.transactions as Record<string, unknown>
       const cur = String(t.currency ?? payCurrency).toUpperCase()
-      const next = { ...t, amount: t.amount != null ? toEur(n(t.amount), cur) : t.amount }
+      const next: Record<string, unknown> = { ...t, amount: t.amount != null ? toEur(n(t.amount), cur) : t.amount }
       const tMeta = t.metadata as Record<string, unknown> | null | undefined
       if (tMeta && typeof tMeta === 'object') {
         const m = { ...tMeta }
@@ -1291,15 +1291,25 @@ export async function executeReport(
   const { dataQuery, countQuery, isAggregated, loadAll } = buildQuery(config, filters, sort, page, pageSize)
 
   // ── Fetch data ─────────────────────────────────────────────────────────────
-  const res = await supabaseRest(dataQuery, { cache: 'no-store' })
-  if (!res.ok) {
-    const msg = await res.text().catch(() => res.statusText)
-    throw new Error(`[${config.id}] Query failed (${res.status}): ${msg}`)
-  }
-
   let rawRows: Record<string, unknown>[] = []
-  try { rawRows = await res.json() } catch { rawRows = [] }
-  if (!Array.isArray(rawRows)) rawRows = []
+  if (isAggregated || loadAll) {
+    // Walk pages (≤10k) instead of a single unbounded/50k load.
+    const { fetchPostgrestPages } = await import('@/lib/db/postgrest-paginate')
+    const base = dataQuery.replace(/&?limit=\d+/gi, '').replace(/&?offset=\d+/gi, '')
+    rawRows = await fetchPostgrestPages({
+      pathWithQuery: base,
+      pageSize: 500,
+      maxRows: Math.min(config.source.fetchLimit ?? 10_000, 10_000),
+    })
+  } else {
+    const res = await supabaseRest(dataQuery, { cache: 'no-store' })
+    if (!res.ok) {
+      const msg = await res.text().catch(() => res.statusText)
+      throw new Error(`[${config.id}] Query failed (${res.status}): ${msg}`)
+    }
+    try { rawRows = await res.json() } catch { rawRows = [] }
+    if (!Array.isArray(rawRows)) rawRows = []
+  }
 
   // Financial report: use Dashboard-aligned ITU amounts (recharge_orders + txn + routing costs)
   if (config.id === 'financial') {
@@ -1447,7 +1457,7 @@ export async function executeReport(
     // ── Server-paginated path ───────────────────────────────────────────────
     // Still apply client search on the current page as a safety net when
     // searchColumns were empty or UUID filters were skipped server-side.
-    let pageRows = applyClientSearch(processedRows, filters.search, config)
+    const pageRows = applyClientSearch(processedRows, filters.search, config)
     allRowsForCards = pageRows
 
     // Get total count

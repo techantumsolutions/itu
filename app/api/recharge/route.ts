@@ -3,22 +3,87 @@ import { isApiConfigured, sendTransfer } from '@/lib/api/ding-connect'
 import { selectBestProviderWithObservability } from '@/lib/api/lcr-engine'
 import { isLcrV2Enabled } from '@/lib/lcr-v2/flags'
 import { processLcrV2Recharge, lcrV2AttemptToApiOrder } from '@/lib/lcr-v2/recharge'
-import { dbFindRechargeByDistributorRef, dbFindRechargeById, dbGetInternalPlan } from '@/lib/lcr-v2/recharge-db'
+import {
+  dbFindRechargeByDistributorRef,
+  dbFindRechargeById,
+  dbGetInternalPlan,
+} from '@/lib/lcr-v2/recharge-db'
 import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
-import { runtimeEnv } from '@/lib/env/runtime'
+import { getAuthenticatedRequestUser } from '@/lib/tickets/auth-headers'
+import { executeCheckout } from '@/lib/topup/checkout-service'
+import {
+  extractCheckoutTransactionId,
+  requireVerifiedPaidRecharge,
+} from '@/lib/security/require-paid-recharge'
 
-function publicRechargeEnabled(): boolean {
-  return process.env.NODE_ENV !== 'production' || runtimeEnv('RECHARGE_PUBLIC_ENABLED') === 'true'
-}
-
+/**
+ * Provider recharge HTTP entry.
+ *
+ * Path A — paid checkout: transactionId + auth + paid payment_order → executeCheckout
+ * Path B — admin sandbox: authenticated admin with providers.execute → LCR/Ding test
+ *
+ * Anonymous requests never reach executeCheckout / processLcrV2Recharge / sendTransfer.
+ * RECHARGE_PUBLIC_ENABLED is removed; no env var enables unpaid public execution.
+ */
 export async function POST(request: Request) {
-  if (!publicRechargeEnabled()) {
-    const denied = await requireAdminPermission(request, 'providers.sync')
-    if (denied) return denied
+  const body = (await request.json().catch(() => ({}))) as Record<string, unknown>
+  const checkoutTxnId = extractCheckoutTransactionId(body)
+
+  // ----- Path A: verified paid customer checkout -----
+  if (checkoutTxnId) {
+    const gate = await requireVerifiedPaidRecharge(request, body)
+    if (!gate.ok) return gate.response
+
+    const po = gate.paymentOrder
+    const meta =
+      po.metadata && typeof po.metadata === 'object'
+        ? (po.metadata as Record<string, unknown>)
+        : {}
+    const systemPlanId =
+      typeof meta.system_plan_id === 'string' ? meta.system_plan_id.trim() : undefined
+
+    const result = await executeCheckout({
+      paymentOrderId: gate.paymentOrderId,
+      planId: String(po.plan_id ?? ''),
+      systemPlanId: systemPlanId || undefined,
+      mobileNumber: String(po.mobile_number ?? ''),
+      operatorId: String(po.operator_id ?? ''),
+      countryId: String(po.country_id ?? ''),
+      amount: Number(po.amount ?? 0) + Number(meta.used_wallet_balance ?? 0),
+      currency: String(po.currency ?? 'INR'),
+      razorpayPaymentId: String(po.payment_id ?? `recharge-api-${gate.paymentOrderId}`),
+      userId: gate.userId,
+      usedWalletBalance: Number(meta.used_wallet_balance ?? 0) || undefined,
+      walletCurrency:
+        typeof meta.wallet_currency === 'string' ? meta.wallet_currency : undefined,
+      checkoutSessionId: gate.transactionId,
+      pendingTransactionId: gate.transactionId,
+    })
+
+    return NextResponse.json(
+      {
+        success: result.ok,
+        ok: result.ok,
+        transactionId: result.transactionId,
+        rechargeOrderId: result.rechargeOrderId,
+        providerRef: result.providerRef,
+        providerName: result.providerName,
+        status: result.status,
+        error: result.error,
+        hints: result.hints,
+        message: result.ok
+          ? 'Recharge executed via verified paid checkout'
+          : result.error ?? 'Recharge failed',
+      },
+      { status: result.ok ? 200 : 422 },
+    )
   }
 
+  // ----- Path B: authenticated admin sandbox (providers.execute) -----
+  const denied = await requireAdminPermission(request, 'providers.execute')
+  if (denied) return denied
+
   try {
-    const body = await request.json()
     const {
       skuCode,
       sendAmount,
@@ -41,7 +106,7 @@ export async function POST(request: Request) {
       if (!phoneNumber || (!sysPlanId && !planId && !sku)) {
         return NextResponse.json(
           { error: 'Missing required fields: phoneNumber and (systemPlanId, internalPlanId, or skuCode)' },
-          { status: 400 }
+          { status: 400 },
         )
       }
       if (sendAmount == null || Number(sendAmount) <= 0) {
@@ -52,14 +117,14 @@ export async function POST(request: Request) {
         systemPlanId: sysPlanId || undefined,
         internalPlanId: planId || undefined,
         skuCode: sku || undefined,
-        phoneNumber,
+        phoneNumber: String(phoneNumber),
         sendAmount: Number(sendAmount),
-        countryCode,
-        carrierCode,
-        carrierName,
-        productName,
-        receiveCurrency,
-        receiveAmount,
+        countryCode: typeof countryCode === 'string' ? countryCode : undefined,
+        carrierCode: typeof carrierCode === 'string' ? carrierCode : undefined,
+        carrierName: typeof carrierName === 'string' ? carrierName : undefined,
+        productName: typeof productName === 'string' ? productName : undefined,
+        receiveCurrency: typeof receiveCurrency === 'string' ? receiveCurrency : undefined,
+        receiveAmount: receiveAmount != null ? Number(receiveAmount) : undefined,
         idempotencyKey: typeof body.idempotencyKey === 'string' ? body.idempotencyKey : undefined,
       })
 
@@ -72,7 +137,7 @@ export async function POST(request: Request) {
             attempts: 'attempts' in v2 ? v2.attempts : undefined,
             hints: 'hints' in v2 ? v2.hints : undefined,
           },
-          { status: v2.status }
+          { status: v2.status },
         )
       }
 
@@ -90,7 +155,7 @@ export async function POST(request: Request) {
           order: { ...order, countryCode, carrierCode, carrierName, receiveAmount, receiveCurrency },
           lcr: { v2: true, cached: true, decision: v2.attempt.routing_decision },
           hints: 'hints' in v2 ? v2.hints : undefined,
-          message: 'Recharge completed (idempotent replay)',
+          message: 'Admin sandbox recharge completed (idempotent replay)',
         })
       }
 
@@ -116,11 +181,14 @@ export async function POST(request: Request) {
           order: { ...order, countryCode, carrierCode, carrierName, receiveAmount, receiveCurrency },
           lcr: { v2: true, decision: v2.decision, attempts: v2.attempts },
           hints: 'hints' in v2 ? v2.hints : undefined,
-          message: 'Recharge processed via LCR v2',
+          message: 'Admin sandbox recharge processed via LCR v2',
         })
       }
 
-      return NextResponse.json({ success: false, error: 'Unexpected LCR v2 response', hints: 'hints' in v2 ? v2.hints : undefined }, { status: 500 })
+      return NextResponse.json(
+        { success: false, error: 'Unexpected LCR v2 response', hints: 'hints' in v2 ? v2.hints : undefined },
+        { status: 500 },
+      )
     }
 
     if (!skuCode || !sendAmount || !phoneNumber) {
@@ -128,9 +196,8 @@ export async function POST(request: Request) {
     }
 
     const distributorRef = `TUG-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`
-
     const serviceFee = 0.5
-    const totalAmount = sendAmount + serviceFee
+    const totalAmount = Number(sendAmount) + serviceFee
 
     const routingCountryCode =
       typeof countryCode === 'string' && /^[A-Z]{2}$/.test(countryCode)
@@ -139,12 +206,16 @@ export async function POST(request: Request) {
           ? body.countryIso
           : 'IN'
     const normalizedOperator =
-      typeof carrierCode === 'string' && carrierCode.includes('_') ? carrierCode.split('_')[0] : carrierCode
+      typeof carrierCode === 'string' && carrierCode.includes('_')
+        ? carrierCode.split('_')[0]
+        : typeof carrierCode === 'string'
+          ? carrierCode
+          : ''
     const lcrDecision = await selectBestProviderWithObservability(
       routingCountryCode,
       normalizedOperator || '',
-      skuCode,
-      { timeoutMs: 4500, weighted: true }
+      String(skuCode),
+      { timeoutMs: 4500, weighted: true },
     )
     if (!lcrDecision.selected) {
       return NextResponse.json(
@@ -153,7 +224,7 @@ export async function POST(request: Request) {
           error: 'No active supported aggregator for this country/operator',
           lcr: lcrDecision,
         },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
@@ -169,9 +240,9 @@ export async function POST(request: Request) {
     }
 
     const response = await sendTransfer({
-      SkuCode: skuCode,
-      SendValue: sendAmount,
-      AccountNumber: phoneNumber,
+      SkuCode: String(skuCode),
+      SendValue: Number(sendAmount),
+      AccountNumber: String(phoneNumber),
       DistributorRef: distributorRef,
       ValidateOnly: false,
     })
@@ -184,12 +255,11 @@ export async function POST(request: Request) {
           error: errorMessage,
           errorCodes: response.ErrorCodes,
         },
-        { status: 400 }
+        { status: 400 },
       )
     }
 
     const transfer = response.TransferRecord
-
     const statusMap: Record<string, string> = {
       Submitted: 'processing',
       Processing: 'processing',
@@ -225,7 +295,8 @@ export async function POST(request: Request) {
       success: true,
       order,
       lcr: lcrDecision,
-      message: 'Recharge processed successfully',
+      message: 'Admin sandbox recharge processed successfully',
+      totalAmount,
     })
   } catch (error) {
     console.error('Error processing recharge:', error)
@@ -239,6 +310,11 @@ export async function GET(request: Request) {
 
   if (!orderId) {
     return NextResponse.json({ error: 'Order ID is required' }, { status: 400 })
+  }
+
+  const user = await getAuthenticatedRequestUser(request)
+  if (!user?.id) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   if (isLcrV2Enabled()) {

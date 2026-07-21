@@ -10,7 +10,7 @@ import { Check, ChevronRight } from 'lucide-react'
 
 export default function TopupReviewPage() {
   const router = useRouter()
-  const { phoneNumber, countryCode, operator, selectedPlan, pricing, fees, calculatePricing, setOrderId } = useTopupStore()
+  const { phoneNumber, countryCode, operator, selectedPlan, pricing, fees } = useTopupStore()
   const [promo, setPromo] = useState('')
   const [promoMsg, setPromoMsg] = useState<string | null>(null)
   const [discount, setDiscount] = useState(0)
@@ -52,27 +52,8 @@ export default function TopupReviewPage() {
     if (!selectedPlan || !pricing) return
     setIsSubmitting(true)
     try {
-      const res = await fetch('/api/payment/create-session', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone_number: `+${countryCode}${phoneNumber}`,
-          operator,
-          country: countryCode,
-          plan_id: selectedPlan.id,
-          amount: amounts.subtotal,
-          fee: amounts.fee,
-          total: amounts.grand,
-          currency: pricing.localCurrency,
-        }),
-      })
-      const data = await res.json()
-      if (data?.orderId) {
-        setOrderId(String(data.orderId))
-        calculatePricing({ fee: amounts.fee })
-        router.push('/topup/loading')
-      }
+      // Legacy create-session (client amounts) is disabled. Use the prepare-checkout summary flow.
+      router.push('/topup')
     } finally {
       setIsSubmitting(false)
     }

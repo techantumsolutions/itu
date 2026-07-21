@@ -63,7 +63,12 @@ export default function AboutPage() {
         quote: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Cursus nibh mauris, nec turpis orci lectus maecenas. Suspendisse sed magna eget nibh in turpis. Consequat duis diam lacus arcu. Fauclbus venenatis felis id augue sit cursus pellentesque enim arcu.',
         image: ''
       }
-    ]
+    ],
+    appStoreImage: '',
+    googlePlayImage: '',
+    promoTitle: 'Download the ITU App',
+    promoSubtitle: 'Top-up wherever, whenever',
+    promoDesc: 'Recharge anytime, anywhere with just a few taps.',
   }
 
   const heroBg = c.heroBgImage || '/about/herobanner.png'

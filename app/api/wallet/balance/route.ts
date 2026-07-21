@@ -1,74 +1,21 @@
 import { NextResponse } from 'next/server'
 import { getAuthenticatedRequestUser } from '@/lib/tickets/auth-headers'
-import { supabaseRest } from '@/lib/db/supabase-rest'
+import { getUserWalletBalances } from '@/lib/wallet/balance/get-user-wallets'
 
 export async function GET(request: Request) {
   const user = await getAuthenticatedRequestUser(request)
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    // 1. Fetch user profile to get their preferred currency
-    const profileRes = await supabaseRest(`profiles?id=eq.${encodeURIComponent(user.id)}&select=currency&limit=1`, {
-      cache: 'no-store',
-    })
-    let preferredCurrency = 'USD'
-    if (profileRes.ok) {
-      const rows = await profileRes.json().catch(() => [])
-      if (rows?.[0]?.currency) {
-        preferredCurrency = rows[0].currency
-      }
+    const result = await getUserWalletBalances(user.id)
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: result.status })
     }
-
-    // 2. Fetch max consumption percentage from settings
-    let maxConsumptionPercentage = 100
-    const settingsRes = await supabaseRest(
-      'app_settings?key=eq.wallet_max_consumption_percentage&select=value&limit=1',
-      { cache: 'no-store' },
-    )
-    if (settingsRes.ok) {
-      const rows = await settingsRes.json().catch(() => [])
-      if (rows?.[0]?.value !== undefined) {
-        maxConsumptionPercentage = Number(rows[0].value) ?? 100
-      }
-    }
-
-    // 3. Query wallets table for user_id to get ALL wallets
-    const res = await supabaseRest(`wallets?user_id=eq.${encodeURIComponent(user.id)}&select=balance,currency`, {
-      cache: 'no-store',
-    })
-    if (!res.ok) {
-      return NextResponse.json({ error: 'Failed to load wallet' }, { status: 500 })
-    }
-
-    let wallets = await res.json().catch(() => [])
-    if (wallets.length === 0) {
-      // If no wallet exists for this currency, create one with default balance 0
-      const createRes = await supabaseRest('wallets', {
-        method: 'POST',
-        headers: { Prefer: 'return=representation' },
-        body: JSON.stringify([{ user_id: user.id, currency: preferredCurrency, balance: 0 }]),
-      })
-      if (!createRes.ok) {
-        return NextResponse.json({ error: 'Failed to create wallet' }, { status: 500 })
-      }
-      const createdWallet = await createRes.json().catch(() => [])
-      wallets = createdWallet
-    }
-
-    // Find the wallet matching preferredCurrency, or default to the first one
-    let activeWallet = wallets.find((w: { currency?: string }) => w.currency === preferredCurrency)
-    if (!activeWallet) {
-      activeWallet = wallets[0]
-    }
-
     return NextResponse.json({
-      balance: Number(activeWallet.balance) || 0,
-      currency: activeWallet.currency || preferredCurrency,
-      maxConsumptionPercentage,
-      wallets: wallets.map((w: { currency?: string; balance?: number }) => ({
-        currency: w.currency,
-        balance: Number(w.balance) || 0,
-      })),
+      balance: result.balance,
+      currency: result.currency,
+      maxConsumptionPercentage: result.maxConsumptionPercentage,
+      wallets: result.wallets,
     })
   } catch (error) {
     console.error('Failed to get wallet balance:', error)

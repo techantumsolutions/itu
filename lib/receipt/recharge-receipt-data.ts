@@ -14,6 +14,8 @@ function numberFrom(value: unknown): number {
 }
 
 export type RechargeReceiptData = {
+  /** Owning profile id (recharge_orders.user_id, else transactions.user_id). */
+  userId: string | null
   receiptNumber: string
   transactionId: string | null
   issuedAt: string
@@ -39,6 +41,7 @@ export type RechargeReceiptData = {
 
 type ReceiptRow = {
   id: string
+  user_id?: string | null
   transaction_id?: string | null
   phone_number: string
   operator_name?: string | null
@@ -60,6 +63,7 @@ type ReceiptRow = {
   created_at: string
   transactions?: Array<{
     id: string
+    user_id?: string | null
     amount?: number | string | null
     currency?: string | null
     status?: string | null
@@ -85,7 +89,7 @@ function formatPlanValue(amount: number, currency: string): string {
 
 export async function loadRechargeReceiptData(orderId: string): Promise<RechargeReceiptData | null> {
   const res = await supabaseRest(
-    `recharge_orders?id=eq.${enc(orderId)}&select=id,transaction_id,phone_number,operator_name,operator_code,country_iso,sku_code,plan_id,product_name,send_amount,send_currency,receive_amount,receive_currency,service_fee,tax,status,provider,provider_ref,metadata,created_at,transactions(id,amount,currency,status,metadata)&limit=1`,
+    `recharge_orders?id=eq.${enc(orderId)}&select=id,user_id,transaction_id,phone_number,operator_name,operator_code,country_iso,sku_code,plan_id,product_name,send_amount,send_currency,receive_amount,receive_currency,service_fee,tax,status,provider,provider_ref,metadata,created_at,transactions(id,user_id,amount,currency,status,metadata)&limit=1`,
     { cache: 'no-store' },
   )
   if (!res.ok) throw new Error('Failed to load receipt data')
@@ -95,6 +99,10 @@ export async function loadRechargeReceiptData(orderId: string): Promise<Recharge
   if (!row) return null
 
   const transaction = row.transactions?.[0] ?? null
+  const ownerUserId =
+    (typeof row.user_id === 'string' && row.user_id.trim()) ||
+    (typeof transaction?.user_id === 'string' && transaction.user_id.trim()) ||
+    null
   const metadata = {
     ...(row.metadata ?? {}),
     ...(transaction?.metadata ?? {}),
@@ -138,6 +146,7 @@ export async function loadRechargeReceiptData(orderId: string): Promise<Recharge
   const planPriceCurrency = checkout?.planPriceCurrency ?? String(row.receive_currency ?? row.send_currency ?? 'EUR').toUpperCase()
 
   return {
+    userId: ownerUserId,
     receiptNumber: row.id.slice(0, 8).toUpperCase(),
     transactionId: row.transaction_id ?? transaction?.id ?? null,
     issuedAt: row.created_at,

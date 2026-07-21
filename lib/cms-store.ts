@@ -372,10 +372,10 @@ export interface SiteContent {
   footer: FooterContent
   helpPage: HelpPageContent
   careersPage: CareersPageContent
-  contactPage?: ContactPageContent
-  aboutPage?: AboutPageContent
-  privacyPage?: PrivacyPageContent
-  termsPage?: TermsPageContent
+  contactPage: ContactPageContent
+  aboutPage: AboutPageContent
+  privacyPage: PrivacyPageContent
+  termsPage: TermsPageContent
 }
 
 export interface CountriesGridItem {
@@ -1049,16 +1049,16 @@ function mergeSiteContent(partial: Partial<SiteContent> | undefined): SiteConten
       ...p.aboutPage,
       teamQuotes: p.aboutPage?.teamQuotes ?? defaultContent.aboutPage.teamQuotes,
     },
-    privacyPage: p.privacyPage ? {
+    privacyPage: {
       ...defaultContent.privacyPage,
-      ...p.privacyPage,
-      sections: p.privacyPage.sections ?? defaultContent.privacyPage.sections,
-    } : defaultContent.privacyPage,
-    termsPage: p.termsPage ? {
+      ...(p.privacyPage ?? {}),
+      sections: p.privacyPage?.sections ?? defaultContent.privacyPage.sections,
+    },
+    termsPage: {
       ...defaultContent.termsPage,
-      ...p.termsPage,
-      sections: p.termsPage.sections ?? defaultContent.termsPage.sections,
-    } : defaultContent.termsPage,
+      ...(p.termsPage ?? {}),
+      sections: p.termsPage?.sections ?? defaultContent.termsPage.sections,
+    },
   }
 }
 
@@ -1238,8 +1238,10 @@ export const useCMSStore = create<CMSStore>()(
           content: {
             ...state.content,
             privacyPage: {
-              ...(state.content.privacyPage ?? defaultContent.privacyPage),
+              ...defaultContent.privacyPage,
+              ...(state.content.privacyPage ?? {}),
               ...privacyPage,
+              sections: privacyPage.sections ?? state.content.privacyPage?.sections ?? defaultContent.privacyPage.sections,
             },
           },
           isDirty: true,
@@ -1250,8 +1252,10 @@ export const useCMSStore = create<CMSStore>()(
           content: {
             ...state.content,
             termsPage: {
-              ...(state.content.termsPage ?? defaultContent.termsPage),
+              ...defaultContent.termsPage,
+              ...(state.content.termsPage ?? {}),
               ...termsPage,
+              sections: termsPage.sections ?? state.content.termsPage?.sections ?? defaultContent.termsPage.sections,
             },
           },
           isDirty: true,

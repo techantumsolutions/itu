@@ -14,6 +14,8 @@ import type {
   DingProduct, 
   DingPromotion 
 } from '@/lib/types'
+import { outboundFetch, providerCircuitKey } from '@/lib/http/outbound-fetch'
+import { cacheGetJson, cacheSetJson } from '@/lib/cache/redis'
 
 // API Configuration
 function getDingApiBaseUrl(): string {
@@ -89,23 +91,22 @@ interface DingTransferResponse {
   ErrorCodes?: { Code: string; Context: string }[]
 }
 
-// Token cache for OAuth
-let cachedToken: { token: string; expiresAt: number } | null = null
+// Token cache for OAuth (Redis — replica-safe)
+const DING_TOKEN_CACHE_KEY = 'provider:ding:oauth:v1'
 
 /**
  * Get OAuth2 Bearer token
  */
 async function getAccessToken(): Promise<string> {
-  // Check cache
-  if (cachedToken && cachedToken.expiresAt > Date.now()) {
-    return cachedToken.token
+  const cached = await cacheGetJson<{ token: string; expiresAt: number }>(DING_TOKEN_CACHE_KEY)
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.token
   }
 
   const clientId = getDingClientId()
   const clientSecret = getDingClientSecret()
 
-  // Request new token
-  const response = await fetch('https://idp.ding.com/connect/token', {
+  const response = await outboundFetch('https://idp.ding.com/connect/token', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
@@ -115,6 +116,8 @@ async function getAccessToken(): Promise<string> {
       client_id: clientId,
       client_secret: clientSecret,
     }),
+    timeoutMs: 15_000,
+    circuitKey: providerCircuitKey('ding', 'idp.ding.com'),
   })
 
   if (!response.ok) {
@@ -122,12 +125,11 @@ async function getAccessToken(): Promise<string> {
   }
 
   const data = await response.json()
-  cachedToken = {
-    token: data.access_token,
-    expiresAt: Date.now() + (data.expires_in - 60) * 1000, // Buffer 60 seconds
-  }
+  const expiresAt = Date.now() + (data.expires_in - 60) * 1000
+  const ttlSec = Math.max(30, Math.floor((expiresAt - Date.now()) / 1000))
+  await cacheSetJson(DING_TOKEN_CACHE_KEY, { token: data.access_token, expiresAt }, ttlSec)
 
-  return cachedToken.token
+  return data.access_token
 }
 
 /**
@@ -137,7 +139,7 @@ async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Correlation-Id': crypto.randomUUID(),
   }
@@ -147,7 +149,6 @@ async function apiRequest<T>(
   const clientSecret = getDingClientSecret()
   const baseUrl = getDingApiBaseUrl()
 
-  // Use API key or Bearer token
   if (apiKey) {
     headers['api_key'] = apiKey
   } else if (clientId && clientSecret) {
@@ -155,9 +156,18 @@ async function apiRequest<T>(
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  const response = await fetch(`${baseUrl}${endpoint}`, {
+  let host = 'api.dingconnect.com'
+  try {
+    host = new URL(baseUrl).host
+  } catch {
+    /* ignore */
+  }
+
+  const response = await outboundFetch(`${baseUrl}${endpoint}`, {
     ...options,
-    headers: { ...headers, ...options.headers },
+    headers: { ...headers, ...(options.headers as Record<string, string>) },
+    timeoutMs: 30_000,
+    circuitKey: providerCircuitKey('ding', host),
   })
 
   if (!response.ok) {
