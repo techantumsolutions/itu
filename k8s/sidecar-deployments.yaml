@@ -1,0 +1,239 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: itu-socket
+  namespace: default
+  labels:
+    app: itu-socket
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: itu-socket
+  template:
+    metadata:
+      labels:
+        app: itu-socket
+    spec:
+      containers:
+        - name: socket
+          image: ghcr.io/techantumsolutions/itu/sidecar:latest
+          command: ["npm", "run", "socket:server"]
+          ports:
+            - containerPort: 3001
+          envFrom:
+            - configMapRef:
+                name: itu-config
+          # Mount secrets from your env file configured as a secret
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: itu-secrets
+                  key: DATABASE_URL
+                  optional: true
+            - name: MASTER_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: itu-secrets
+                  key: MASTER_ENCRYPTION_KEY
+                  optional: true
+          resources:
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: socket-service
+  namespace: default
+spec:
+  ports:
+    - port: 3001
+      targetPort: 3001
+  selector:
+    app: itu-socket
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: itu-worker
+  namespace: default
+  labels:
+    app: itu-worker
+spec:
+  replicas: 1 # KEDA will control this replica count dynamically
+  selector:
+    matchLabels:
+      app: itu-worker
+  template:
+    metadata:
+      labels:
+        app: itu-worker
+    spec:
+      containers:
+        - name: worker
+          image: ghcr.io/techantumsolutions/itu/sidecar:latest
+          command: ["npm", "run", "lcr:worker"]
+          envFrom:
+            - configMapRef:
+                name: itu-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: itu-secrets
+                  key: DATABASE_URL
+                  optional: true
+            - name: MASTER_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: itu-secrets
+                  key: MASTER_ENCRYPTION_KEY
+                  optional: true
+          resources:
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: itu-cron
+  namespace: default
+  labels:
+    app: itu-cron
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: itu-cron
+  template:
+    metadata:
+      labels:
+        app: itu-cron
+    spec:
+      containers:
+        - name: cron
+          image: ghcr.io/techantumsolutions/itu/sidecar:latest
+          command: ["npm", "run", "cron:provider-sync"]
+          envFrom:
+            - configMapRef:
+                name: itu-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: itu-secrets
+                  key: DATABASE_URL
+                  optional: true
+            - name: MASTER_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: itu-secrets
+                  key: MASTER_ENCRYPTION_KEY
+                  optional: true
+          resources:
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: itu-system-plans-availability
+  namespace: default
+  labels:
+    app: itu-system-plans-availability
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: itu-system-plans-availability
+  template:
+    metadata:
+      labels:
+        app: itu-system-plans-availability
+    spec:
+      containers:
+        - name: system-plans-availability
+          image: ghcr.io/techantumsolutions/itu/sidecar:latest
+          command: ["npm", "run", "system-plans:availability"]
+          envFrom:
+            - configMapRef:
+                name: itu-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: itu-secrets
+                  key: DATABASE_URL
+                  optional: true
+            - name: MASTER_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: itu-secrets
+                  key: MASTER_ENCRYPTION_KEY
+                  optional: true
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: itu-system-plans-merge
+  namespace: default
+  labels:
+    app: itu-system-plans-merge
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: itu-system-plans-merge
+  template:
+    metadata:
+      labels:
+        app: itu-system-plans-merge
+    spec:
+      containers:
+        - name: system-plans-merge
+          image: ghcr.io/techantumsolutions/itu/sidecar:latest
+          command: ["npm", "run", "system-plans:merge-duplicates"]
+          envFrom:
+            - configMapRef:
+                name: itu-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: itu-secrets
+                  key: DATABASE_URL
+                  optional: true
+            - name: MASTER_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: itu-secrets
+                  key: MASTER_ENCRYPTION_KEY
+                  optional: true
+          resources:
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+            requests:
+              cpu: "100m"
+              memory: "128Mi"

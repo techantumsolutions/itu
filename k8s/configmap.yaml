@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: itu-config
+  namespace: default
+data:
+  NODE_ENV: "production"
+  NODE_OPTIONS: "--dns-result-order=ipv4first"
+  SHOW_DEV_OTP: "true"
+  # Pointing to the external Redis/Supabase endpoints (running on Docker Compose host)
+  REDIS_URL: "redis://redis-external:6379"
+  SUPABASE_URL: "http://supabase-external:8000"
+  SOCKET_BIND_HOST: "0.0.0.0"
+  SOCKET_PORT: "3001"
+  SOCKET_SERVER_URL: "http://socket-service:3001"
+  CRON_PROVIDER_SYNC_BASE_URL: "http://web-service:3000"
