@@ -216,7 +216,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=itu-sidecar
 
       - name: Trivy scan web (before push) — hard-fail High/Critical
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: itu-web:candidate
           format: table
@@ -225,7 +225,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Trivy scan sidecar (before push) — hard-fail High/Critical
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: itu-sidecar:candidate
           format: table

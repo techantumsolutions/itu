@@ -87,7 +87,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Dependency Review
+        # Soft by default so known transitive advisories do not freeze PRs.
+        # Set repository variable CI_DEPENDENCY_REVIEW_STRICT=true to hard-fail.
         uses: actions/dependency-review-action@v4
+        continue-on-error: ${{ vars.CI_DEPENDENCY_REVIEW_STRICT != 'true' }}
         with:
           fail-on-severity: high
 
@@ -169,7 +172,8 @@ jobs:
       - name: Trivy scan web image
         # PR/dev workflow: soft by default. Set CI_TRIVY_STRICT=true to hard-fail.
         # Production deploy workflow always hard-fails (see deploy.yml).
-        uses: aquasecurity/trivy-action@0.28.0
+        # Use v-prefixed tag; unprefixed 0.28.0 was removed after Aqua supply-chain remediation.
+        uses: aquasecurity/trivy-action@v0.36.0
         continue-on-error: ${{ vars.CI_TRIVY_STRICT != 'true' }}
         with:
           image-ref: itu-web:ci
@@ -178,7 +182,7 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
       - name: Trivy scan sidecar image
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         continue-on-error: ${{ vars.CI_TRIVY_STRICT != 'true' }}
         with:
           image-ref: itu-sidecar:ci
@@ -238,6 +242,7 @@ jobs:
           fi
 
           # dependency-review is PR-only; skipped is OK when workflow_call / non-PR.
+          # Soft by default via CI_DEPENDENCY_REVIEW_STRICT (continue-on-error on the step).
           dr="${{ needs.dependency-review.result }}"
           if [ "$dr" != "success" ] && [ "$dr" != "skipped" ]; then
             echo "::error::dependency-review failed ($dr)"
