@@ -19,19 +19,24 @@ function shouldUseJsonLogs(): boolean {
   return process.env.NODE_ENV === 'production'
 }
 
+/** Strip CR/LF so log lines cannot be forged (CodeQL js/log-injection). */
+function sanitizeLogText(value: string): string {
+  return value.replace(/[\r\n\u2028\u2029]/g, ' ')
+}
+
 function baseFields(level: LogLevel, message: string, fields?: LogFields) {
   const ctx = getObsContext()
   return {
     timestamp: new Date().toISOString(),
     level,
-    message,
+    message: sanitizeLogText(message),
     service: ctx?.service ?? process.env.OTEL_SERVICE_NAME ?? process.env.SERVICE_NAME ?? 'itu',
     environment: envName(),
-    requestId: ctx?.requestId,
+    requestId: ctx?.requestId ? sanitizeLogText(String(ctx.requestId)) : undefined,
     userId: ctx?.userId,
-    route: ctx?.route,
-    jobName: ctx?.jobName,
-    jobId: ctx?.jobId,
+    route: ctx?.route ? sanitizeLogText(String(ctx.route)) : undefined,
+    jobName: ctx?.jobName ? sanitizeLogText(String(ctx.jobName)) : undefined,
+    jobId: ctx?.jobId ? sanitizeLogText(String(ctx.jobId)) : undefined,
     version: process.env.APP_VERSION || process.env.VERCEL_GIT_COMMIT_SHA || process.env.DEPLOY_SHA,
     ...fields,
   }
@@ -41,15 +46,18 @@ function write(level: LogLevel, message: string, fields?: LogFields) {
   const payload = baseFields(level, message, fields)
   if (shouldUseJsonLogs()) {
     const line = JSON.stringify(payload)
+    // Single-arg console calls: no util.format format-string sink.
     if (level === 'error') console.error(line)
     else if (level === 'warn') console.warn(line)
     else console.log(line)
     return
   }
-  const prefix = `[${payload.level}] ${payload.requestId ? `(${payload.requestId}) ` : ''}${message}`
-  if (level === 'error') console.error(prefix, fields ?? '')
-  else if (level === 'warn') console.warn(prefix, fields ?? '')
-  else console.log(prefix, fields ?? '')
+  const requestPart = payload.requestId ? `(${payload.requestId}) ` : ''
+  const prefix = `[${payload.level}] ${requestPart}${payload.message}`
+  // Constant format string — never interpolate untrusted text into arg0 (js/tainted-format-string).
+  if (level === 'error') console.error('%s %j', prefix, fields ?? {})
+  else if (level === 'warn') console.warn('%s %j', prefix, fields ?? {})
+  else console.log('%s %j', prefix, fields ?? {})
 }
 
 export const logger = {

@@ -52,7 +52,8 @@ export async function runReport(params: ReportQueryParams): Promise<ReportApiRes
     return { success: true, data }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Report engine error'
-    console.error(`[ReportEngine:${params.reportType}]`, err)
+    // Constant format string — reportType is request-controlled (js/tainted-format-string).
+    console.error('[ReportEngine] %s', params.reportType, err)
     return { success: false, error: message }
   }
 }
