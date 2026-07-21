@@ -9,6 +9,7 @@ out/
 
 # Build / tooling
 dist/
+sidecar-dist/
 build/
 .turbo/
 

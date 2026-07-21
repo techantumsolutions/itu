@@ -59,7 +59,7 @@ services:
   socket:
     build: *dev-build
     container_name: itu-dev-socket
-    command: pnpm run socket:server
+    command: node sidecar-dist/socket-server.js
     ports:
       - "3001:3001"
     env_file:
@@ -114,7 +114,7 @@ services:
   worker:
     build: *dev-build
     container_name: itu-dev-worker
-    command: pnpm run lcr:worker
+    command: node sidecar-dist/lcr-sync-worker.js
     env_file:
       - .env
     environment:
@@ -139,7 +139,7 @@ services:
   cron:
     build: *dev-build
     container_name: itu-dev-cron
-    command: pnpm run cron:provider-sync
+    command: node sidecar-dist/provider-sync-cron.js
     env_file:
       - .env
     environment:
@@ -165,7 +165,7 @@ services:
   system-plans-availability:
     build: *dev-build
     container_name: itu-dev-system-plans-availability
-    command: pnpm run system-plans:availability
+    command: node sidecar-dist/system-plans-availability-worker.js
     env_file:
       - .env
     environment:
@@ -187,7 +187,7 @@ services:
   system-plans-merge:
     build: *dev-build
     container_name: itu-dev-system-plans-merge
-    command: pnpm run system-plans:merge-duplicates
+    command: node sidecar-dist/system-plans-duplicate-merge-worker.js
     env_file:
       - .env
     environment:
