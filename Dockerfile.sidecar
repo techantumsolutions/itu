@@ -21,7 +21,14 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1
 
 RUN addgroup --system --gid 1001 nodejs \
-  && adduser --system --uid 1001 --ingroup nodejs nextjs
+  && adduser --system --uid 1001 --ingroup nodejs nextjs \
+  # Runtime uses `pnpm run …` (compose). Drop npm so Trivy does not fail on its
+  # nested tar/sigstore CVEs; keep corepack + pnpm from the base stage.
+  && rm -rf \
+    /usr/local/lib/node_modules/npm \
+    /usr/local/bin/npm \
+    /usr/local/bin/npx \
+    /opt/yarn-v*
 
 # Lockfiles first (metadata), then deps, then runtime source — maximizes cache hits.
 COPY --chown=nextjs:nodejs package.json pnpm-lock.yaml tsconfig.json ./
@@ -30,8 +37,7 @@ COPY --chown=nextjs:nodejs scripts ./scripts
 COPY --chown=nextjs:nodejs lib ./lib
 
 # Next vendors node-tar for build-time SWC download only — not needed at sidecar runtime.
-# Removes CVE-2026-59873 / CVE-2026-59874 from Trivy High/Critical image scans.
-RUN find /app/node_modules -type d -path '*/next/dist/compiled/tar' -prune -exec rm -rf {} +
+RUN find /app/node_modules -type d -path '*/next/dist/compiled/tar' -exec rm -rf {} + 2>/dev/null || true
 
 USER nextjs
 

@@ -50,17 +50,26 @@ ENV NODE_ENV=production \
 # wget  — HEALTHCHECK /api/health
 # su-exec — drop privileges after volume chown (entrypoint)
 # procps — NOT installed (web healthcheck is HTTP, not pgrep)
+#
+# Drop npm/corepack from the runtime image. Official node images ship npm with
+# nested deps (tar, etc.) that Trivy flags High/Critical; this image only needs `node`.
 RUN apk add --no-cache wget su-exec \
   && addgroup --system --gid 1001 nodejs \
-  && adduser --system --uid 1001 --ingroup nodejs nextjs
+  && adduser --system --uid 1001 --ingroup nodejs nextjs \
+  && rm -rf \
+    /usr/local/lib/node_modules/npm \
+    /usr/local/lib/node_modules/corepack \
+    /usr/local/bin/npm \
+    /usr/local/bin/npx \
+    /usr/local/bin/corepack \
+    /opt/yarn-v*
 
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# Next vendors node-tar only for build-time SWC download. Strip it from the runtime
-# image so image scans do not fail on CVE-2026-59873 / CVE-2026-59874 until Next bumps it.
-RUN find /app -type d -path '*/next/dist/compiled/tar' -prune -exec rm -rf {} +
+# Next vendors node-tar for build-time SWC download only — strip any copy in standalone.
+RUN find /app -type d -path '*/next/dist/compiled/tar' -exec rm -rf {} + 2>/dev/null || true
 
 RUN mkdir -p /app/public/uploads /app/storage/reconciliation /app/data \
   && chown -R nextjs:nodejs /app/public/uploads /app/storage/reconciliation /app/data
