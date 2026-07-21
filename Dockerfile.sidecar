@@ -56,6 +56,37 @@ COPY --from=prod-deps --chown=nextjs:nodejs /app/package.json /app/pnpm-lock.yam
 COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --from=bundle --chown=nextjs:nodejs /app/sidecar-dist ./sidecar-dist
 
+# @sentry/nextjs (prod) pulls webpack → minimizer-webpack-plugin → esbuild peer.
+# Sidecar never runs webpack/Next builds; the Go binary @esbuild/linux-x64/bin/esbuild
+# is build-only tooling that Trivy correctly fails on (CVE-2026-42504 / CVE-2025-68121).
+# Remove esbuild packages, peer-link folders, and shims; fail build if Go binary remains.
+RUN set -eux; \
+  rm -rf \
+    /app/node_modules/esbuild \
+    /app/node_modules/@esbuild \
+    /app/node_modules/.pnpm/esbuild@* \
+    /app/node_modules/.pnpm/@esbuild+* \
+    /app/node_modules/.pnpm/node_modules/@esbuild \
+    /app/node_modules/.pnpm/node_modules/esbuild; \
+  # Remove any remaining esbuild package dirs / dangling peer symlinks (pnpm layout).
+  find /app/node_modules -depth \( \
+      \( -type d -name 'esbuild' \) \
+      -o \( -type d -name '@esbuild' \) \
+      -o \( -type l -name 'esbuild' \) \
+      -o \( -type f -name 'esbuild' \) \
+      -o \( -type f -name 'esbuild.exe' \) \
+    \) -print -exec rm -rf {} + 2>/dev/null || true; \
+  leftovers="$(find /app -type f \( \
+      -path '*/@esbuild/*/bin/esbuild' \
+      -o -path '*/esbuild/bin/esbuild' \
+    \) 2>/dev/null || true)"; \
+  if [ -n "$leftovers" ]; then \
+    echo "ERROR: esbuild Go binary still present in runtime image:"; \
+    echo "$leftovers"; \
+    exit 1; \
+  fi; \
+  echo "OK: no esbuild Go binaries in sidecar runtime image"
+
 USER nextjs
 
 # Compose supplies the process, e.g. node sidecar-dist/socket-server.js
