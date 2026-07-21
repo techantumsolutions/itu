@@ -53,6 +53,7 @@ ENV NODE_ENV=production \
 #
 # Drop npm/corepack from the runtime image. Official node images ship npm with
 # nested deps (tar, etc.) that Trivy flags High/Critical; this image only needs `node`.
+# Also clear /root/.cache (corepack) so leftover toolchain caches are not scanned.
 RUN apk add --no-cache wget su-exec \
   && addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 --ingroup nodejs nextjs \
@@ -62,7 +63,9 @@ RUN apk add --no-cache wget su-exec \
     /usr/local/bin/npm \
     /usr/local/bin/npx \
     /usr/local/bin/corepack \
-    /opt/yarn-v*
+    /opt/yarn-v* \
+    /root/.cache \
+    /tmp/*
 
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
