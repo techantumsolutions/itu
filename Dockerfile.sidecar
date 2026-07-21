@@ -29,6 +29,10 @@ COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
 COPY --chown=nextjs:nodejs scripts ./scripts
 COPY --chown=nextjs:nodejs lib ./lib
 
+# Next vendors node-tar for build-time SWC download only — not needed at sidecar runtime.
+# Removes CVE-2026-59873 / CVE-2026-59874 from Trivy High/Critical image scans.
+RUN find /app/node_modules -type d -path '*/next/dist/compiled/tar' -prune -exec rm -rf {} +
+
 USER nextjs
 
 # Intentionally no CMD / ENTRYPOINT — compose supplies the process command.
