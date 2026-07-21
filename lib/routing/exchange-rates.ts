@@ -11,6 +11,19 @@ const DEFAULT_FALLBACK_TO_EUR: Record<string, number> = {
   AED: 0.25,
   CAD: 0.68,
   AUD: 0.6,
+  NPR: 0.0069,
+  BDT: 0.0084,
+  PKR: 0.0033,
+  LKR: 0.0031,
+  XCD: 0.34,
+  NGN: 0.0006,
+  PHP: 0.016,
+  MYR: 0.2,
+  THB: 0.027,
+  SGD: 0.7,
+  SAR: 0.245,
+  ZAR: 0.05,
+  AFN: 0.012,
 }
 
 function parseFallbackFromEnv(): Record<string, number> {

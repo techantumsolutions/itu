@@ -1347,7 +1347,7 @@ export function HeroTab() {
                                   <Pencil className="h-4 w-4" />
                                 </Button>
                               </DialogTrigger>
-                              <DialogContent>
+                              <DialogContent className="max-w-lg">
                                 <DialogHeader>
                                   <DialogTitle>Edit FAQ</DialogTitle>
                                 </DialogHeader>

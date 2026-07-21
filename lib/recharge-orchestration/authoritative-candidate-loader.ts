@@ -74,7 +74,9 @@ function mappingRowFromAuthoritative(
     provider_currency: row.provider_wholesale_currency,
     provider_priority: row.provider_priority,
     margin: overlay.margin,
-    enabled: overlay.enabled,
+    // plan_mappings is authoritative discovery — never let stale
+    // internal_plan_provider_mapping.enabled=false block a live mapping.
+    enabled: true,
     destination_amount: row.destination_face_value,
     destination_currency: row.destination_currency,
   }

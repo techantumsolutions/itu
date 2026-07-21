@@ -561,7 +561,7 @@ export default function AdminProductsPage() {
                 <TableHead className="w-[12%]">Country</TableHead>
                 <TableHead className="w-[20%]">Operator name</TableHead>
                 <TableHead className="w-[14%]">Provider</TableHead>
-                <TableHead className="w-[10%]">Category</TableHead>
+                {/* <TableHead className="w-[10%]">Category</TableHead> */}
                 <TableHead className="w-[10%]">Status</TableHead>
                 {showStatusToggle ? (
                 <TableHead className="w-[12%] text-right">Action</TableHead>
@@ -690,7 +690,7 @@ export default function AdminProductsPage() {
                         ? displayProvidersCsv(plan.provider_names ?? [])
                         : '—'}
                     </TableCell>
-                    <TableCell className="capitalize">{plan.category || '—'}</TableCell>
+                    {/* <TableCell className="capitalize">{plan.category || '—'}</TableCell> */}
                     <TableCell>
                       <Badge variant={plan.active ? 'default' : 'secondary'}>
                         {plan.active ? 'Active' : 'Inactive'}

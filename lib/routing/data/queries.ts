@@ -10,7 +10,7 @@ import type {
   RoutingStrategy,
   FallbackStrategy,
 } from '@/lib/routing/types'
-import { enc, mapSettings } from './shared'
+import { enc, mapSettings, parseRoutingLogOperatorRef } from './shared'
 import { mapRoutingLogRow } from './mapping'
 
 export async function getLcrEngineSettings(): Promise<LcrEngineSettings | null> {
@@ -63,7 +63,55 @@ export async function listRoutingRules(): Promise<RoutingRuleRow[]> {
   )
   if (!res.ok) return []
   const rows = (await res.json()) as Record<string, unknown>[]
-  return rows.map(mapRule)
+  const rules = rows.map(mapRule)
+  return enrichRoutingRulesWithOperatorNames(rules)
+}
+
+async function enrichRoutingRulesWithOperatorNames(
+  rules: RoutingRuleRow[],
+): Promise<RoutingRuleRow[]> {
+  if (!rules.length) return rules
+
+  const uuidSet = new Set<string>()
+  for (const rule of rules) {
+    const { uuid } = parseRoutingLogOperatorRef(rule.operatorId)
+    if (uuid) uuidSet.add(uuid)
+  }
+  if (uuidSet.size === 0) {
+    return rules.map((rule) => ({
+      ...rule,
+      operatorName: rule.operatorId ? rule.operatorId : null,
+    }))
+  }
+
+  const nameByUuid = new Map<string, string>()
+  const uuidList = [...uuidSet]
+  for (let i = 0; i < uuidList.length; i += 50) {
+    const chunk = uuidList.slice(i, i + 50)
+    const opRes = await supabaseRest(
+      `system_operators?id=in.(${chunk.map(enc).join(',')})&select=id,system_operator_name,slug`,
+      { cache: 'no-store' },
+    )
+    if (!opRes.ok) continue
+    const opRows = (await opRes.json()) as Array<{
+      id: string
+      system_operator_name?: string | null
+      slug?: string | null
+    }>
+    for (const row of opRows) {
+      const name = String(row.system_operator_name ?? row.slug ?? '').trim()
+      if (name) nameByUuid.set(String(row.id), name)
+    }
+  }
+
+  return rules.map((rule) => {
+    const { uuid, raw } = parseRoutingLogOperatorRef(rule.operatorId)
+    const operatorName =
+      (uuid ? nameByUuid.get(uuid) : null) ??
+      (raw && !uuid ? raw : null) ??
+      null
+    return { ...rule, operatorName }
+  })
 }
 
 export async function getRoutingRule(id: string): Promise<RoutingRuleRow | null> {

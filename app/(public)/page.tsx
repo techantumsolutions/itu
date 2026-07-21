@@ -853,13 +853,13 @@ export default function HomePage() {
                     <CountryFlagThumb src={row.flagImageSrc} alt={row.countryName} />
                     <p className="text-sm font-semibold text-neutral-900">{row.countryName}</p>
                   </div>
-                  <p className="mt-2 text-sm text-neutral-500">
+                  {/* <p className="mt-2 text-sm text-neutral-500">
                     {operatorCountsByIso === null ? (
                       <span className="text-neutral-400">Loading…</span>
                     ) : (
                       <>{operatorCountsByIso[row.countryCode.trim().toUpperCase()] ?? 0} operators available</>
                     )}
-                  </p>
+                  </p> */}
                   <Button
                     variant="outline"
                     className="mt-4 w-full rounded-md bg-neutral-50 font-semibold text-neutral-800 hover:border-blue-600 hover:bg-blue-600 hover:text-white"

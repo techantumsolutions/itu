@@ -214,7 +214,9 @@ export function resolveWholesalePricing(input: {
 
   return {
     wholesaleAmount,
-    wholesaleCurrency,
+    wholesaleCurrency:
+      wholesaleCurrency ??
+      (wholesaleAmount != null && wholesaleAmount > 0 ? 'EUR' : null),
     destinationAmount,
     destinationCurrency,
   }

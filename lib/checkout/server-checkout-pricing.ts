@@ -86,14 +86,8 @@ async function resolveSystemPlanId(input: {
 }
 
 async function fetchEurBaseRates(): Promise<Record<string, number> | null> {
-  try {
-    const rateRes = await fetch('https://open.er-api.com/v6/latest/EUR', { cache: 'no-store' })
-    if (!rateRes.ok) return null
-    const data = (await rateRes.json()) as { rates?: Record<string, number> }
-    return data.rates ?? null
-  } catch {
-    return null
-  }
+  const { fetchEurBaseRates: fetchShared } = await import('@/lib/checkout/currency-conversion')
+  return fetchShared()
 }
 
 /**

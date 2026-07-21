@@ -636,6 +636,7 @@ export default function TopupSummaryPage() {
     operator,
     operatorProviderId,
     checkoutSessionId,
+    checkoutBlock,
     selectedPlan,
     pricing,
     calculatePricing,
@@ -820,10 +821,10 @@ export default function TopupSummaryPage() {
       router.replace('/topup')
       return
     }
-    if (!checkoutSessionId) {
+    if (!checkoutSessionId && !checkoutBlock) {
       router.replace('/topup')
     }
-  }, [storeHydrated, selectedPlan, pricing, checkoutSessionId, router])
+  }, [storeHydrated, selectedPlan, pricing, checkoutSessionId, checkoutBlock, router])
 
 
   // Fetch wallet balance
@@ -1384,7 +1385,7 @@ export default function TopupSummaryPage() {
   }, [isAuthenticated])
 
   const proceedToPay = () => {
-    if (!selectedPlan || !pricing || isSubmitting) return
+    if (!selectedPlan || !pricing || isSubmitting || checkoutBlock) return
 
     if (!isAuthenticated) {
       setPayAfterLogin(true)
@@ -1425,6 +1426,36 @@ export default function TopupSummaryPage() {
             <p className="mt-1 text-center text-xs text-neutral-400">
               Please confirm your recharge details before proceeding to payment
             </p>
+            {checkoutBlock ? (
+              <div
+                className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-left text-sm text-amber-950"
+                role="alert"
+              >
+                <p className="font-semibold">
+                  {checkoutBlock.code === 'MONTHLY_LIMIT_EXCEEDED'
+                    ? 'Monthly recharge limit exceeded'
+                    : checkoutBlock.code === 'PLAN_EXCEEDS_BAND'
+                      ? 'Plan exceeds allowed recharge band'
+                      : 'Unable to verify recharge limit'}
+                </p>
+                <p className="mt-1 text-amber-900/90">{checkoutBlock.message}</p>
+                {checkoutBlock.limitEur != null ? (
+                  <p className="mt-2 text-xs text-amber-800">
+                    Used: €{(checkoutBlock.usedEur ?? 0).toFixed(2)} of €{checkoutBlock.limitEur.toFixed(2)}
+                    {checkoutBlock.remainingEur != null
+                      ? ` · Remaining this month: €${checkoutBlock.remainingEur.toFixed(2)}`
+                      : null}
+                  </p>
+                ) : null}
+                <button
+                  type="button"
+                  className="mt-3 text-xs font-semibold text-amber-900 underline underline-offset-2"
+                  onClick={() => router.push('/topup')}
+                >
+                  Choose another plan
+                </button>
+              </div>
+            ) : null}
           </div>
 
           <div className="grid gap-6 px-6 pb-8 md:grid-cols-[1fr_320px] md:px-8">
@@ -1745,6 +1776,7 @@ export default function TopupSummaryPage() {
                   )}
                   onClick={proceedToPay}
                   disabled={
+                    Boolean(checkoutBlock) ||
                     isSubmitting ||
                     amounts.conversionFailed ||
                     (amounts.grand > 0 && !razorpayPaymentCheck.ok)

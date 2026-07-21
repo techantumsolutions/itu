@@ -256,7 +256,7 @@ function TopupPlanSelectionContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const user = useAuthStore((s) => s.user)
-  const { countryCode, phoneNumber, operator, setPhoneDetails, setOperator, selectPlan, calculatePricing, setCheckoutSession } =
+  const { countryCode, phoneNumber, operator, setPhoneDetails, setOperator, selectPlan, calculatePricing, setCheckoutSession, setCheckoutBlock } =
     useTopupStore()
   const selectedCountry = useMemo(() => {
     return countriesList.find((c) => c.code.toUpperCase() === countryCode.toUpperCase())
@@ -581,8 +581,39 @@ function TopupPlanSelectionContent() {
           tax,
         }),
       })
-      const data = await res.json().catch(() => ({}))
+      const data = await res.json().catch(() => ({})) as {
+        ok?: boolean
+        error?: string
+        code?: string
+        monthlyUsage?: {
+          usedEur?: number
+          remainingEur?: number | null
+          limitEur?: number | null
+        }
+        selectedProviderName?: string
+        checkoutSessionId?: string
+        transactionId?: string
+        rechargeOrderId?: string
+        rechargeAttemptId?: string
+        operatorName?: string
+      }
       if (!res.ok || !data?.ok) {
+        const limitCodes = new Set(['MONTHLY_LIMIT_EXCEEDED', 'PLAN_EXCEEDS_BAND', 'FX_CONVERSION_FAILED'])
+        if (data?.code && limitCodes.has(data.code)) {
+          selectPlan(plan)
+          calculatePricing({ fee: processingFee, serviceFee, tax })
+          setCheckoutBlock({
+            code: data.code as 'MONTHLY_LIMIT_EXCEEDED' | 'PLAN_EXCEEDS_BAND' | 'FX_CONVERSION_FAILED',
+            message:
+              data.error ||
+              'Your monthly recharge limit is exceeded.',
+            usedEur: data.monthlyUsage?.usedEur,
+            remainingEur: data.monthlyUsage?.remainingEur,
+            limitEur: data.monthlyUsage?.limitEur,
+          })
+          router.push('/topup/summary')
+          return
+        }
         console.error('Provider selection failed:', data?.error)
         alert(data?.error || 'No provider available for this plan. Please try another plan or operator.')
         return
@@ -594,7 +625,7 @@ function TopupPlanSelectionContent() {
         setOperator(data.operatorName)
       }
       setCheckoutSession({
-        checkoutSessionId: data.checkoutSessionId,
+        checkoutSessionId: data.checkoutSessionId!,
         transactionId: data.transactionId,
         rechargeOrderId: data.rechargeOrderId,
         rechargeAttemptId: data.rechargeAttemptId,
@@ -738,7 +769,7 @@ function TopupPlanSelectionContent() {
         ) : (
           <>
             <div className="mt-10 flex flex-col items-center justify-between gap-4 md:flex-row">
-              <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="w-full md:w-auto">
+              <Tabs value={tab} onValueChange={(v) => setTab(v as any)} className="w-full md:w-auto overflow-x-auto">
                 <TabsList className="h-12 rounded-full bg-transparent p-0 shadow-none ring-0">
                   {tabs.map((t) => (
                     <TabsTrigger

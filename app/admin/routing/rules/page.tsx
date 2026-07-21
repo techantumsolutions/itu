@@ -48,6 +48,7 @@ type Rule = {
   ruleName: string
   countryId: string | null
   operatorId: string | null
+  operatorName?: string | null
   productType: string | null
   providerId: string
   providerCode?: string
@@ -155,7 +156,15 @@ export default function RoutingRulesPage() {
       const countriesData = await countriesRes.json().catch(() => ({}))
       const providersData = await providersRes.json().catch(() => ({}))
       if (!rulesRes.ok) throw new Error(rulesData.error ?? 'Failed to load rules')
-      setRules(Array.isArray(rulesData.rules) ? rulesData.rules : [])
+      const loadedRules: Rule[] = Array.isArray(rulesData.rules) ? rulesData.rules : []
+      setRules(loadedRules)
+      setOperatorLabelCache((prev) => {
+        const next = { ...prev }
+        for (const r of loadedRules) {
+          if (r.operatorId && r.operatorName?.trim()) next[r.operatorId] = r.operatorName.trim()
+        }
+        return next
+      })
 
       const mappedCountries = Array.isArray(countriesData.countries)
         ? countriesData.countries.map((c: any) => ({ iso3: c.iso3, label: c.name }))
@@ -254,6 +263,7 @@ export default function RoutingRulesPage() {
           r.ruleName.toLowerCase().includes(q) ||
           (r.countryId ?? '').toLowerCase().includes(q) ||
           (r.operatorId ?? '').toLowerCase().includes(q) ||
+          (r.operatorName ?? '').toLowerCase().includes(q) ||
           (r.providerCode ?? '').toLowerCase().includes(q)
         )
       })
@@ -443,9 +453,10 @@ export default function RoutingRulesPage() {
     }
   }
 
-  function operatorLabel(operatorId: string | null) {
-    if (!operatorId) return 'Any'
-    return operatorLabelCache[operatorId] ?? operatorId.slice(0, 12)
+  function operatorLabel(rule: Pick<Rule, 'operatorId' | 'operatorName'>) {
+    if (!rule.operatorId) return 'Any'
+    if (rule.operatorName?.trim()) return rule.operatorName.trim()
+    return operatorLabelCache[rule.operatorId] ?? 'Unknown operator'
   }
 
   /** Resolve a country ISO3 to its display label */
@@ -579,7 +590,7 @@ export default function RoutingRulesPage() {
                       <TableCell>
                         <CountryCell countryId={rule.countryId} />
                       </TableCell>
-                      <TableCell>{operatorLabel(rule.operatorId)}</TableCell>
+                      <TableCell>{operatorLabel(rule)}</TableCell>
                       <TableCell>
                         {displayProvider({
                           id: rule.providerId,

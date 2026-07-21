@@ -44,6 +44,9 @@ export async function POST(request: Request) {
         {
           ok: false,
           error: result.error ?? 'Provider selection failed',
+          code: result.code,
+          monthlyUsage: result.monthlyUsage,
+          planPriceEur: result.planPriceEur,
           transactionId: result.transactionId,
         },
         { status: 422 },

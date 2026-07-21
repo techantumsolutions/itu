@@ -25,6 +25,8 @@ export type RoutingRuleRow = {
   ruleName: string
   countryId: string | null
   operatorId: string | null
+  /** Resolved from system_operators when operatorId is a UUID. */
+  operatorName?: string | null
   productType: string | null
   providerId: string
   providerCode?: string

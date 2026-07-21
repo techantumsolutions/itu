@@ -33,6 +33,34 @@ export function crossRateUsingEurBase(
   return converted == null ? null : converted
 }
 
+let eurBaseRatesCache: { rates: EurBaseRates; loadedAt: number } | null = null
+const EUR_BASE_RATES_CACHE_MS = 5 * 60_000
+
+/** Live EUR-base FX (open.er-api). Cached briefly to avoid rate-limit storms. */
+export async function fetchEurBaseRates(options?: { force?: boolean }): Promise<EurBaseRates | null> {
+  const now = Date.now()
+  if (
+    !options?.force &&
+    eurBaseRatesCache &&
+    now - eurBaseRatesCache.loadedAt < EUR_BASE_RATES_CACHE_MS
+  ) {
+    return eurBaseRatesCache.rates
+  }
+  try {
+    const res = await fetch('https://open.er-api.com/v6/latest/EUR', { cache: 'no-store' })
+    if (!res.ok) return eurBaseRatesCache?.rates ?? null
+    const data = (await res.json()) as { rates?: Record<string, number> }
+    const rates = data.rates ?? null
+    if (rates && Object.keys(rates).length) {
+      eurBaseRatesCache = { rates, loadedAt: now }
+      return rates
+    }
+  } catch {
+    /* ignore */
+  }
+  return eurBaseRatesCache?.rates ?? null
+}
+
 export function formatMoney(amount: number, currency: string): string {
   const code = normalizeCurrencyCode(currency)
   if (code === 'INR') return `₹${amount.toFixed(2)}`
@@ -57,6 +85,7 @@ export const COMMON_PAYABLE_CURRENCIES = [
   'AFN',
   'BDT',
   'PKR',
+  'NPR',
   'NGN',
   'PHP',
   'MYR',

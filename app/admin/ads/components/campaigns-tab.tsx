@@ -188,7 +188,7 @@ export function CampaignsTab() {
           <DialogTrigger asChild>
             <Button onClick={openNew} data-perm="create"><Plus className="w-4 h-4 mr-2" /> New Campaign</Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>{formData.id ? 'Edit Campaign' : 'Create Campaign'}</DialogTitle>
               <DialogDescription>Set the name and duration of the campaign.</DialogDescription>

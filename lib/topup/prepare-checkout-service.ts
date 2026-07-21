@@ -32,7 +32,9 @@ import { loadRechargeProcessingFeeConfig } from '@/lib/settings/recharge-process
 import {
   assertWithinMonthlyRechargeLimit,
   getMonthlyRechargeLimitEur,
+  type MonthlyRechargeUsage,
 } from '@/lib/settings/recharge-monthly-limit'
+import { fetchEurBaseRates } from '@/lib/checkout/currency-conversion'
 import {
   resolveServerCheckoutPricing,
   serverPricingToTransactionMeta,
@@ -72,6 +74,9 @@ export type PrepareCheckoutResult = {
   routingResult?: RoutingDecisionSnapshot
   lcrResult?: LcrSelectionResult
   error?: string
+  code?: 'FX_CONVERSION_FAILED' | 'PLAN_EXCEEDS_BAND' | 'MONTHLY_LIMIT_EXCEEDED' | 'NO_PROVIDER'
+  monthlyUsage?: MonthlyRechargeUsage
+  planPriceEur?: number
   operatorName?: string
   /** Server-authoritative payable (plan + fees) in recharge currency. */
   payable?: {
@@ -453,15 +458,23 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
   // Rolling 30-day EUR recharge cap from fee-range max amounts (server face only)
   try {
     const feeConfig = await loadRechargeProcessingFeeConfig()
+    const eurBaseRates = await fetchEurBaseRates()
     const limitCheck = await assertWithinMonthlyRechargeLimit({
       config: feeConfig,
       planPrice: pricing.planPrice,
       planCurrency: pricing.currency,
       userId: input.userId,
       phoneNumber: input.mobileNumber,
+      eurBaseRates,
     })
     if (!limitCheck.ok) {
-      return { ok: false, error: limitCheck.error }
+      return {
+        ok: false,
+        error: limitCheck.error,
+        code: limitCheck.code,
+        monthlyUsage: limitCheck.usage,
+        planPriceEur: limitCheck.planPriceEur,
+      }
     }
   } catch (e) {
     console.error('[prepareCheckout] monthly limit check failed:', e)
@@ -552,7 +565,7 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
       executionResult: reason,
     }).catch(() => {})
     await markTransactionFailed(transactionId, errMsg, { routing: routingResult })
-    return { ok: false, transactionId, checkoutSessionId, error: errMsg }
+    return { ok: false, transactionId, checkoutSessionId, error: errMsg, code: 'NO_PROVIDER' }
   }
 
   const phoneDigits = toInternationalSubscriberDigits(
@@ -586,7 +599,7 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
     await markTransactionFailed(transactionId, errMsg, {
       insufficient_balance: selection.insufficientBalance,
     })
-    return { ok: false, transactionId, checkoutSessionId, error: errMsg }
+    return { ok: false, transactionId, checkoutSessionId, error: errMsg, code: 'NO_PROVIDER' }
   }
 
   const selected = selection.candidate
