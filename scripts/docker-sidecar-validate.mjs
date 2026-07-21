@@ -125,9 +125,8 @@ function validateSocket() {
     '-e',
     'SOCKET_PORT=3001',
     IMAGE,
-    'npm',
-    'run',
-    'socket:server',
+    'node',
+    'sidecar-dist/socket-server.js',
   ])
   must(r.status === 0, 'socket container start')
   sleep(4000)
@@ -172,9 +171,8 @@ function validateWorker() {
     '-e',
     'NODE_ENV=development',
     IMAGE,
-    'npm',
-    'run',
-    'lcr:worker',
+    'node',
+    'sidecar-dist/lcr-sync-worker.js',
   ])
   must(r.status === 0, 'worker container start')
   sleep(8000)
@@ -207,9 +205,8 @@ function validateCron() {
     '-e',
     'CRON_PROVIDER_SYNC_INTERVAL_HOURS=24',
     IMAGE,
-    'npm',
-    'run',
-    'cron:provider-sync',
+    'node',
+    'sidecar-dist/provider-sync-cron.js',
   ])
   must(r.status === 0, 'cron container start')
   sleep(3000)
@@ -222,7 +219,7 @@ function validateCron() {
 }
 
 /** System-plans: Supabase-backed sweep init */
-function validateSystemPlans(scriptName, npmScript, logNeedle) {
+function validateSystemPlans(scriptName, distFile, logNeedle) {
   const supabaseUrl = dockerReachableUrl(process.env.SUPABASE_URL)
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
   must(!!supabaseUrl && !!serviceKey, `SUPABASE_* for ${scriptName}`)
@@ -248,9 +245,8 @@ function validateSystemPlans(scriptName, npmScript, logNeedle) {
     '-e',
     onceEnv,
     IMAGE,
-    'npm',
-    'run',
-    npmScript,
+    'node',
+    distFile,
   ])
   must(r.status === 0, `${scriptName} container start`)
   sleep(15000)
@@ -282,12 +278,12 @@ async function main() {
   validateCron()
   validateSystemPlans(
     'availability',
-    'system-plans:availability',
+    'sidecar-dist/system-plans-availability-worker.js',
     '\\[system-plans-availability\\] starting',
   )
   validateSystemPlans(
     'merge',
-    'system-plans:merge-duplicates',
+    'sidecar-dist/system-plans-duplicate-merge-worker.js',
     '\\[system-plans-duplicate-merge\\] starting',
   )
 

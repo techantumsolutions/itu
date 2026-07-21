@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Shared sidecar image (socket, BullMQ worker, cron, system-plans) — Phase 3E cache mounts.
+# Sidecar image: bundle TS entrypoints, ship prod node_modules only (no tsx/esbuild/supabase).
 
 FROM node:22-alpine AS base
 # wget  — socket HEALTHCHECK (compose)
@@ -14,35 +14,48 @@ COPY package.json pnpm-lock.yaml ./
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
-FROM base AS runner
+# Production deps only — excludes tsx/esbuild/supabase (Go binaries Trivy flags).
+FROM base AS prod-deps
+COPY package.json pnpm-lock.yaml ./
+RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile --prod
+
+FROM base AS bundle
+COPY package.json pnpm-lock.yaml tsconfig.json ./
+COPY --from=deps /app/node_modules ./node_modules
+COPY scripts ./scripts
+COPY lib ./lib
+RUN node scripts/bundle-sidecar.mjs \
+  && test -f sidecar-dist/socket-server.js \
+  && test -f sidecar-dist/lcr-sync-worker.js \
+  && test -f sidecar-dist/provider-sync-cron.js \
+  && test -f sidecar-dist/system-plans-availability-worker.js \
+  && test -f sidecar-dist/system-plans-duplicate-merge-worker.js
+
+# Minimal runtime: node + prod modules + pre-bundled JS. No npm/corepack/cache.
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1
 
-RUN addgroup --system --gid 1001 nodejs \
+RUN apk add --no-cache wget procps \
+  && addgroup --system --gid 1001 nodejs \
   && adduser --system --uid 1001 --ingroup nodejs nextjs \
-  # Runtime uses `pnpm run …` (compose). Drop npm so Trivy does not fail on its
-  # nested tar/sigstore CVEs; keep corepack + pnpm from the base stage.
-  # Also drop corepack's download cache — Trivy flags Go stdlib CVEs (e.g.
-  # CVE-2026-42504) inside /root/.cache/node/corepack leftovers.
   && rm -rf \
     /usr/local/lib/node_modules/npm \
+    /usr/local/lib/node_modules/corepack \
     /usr/local/bin/npm \
     /usr/local/bin/npx \
+    /usr/local/bin/corepack \
     /opt/yarn-v* \
     /root/.cache \
     /tmp/*
 
-# Lockfiles first (metadata), then deps, then runtime source — maximizes cache hits.
-COPY --chown=nextjs:nodejs package.json pnpm-lock.yaml tsconfig.json ./
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
-COPY --chown=nextjs:nodejs scripts ./scripts
-COPY --chown=nextjs:nodejs lib ./lib
-
-# Next vendors node-tar for build-time SWC download only — not needed at sidecar runtime.
-RUN find /app/node_modules -type d -path '*/next/dist/compiled/tar' -exec rm -rf {} + 2>/dev/null || true
+COPY --from=prod-deps --chown=nextjs:nodejs /app/package.json /app/pnpm-lock.yaml ./
+COPY --from=prod-deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=bundle --chown=nextjs:nodejs /app/sidecar-dist ./sidecar-dist
 
 USER nextjs
 
-# Intentionally no CMD / ENTRYPOINT — compose supplies the process command.
+# Compose supplies the process, e.g. node sidecar-dist/socket-server.js
