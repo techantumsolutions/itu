@@ -58,6 +58,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
+# Next vendors node-tar only for build-time SWC download. Strip it from the runtime
+# image so image scans do not fail on CVE-2026-59873 / CVE-2026-59874 until Next bumps it.
+RUN find /app -type d -path '*/next/dist/compiled/tar' -prune -exec rm -rf {} +
+
 RUN mkdir -p /app/public/uploads /app/storage/reconciliation /app/data \
   && chown -R nextjs:nodejs /app/public/uploads /app/storage/reconciliation /app/data
 
