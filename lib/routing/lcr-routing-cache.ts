@@ -1,65 +1,56 @@
 /**
- * Short-TTL read caches for LCR routing hot paths.
- * Reduces duplicate DB reads within bursts (checkout, failover hops, simulations).
- * Does not change routing decisions — only caches immutable-for-seconds config/catalog reads.
+ * Short-TTL Redis caches for LCR routing hot paths (replica-safe).
+ * Does not change routing decisions — only caches config/catalog reads.
  */
 import type { LcrEngineSettings, ProviderPriorityRow, RoutingRuleRow } from '@/lib/routing/types'
 import type { AuthoritativeCandidateBundle } from '@/lib/recharge-orchestration/authoritative-candidate-loader'
 import { getLcrEngineSettings, listRoutingRules, listProviderPriorities } from '@/lib/routing/repository'
 import { loadAuthoritativeCandidateBundle } from '@/lib/recharge-orchestration/authoritative-candidate-loader'
+import { cacheDelByPrefix, cacheGetJson, cacheSetJson } from '@/lib/cache/redis'
 
-const DEFAULT_TTL_MS = 30_000
+const DEFAULT_TTL_SEC = 30
+const PREFIX = 'lcr:routing:v1:'
 
-type CacheEntry<T> = { value: T; expiresAt: number }
+type Box<T> = { v: T }
 
-function readCache<T>(entry: CacheEntry<T> | undefined): T | undefined {
-  if (!entry) return undefined
-  if (Date.now() > entry.expiresAt) return undefined
-  return entry.value
+async function getBox<T>(key: string): Promise<T | undefined> {
+  const hit = await cacheGetJson<Box<T>>(key)
+  if (!hit || !('v' in hit)) return undefined
+  return hit.v
 }
 
-function writeCache<T>(value: T, ttlMs: number): CacheEntry<T> {
-  return { value, expiresAt: Date.now() + ttlMs }
+async function setBox<T>(key: string, value: T): Promise<void> {
+  await cacheSetJson(key, { v: value } satisfies Box<T>, DEFAULT_TTL_SEC)
 }
 
-let settingsCache: CacheEntry<LcrEngineSettings | null> | undefined
-let rulesCache: CacheEntry<RoutingRuleRow[]> | undefined
-let prioritiesCache: CacheEntry<ProviderPriorityRow[]> | undefined
-const bundleCache = new Map<string, CacheEntry<AuthoritativeCandidateBundle | null>>()
-
-const countryIso3Cache = new Map<string, CacheEntry<string>>()
-const operatorCache = new Map<string, CacheEntry<{ id: string; name: string }>>()
-
-export function clearLcrRoutingCaches(): void {
-  settingsCache = undefined
-  rulesCache = undefined
-  prioritiesCache = undefined
-  bundleCache.clear()
-  countryIso3Cache.clear()
-  operatorCache.clear()
+export async function clearLcrRoutingCaches(): Promise<void> {
+  await cacheDelByPrefix(PREFIX)
 }
 
 export async function getCachedLcrEngineSettings(): Promise<LcrEngineSettings | null> {
-  const hit = readCache(settingsCache)
+  const key = `${PREFIX}settings`
+  const hit = await getBox<LcrEngineSettings | null>(key)
   if (hit !== undefined) return hit
   const value = await getLcrEngineSettings()
-  settingsCache = writeCache(value, DEFAULT_TTL_MS)
+  await setBox(key, value)
   return value
 }
 
 export async function getCachedRoutingRules(): Promise<RoutingRuleRow[]> {
-  const hit = readCache(rulesCache)
+  const key = `${PREFIX}rules`
+  const hit = await getBox<RoutingRuleRow[]>(key)
   if (hit !== undefined) return hit
   const value = await listRoutingRules()
-  rulesCache = writeCache(value, DEFAULT_TTL_MS)
+  await setBox(key, value)
   return value
 }
 
 export async function getCachedProviderPriorities(): Promise<ProviderPriorityRow[]> {
-  const hit = readCache(prioritiesCache)
+  const key = `${PREFIX}priorities`
+  const hit = await getBox<ProviderPriorityRow[]>(key)
   if (hit !== undefined) return hit
   const value = await listProviderPriorities()
-  prioritiesCache = writeCache(value, DEFAULT_TTL_MS)
+  await setBox(key, value)
   return value
 }
 
@@ -67,13 +58,13 @@ export async function getCachedAuthoritativeBundle(
   internalPlanId: string,
   systemPlanId?: string | null,
 ): Promise<AuthoritativeCandidateBundle | null> {
-  const key = `${internalPlanId}:${systemPlanId ?? ''}`
-  const hit = readCache(bundleCache.get(key))
+  const key = `${PREFIX}bundle:${internalPlanId}:${systemPlanId ?? ''}`
+  const hit = await getBox<AuthoritativeCandidateBundle | null>(key)
   if (hit !== undefined) return hit
   const value = await loadAuthoritativeCandidateBundle(internalPlanId, {
     systemPlanId: systemPlanId ?? undefined,
   })
-  bundleCache.set(key, writeCache(value, DEFAULT_TTL_MS))
+  await setBox(key, value)
   return value
 }
 
@@ -88,22 +79,29 @@ export async function getCachedActiveRoutingRules(): Promise<RoutingRuleRow[]> {
   })
 }
 
-export function getCachedCountryIso3(countryId: string): string | undefined {
-  return readCache(countryIso3Cache.get(countryId.trim().toUpperCase()))
+export async function getCachedCountryIso3(countryId: string): Promise<string | undefined> {
+  const key = `${PREFIX}iso3:${countryId.trim().toUpperCase()}`
+  return getBox<string>(key)
 }
 
-export function setCachedCountryIso3(countryId: string, iso3: string): void {
-  countryIso3Cache.set(countryId.trim().toUpperCase(), writeCache(iso3, DEFAULT_TTL_MS))
+export async function setCachedCountryIso3(countryId: string, iso3: string): Promise<void> {
+  const key = `${PREFIX}iso3:${countryId.trim().toUpperCase()}`
+  await setBox(key, iso3)
 }
 
-export function getCachedOperator(countryIso3: string, operatorKey: string): { id: string; name: string } | undefined {
-  return readCache(operatorCache.get(`${countryIso3}:${operatorKey.trim().toLowerCase()}`))
+export async function getCachedOperator(
+  countryIso3: string,
+  operatorKey: string,
+): Promise<{ id: string; name: string } | undefined> {
+  const key = `${PREFIX}op:${countryIso3}:${operatorKey.trim().toLowerCase()}`
+  return getBox<{ id: string; name: string }>(key)
 }
 
-export function setCachedOperator(
+export async function setCachedOperator(
   countryIso3: string,
   operatorKey: string,
   value: { id: string; name: string },
-): void {
-  operatorCache.set(`${countryIso3}:${operatorKey.trim().toLowerCase()}`, writeCache(value, DEFAULT_TTL_MS))
+): Promise<void> {
+  const key = `${PREFIX}op:${countryIso3}:${operatorKey.trim().toLowerCase()}`
+  await setBox(key, value)
 }

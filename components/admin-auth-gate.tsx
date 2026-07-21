@@ -5,8 +5,8 @@ import { usePathname, useRouter } from 'next/navigation'
 import { Loader2, ShieldAlert } from 'lucide-react'
 import { useAuthStore } from '@/lib/stores'
 import type { User } from '@/lib/types'
-import { isClientAdminUser } from '@/lib/tickets/auth-headers'
-import { clientHasAdminPermission, getRequiredViewPermissionForPath } from '@/lib/auth/client-features'
+import { isClientAdminUser } from '@/lib/auth/client-role'
+import { clientHasAdminPermission, clientAppRole, getRequiredViewPermissionForPath } from '@/lib/auth/client-features'
 
 type AdminAuthGateProps = {
   children: React.ReactNode
@@ -101,7 +101,9 @@ export function AdminAuthGate({ children }: AdminAuthGateProps) {
   const requiredPermission = getRequiredViewPermissionForPath(pathname)
   let authorized = true
 
-  if (requiredPermission) {
+  if (requiredPermission === 'super_admin') {
+    authorized = clientAppRole(user) === 'super_admin'
+  } else if (requiredPermission) {
     authorized = clientHasAdminPermission(user, requiredPermission)
   }
 

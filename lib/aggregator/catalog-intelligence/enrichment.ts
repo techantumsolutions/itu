@@ -30,9 +30,13 @@ export function computeRawQuality(raw: unknown): RawQualityMetrics {
   const hasDescription = Boolean(fields.description || fields.productName)
   const hasBenefits = fields.benefits.length > 0
   const hasCategory = Boolean(fields.type || fields.serviceName || fields.subserviceName || row.category || row.plan_type)
-  const hasAmount = num(row.amount ?? row.retailAmount ?? row.destination?.amount) != null
+  const destination =
+    row.destination && typeof row.destination === 'object'
+      ? (row.destination as Record<string, unknown>)
+      : null
+  const hasAmount = num(row.amount ?? row.retailAmount ?? destination?.amount) != null
   const hasValidity = Boolean(row.validity || row.validityDays || fields.description.match(/\b\d+\s*days?\b/i))
-  const hasCurrency = Boolean(row.currency || row.retailCurrency || row.destination?.unit)
+  const hasCurrency = Boolean(row.currency || row.retailCurrency || destination?.unit)
 
   const flags = [hasDescription, hasBenefits, hasCategory, hasAmount, hasValidity, hasCurrency]
   const rawCompletenessPercent = Math.round((flags.filter(Boolean).length / flags.length) * 100)

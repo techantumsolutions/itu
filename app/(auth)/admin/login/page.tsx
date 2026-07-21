@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
 import { useAuthStore } from '@/lib/stores'
-import { isClientAdminUser, isClientSuperAdmin } from '@/lib/tickets/auth-headers'
+import { isClientAdminUser, isClientSuperAdmin } from '@/lib/auth/client-role'
 import { useFingerprint } from '@/hooks/use-fingerprint'
 import { RecaptchaCheckbox } from '@/components/security/RecaptchaCheckbox'
 import { useRecaptchaField } from '@/hooks/use-recaptcha-field'
@@ -259,8 +259,8 @@ export default function AdminLoginPage() {
                 <p className="font-medium">Local dev</p>
                 <p>
                   Use the same port as <code className="rounded bg-white/80 px-1">npm run dev</code> (often{' '}
-                  <strong>3001</strong> if 3000 is busy). Default password after reset:{' '}
-                  <strong>1234567890</strong>
+                  <strong>3001</strong> if 3000 is busy). Password comes from{' '}
+                  <code className="rounded bg-white/80 px-1">ADMIN_BOOTSTRAP_PASSWORD</code> in .env.
                 </p>
                 {devHint ? <p className="text-green-800">{devHint}</p> : null}
                 <Button
@@ -281,9 +281,8 @@ export default function AdminLoginPage() {
                       })
                       const data = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; error?: string }
                       if (!res.ok || !data.ok) throw new Error(data.error ?? 'Reset failed')
-                      setDevHint(data.message ?? 'Super admin reset. Sign in with admin@itu.com / 1234567890')
+                      setDevHint(data.message ?? 'Super admin reset. Sign in with ADMIN_BOOTSTRAP_PASSWORD from .env')
                       setEmail(DEV_DEFAULT_EMAIL)
-                      setPassword('1234567890')
                     } catch (e) {
                       setError(e instanceof Error ? e.message : 'Could not reset dev admin')
                     } finally {

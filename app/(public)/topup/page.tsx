@@ -16,7 +16,7 @@ import { flagEmojiFromIso } from '@/lib/lcr/countries'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { countriesList, getFlagEmoji, validateNationalPhoneDigits } from '@/lib/country-codes'
-import { formatPlanRechargeValue } from '@/lib/catalog/plan-recharge-value'
+import { formatPlanRechargeValue } from '@/lib/catalog/format-plan-recharge-value'
 import {
   computeRechargeProcessingFeeAmount,
   DEFAULT_RECHARGE_PROCESSING_FEES,
@@ -24,10 +24,10 @@ import {
 } from '@/lib/settings/recharge-processing-fees'
 import { englishPlanDisplayFields } from '@/lib/catalog/plan-text-english'
 import { useAuthStore } from '@/lib/stores'
-import { buildUserAuthHeaders } from '@/lib/auth/get-user-id-from-request'
+import { buildUserAuthHeaders } from '@/lib/auth/client-auth-headers'
 
 function cleanOperatorName(name: string): string {
-  let val = (name ?? '').trim()
+  const val = (name ?? '').trim()
   if (!val) return ''
   const suffixPattern = /\s+(India|Mexico|Jamaica|Puerto\s+Rico|IND|MX|JM|PR|NGA|GHA|KEN|PHL|IDN|BGD|USA|GBR|ESP|FRA|DEU|ITA|AFG|GTM|GTM)$/i
   return val.replace(suffixPattern, '').trim()
@@ -156,7 +156,7 @@ function classifyPlanType(planName: string, benefits: string, dbType?: string): 
 }
 
 function removeOperatorName(text: string, operatorName: string): string {
-  let val = (text ?? '').trim()
+  const val = (text ?? '').trim()
   if (!val || !operatorName || operatorName.toLowerCase() === 'unknown') return val
 
   const escapedOp = operatorName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')

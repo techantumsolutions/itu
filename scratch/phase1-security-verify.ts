@@ -154,7 +154,11 @@ async function main() {
   console.log(`Phase 1 Security Verification — ${BASE}\n`)
 
   const adminEmail = process.env.VERIFY_ADMIN_EMAIL ?? process.env.ADMIN_BOOTSTRAP_EMAIL ?? 'admin@itu.com'
-  const adminPassword = process.env.VERIFY_ADMIN_PASSWORD ?? process.env.ADMIN_BOOTSTRAP_PASSWORD ?? '1234567890'
+  const adminPassword = process.env.VERIFY_ADMIN_PASSWORD ?? process.env.ADMIN_BOOTSTRAP_PASSWORD
+  if (!adminPassword?.trim()) {
+    console.error('Set VERIFY_ADMIN_PASSWORD or ADMIN_BOOTSTRAP_PASSWORD')
+    process.exit(1)
+  }
 
   const adminLogin = await login(adminEmail, adminPassword, 'admin')
   let adminCookie = ''

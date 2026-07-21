@@ -64,7 +64,7 @@ export function legacyProviderCostFromFields(fields: ProviderPricingLogFields): 
 
 export function detailedRoutingLogPricingInput(
   fields: ProviderPricingLogFields,
-  extra?: { providerPlanId?: string | null },
+  _extra?: { providerPlanId?: string | null },
 ) {
   return {
     providerCost: legacyProviderCostFromFields(fields),
@@ -74,7 +74,5 @@ export function detailedRoutingLogPricingInput(
     destinationFaceValue: fields.destination_face_value,
     destinationCurrency: fields.destination_currency,
     normalizedProviderPrice: fields.normalized_provider_price,
-    providerPlanId: extra?.providerPlanId ?? undefined,
-    selectedProvider: fields.selected_provider ?? undefined,
   }
 }

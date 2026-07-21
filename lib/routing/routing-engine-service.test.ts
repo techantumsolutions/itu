@@ -31,11 +31,11 @@ jest.mock('./lcr-routing-cache', () => ({
   getCachedProviderPriorities: jest.fn(async () => []),
   getCachedActiveRoutingRules: jest.fn(async () => []),
   getCachedAuthoritativeBundle: jest.fn(async () => null),
-  getCachedCountryIso3: jest.fn(() => undefined),
-  setCachedCountryIso3: jest.fn(),
-  getCachedOperator: jest.fn(() => undefined),
-  setCachedOperator: jest.fn(),
-  clearLcrRoutingCaches: jest.fn(),
+  getCachedCountryIso3: jest.fn(async () => undefined),
+  setCachedCountryIso3: jest.fn(async () => undefined),
+  getCachedOperator: jest.fn(async () => undefined),
+  setCachedOperator: jest.fn(async () => undefined),
+  clearLcrRoutingCaches: jest.fn(async () => undefined),
 }))
 
 jest.mock('@/lib/db/supabase-rest', () => ({

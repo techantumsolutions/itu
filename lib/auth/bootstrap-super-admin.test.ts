@@ -57,22 +57,29 @@ describe('bootstrapSuperAdmin', () => {
     jest.restoreAllMocks()
   })
 
-  it('creates missing admin with bootstrap password', async () => {
+  it('creates missing admin with bootstrap password from env', async () => {
+    process.env.ADMIN_BOOTSTRAP_PASSWORD = 'bootstrap-from-env'
     const fetchSpy = mockListUsers([])
 
     const result = await bootstrapSuperAdmin()
 
     expect(result.created).toBe(true)
     expect(result.passwordReset).toBe(false)
-    expect(result.passwordSource).toBe('default')
+    expect(result.passwordSource).toBe('env')
     expect(result.userId).toBe(CREATED_USER_ID)
     expect(mockCreateUser).toHaveBeenCalledWith({
       email: ADMIN_EMAIL,
-      password: '1234567890',
+      password: 'bootstrap-from-env',
       name: 'ITU Admin',
     })
     expect(fetchSpy.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false)
     expect(mockSupabaseRest).toHaveBeenCalled()
+  })
+
+  it('rejects create when ADMIN_BOOTSTRAP_PASSWORD is missing', async () => {
+    mockListUsers([])
+    await expect(bootstrapSuperAdmin()).rejects.toThrow(/ADMIN_BOOTSTRAP_PASSWORD/)
+    expect(mockCreateUser).not.toHaveBeenCalled()
   })
 
   it('preserves existing admin password by default', async () => {

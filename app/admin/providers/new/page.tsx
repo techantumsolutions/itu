@@ -18,7 +18,7 @@ import { ArrowLeft } from 'lucide-react'
 import { useAuthStore } from '@/lib/stores'
 import { toast } from 'sonner'
 import type { User } from '@/lib/types'
-import { isClientAdminUser } from '@/lib/tickets/auth-headers'
+import { isClientAdminUser } from '@/lib/auth/client-role'
 import { clientHasAdminPermission } from '@/lib/auth/client-features'
 
 function adminHeaders(user: User) {

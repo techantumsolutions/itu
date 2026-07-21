@@ -32,6 +32,7 @@ jest.mock('ioredis', () => jest.fn(() => mockRedis))
 
 describe('redis cache layer', () => {
   beforeEach(() => {
+    process.env.CACHE_L1_ENABLED = 'true'
     jest.clearAllMocks()
     resetCacheStats()
     clearLocalCacheForTests()
@@ -39,6 +40,10 @@ describe('redis cache layer', () => {
     mockRedis.get.mockReset()
     mockRedis.scan.mockReset()
     mockRedis.scan.mockResolvedValue(['0', []])
+  })
+
+  afterEach(() => {
+    delete process.env.CACHE_L1_ENABLED
   })
 
   it('tracks L1 hits without calling Redis on repeated reads', async () => {

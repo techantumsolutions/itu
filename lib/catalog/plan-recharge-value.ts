@@ -5,6 +5,7 @@ import { normalizeProviderCostSync } from '@/lib/routing/normalize-provider-cost
 
 export type { PlanRechargeValue } from '@/lib/catalog/raw-plan-recharge'
 export { rechargeValueFromRawPlan } from '@/lib/catalog/raw-plan-recharge'
+export { formatPlanRechargeValue } from '@/lib/catalog/format-plan-recharge-value'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -20,19 +21,6 @@ export async function batchLoadSystemPlanRechargeValues(
     result.set(systemPlanId, details.recharge)
   }
   return result
-}
-
-export function formatPlanRechargeValue(
-  amount: number | null | undefined,
-  currency: string | null | undefined,
-): string {
-  if (amount == null || !Number.isFinite(amount) || amount <= 0) return '—'
-  const formatted = amount.toLocaleString(undefined, {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  })
-  const code = (currency ?? '').trim().toUpperCase()
-  return code ? `${formatted} ${code}` : formatted
 }
 
 /** Resolve recharge values keyed by internal_plan.id via linked system_plans. */

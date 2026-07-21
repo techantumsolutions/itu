@@ -188,7 +188,7 @@ export interface ExportOptions {
   format:     ExportFormat
   fileName?:  string
   columns?:   string[]    // subset of column keys; undefined = all visible
-  filters:    ReportFilters
+  filters?:   ReportFilters
   sort?:      ReportSort
   reportName?: string
   generatedBy?: string

@@ -1,5 +1,5 @@
 import { supabaseRest } from '@/lib/db/supabase-rest'
-import { extractPricingFromRaw } from '@/lib/admin/provider-pricing-extractor'
+import { extractPricingFromRaw } from '@/lib/pricing/provider-pricing-extractor'
 import {
   resolveProviderWholesaleCost,
   resolveRechargeCostDisplay,

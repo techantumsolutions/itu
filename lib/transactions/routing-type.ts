@@ -8,7 +8,7 @@ export function formatRoutingType(value: string | null | undefined): string {
   if (v === 'LCR') return 'LCR (Least Cost)'
   if (v === 'ROUTING_RULE') return 'Routing Rule'
   if (v === 'LEAST_COST' || v === 'LEAST_COST_SELECTED') return 'LCR (Least Cost)'
-  return value.trim()
+  return v || '—'
 }
 
 export function resolveRoutingTypeLabel(metadata: Record<string, unknown> | null | undefined): string {

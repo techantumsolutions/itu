@@ -264,7 +264,7 @@ export async function POST(req: Request) {
     if (!isTrusted) {
       // Handle 2FA flow
       const tempToken = crypto.randomUUID()
-      let method: 'totp' | 'email_otp' = 'email_otp' // Use email OTP for everyone
+      const method: 'totp' | 'email_otp' = 'email_otp' // Use email OTP for everyone
       
       // Save temp session to Redis (valid for 15 minutes)
       await cacheSetJson(`temp_2fa_session:${tempToken}`, {

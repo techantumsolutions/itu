@@ -1,13 +1,18 @@
-import { runtimeEnv } from '@/lib/env/runtime'
 import Redis from 'ioredis'
+import { buildRedisOptions } from '@/lib/cache/redis-connection'
 
 let client: Redis | null = null
 let connecting: Promise<void> | null = null
 
-/** Process-local L1 cache — avoids Redis round-trips for burst reads of the same key. */
+/** Process-local L1 is disabled by default so replicas stay coherent after Redis invalidation.
+ * Set CACHE_L1_ENABLED=true only for single-instance latency experiments. */
 const L1_MAX_ENTRIES = 512
 const L1_TTL_MS = 2_000
 const l1Cache = new Map<string, { raw: string; expiresAt: number }>()
+
+function isL1Enabled(): boolean {
+  return process.env.CACHE_L1_ENABLED === 'true'
+}
 
 export type CacheStats = {
   hits: number
@@ -46,6 +51,7 @@ export function clearLocalCacheForTests(): void {
 }
 
 function l1Get(key: string): string | null {
+  if (!isL1Enabled()) return null
   const entry = l1Cache.get(key)
   if (!entry) return null
   if (Date.now() > entry.expiresAt) {
@@ -58,6 +64,7 @@ function l1Get(key: string): string | null {
 }
 
 function l1Set(key: string, raw: string): void {
+  if (!isL1Enabled()) return
   if (l1Cache.size >= L1_MAX_ENTRIES) {
     const oldest = l1Cache.keys().next().value
     if (oldest) l1Cache.delete(oldest)
@@ -76,18 +83,20 @@ function l1DelByPrefix(prefix: string): void {
 }
 
 function getRedisClient(): Redis | null {
-  const url = runtimeEnv('REDIS_URL')
-  if (!url) return null
-
   if (client) return client
-  const c = new Redis(url, {
-    connectTimeout: 800,
-    maxRetriesPerRequest: 1,
-    enableOfflineQueue: false,
-    lazyConnect: true,
-    retryStrategy: () => null,
-    tls: url.startsWith('rediss://') ? {} : undefined,
-  })
+
+  let opts: ReturnType<typeof buildRedisOptions>
+  try {
+    opts = buildRedisOptions()
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('[redis] auth/config error', error instanceof Error ? error.message : error)
+    return null
+  }
+  if (!opts) return null
+
+  const { url, ...rest } = opts
+  const c = new Redis(url, rest)
 
   c.on('connect', () => {
     // eslint-disable-next-line no-console

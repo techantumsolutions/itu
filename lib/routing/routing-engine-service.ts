@@ -45,7 +45,7 @@ function enc(v: string): string {
 
 export async function normalizeCountryToIso3(countryId: string): Promise<string> {
   const code = (countryId || '').trim().toUpperCase()
-  const cached = getCachedCountryIso3(code)
+  const cached = await getCachedCountryIso3(code)
   if (cached) return cached
 
   if (code.length === 2) {
@@ -58,7 +58,7 @@ export async function normalizeCountryToIso3(countryId: string): Promise<string>
         const rows = await res.json() as Array<{ id: string }>
         if (rows?.[0]?.id) {
           const iso3 = rows[0].id.toUpperCase()
-          setCachedCountryIso3(code, iso3)
+          await setCachedCountryIso3(code, iso3)
           return iso3
         }
       }
@@ -66,7 +66,7 @@ export async function normalizeCountryToIso3(countryId: string): Promise<string>
       // fallback
     }
   }
-  setCachedCountryIso3(code, code)
+  await setCachedCountryIso3(code, code)
   return code
 }
 
@@ -84,7 +84,7 @@ export async function resolveSystemOperator(
     return { id: op, name: op || 'Unknown' }
   }
 
-  const cached = getCachedOperator(countryIso3, op)
+  const cached = await getCachedOperator(countryIso3, op)
   if (cached) return cached
 
   let lookupId = op
@@ -110,7 +110,7 @@ export async function resolveSystemOperator(
           id: `system:${rows[0].id}`,
           name: rows[0].system_operator_name,
         }
-        setCachedOperator(countryIso3, op, info)
+        await setCachedOperator(countryIso3, op, info)
         return info
       }
     }
@@ -119,7 +119,7 @@ export async function resolveSystemOperator(
   }
 
   const fallback = { id: op, name: op }
-  setCachedOperator(countryIso3, op, fallback)
+  await setCachedOperator(countryIso3, op, fallback)
   return fallback
 }
 
@@ -326,6 +326,7 @@ function evaluateCandidates(
         providerId,
         providerName,
         providerCode,
+        providerPlanId: '',
         activeStatus,
         onlineStatus,
         mappingExists,
@@ -673,7 +674,7 @@ export class RoutingEngineService {
     // Candidate providers count (providers that have a mapping)
     const candidate_provider_count = evaluated.filter((e) => e.mappingExists).length
     // Eligible providers count
-    let eligible = evaluated.filter((e) => e.eligible)
+    const eligible = evaluated.filter((e) => e.eligible)
     const eligible_provider_count = eligible.length
 
     console.log(`[ROUTING] candidate_provider_count: ${candidate_provider_count} | eligible_provider_count: ${eligible_provider_count}`)

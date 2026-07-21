@@ -9,7 +9,7 @@ export type BootstrapSuperAdminResult = {
   /** True only when an existing user's password was explicitly reset. */
   passwordReset: boolean
   /** Set when a password was assigned (create or explicit reset); null when preserved. */
-  passwordSource: 'env' | 'default' | null
+  passwordSource: 'env' | null
 }
 
 export type BootstrapSuperAdminOptions = {
@@ -98,10 +98,11 @@ export async function bootstrapSuperAdmin(
   options?: BootstrapSuperAdminOptions,
 ): Promise<BootstrapSuperAdminResult> {
   const email = (options?.email ?? process.env.ADMIN_BOOTSTRAP_EMAIL ?? 'admin@itu.com').trim().toLowerCase()
-  const password = options?.password ?? process.env.ADMIN_BOOTSTRAP_PASSWORD ?? '1234567890'
+  const password =
+    (typeof options?.password === 'string' && options.password.trim()) ||
+    (process.env.ADMIN_BOOTSTRAP_PASSWORD || '').trim()
   const name = options?.name ?? process.env.ADMIN_BOOTSTRAP_NAME ?? 'ITU Admin'
   const resetPassword = options?.resetPassword === true
-  const passwordFromEnv = Boolean(options?.password || process.env.ADMIN_BOOTSTRAP_PASSWORD)
 
   if (!runtimeEnv('SUPABASE_URL') || !runtimeEnv('SUPABASE_SERVICE_ROLE_KEY')) {
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set')
@@ -116,15 +117,25 @@ export async function bootstrapSuperAdmin(
   if (existing.length > 0) {
     userId = existing[0]!.id
     if (resetPassword) {
+      if (!password) {
+        throw new Error(
+          'ADMIN_BOOTSTRAP_PASSWORD (or options.password) is required to reset the super admin password',
+        )
+      }
       await updateUserPassword(userId, password)
       passwordReset = true
-      passwordSource = passwordFromEnv ? 'env' : 'default'
+      passwordSource = 'env'
     }
   } else {
+    if (!password) {
+      throw new Error(
+        'ADMIN_BOOTSTRAP_PASSWORD (or options.password) is required to create the super admin',
+      )
+    }
     const row = await supabaseAdminCreateUser({ email, password, name })
     userId = row.id
     created = true
-    passwordSource = passwordFromEnv ? 'env' : 'default'
+    passwordSource = 'env'
   }
 
   await upsertSuperAdminProfile(userId, email, name)

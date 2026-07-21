@@ -63,7 +63,7 @@ export async function GET(request: Request) {
   const res = await supabaseRest(`internal_plans?${filters.join('&')}`, { cache: 'no-store' })
   if (!res.ok) return NextResponse.json({ error: 'Failed to load internal plans' }, { status: 500 })
 
-  let rows = (await res.json()) as InternalPlanRow[]
+  const rows = (await res.json()) as InternalPlanRow[]
   const systemIds = rows
     .map((row) => (row.operator_ref?.startsWith('system:') ? row.operator_ref.slice('system:'.length) : ''))
     .filter(Boolean)

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { guardCatalog } from '@/lib/db/require-catalog'
 import { prepareCheckout } from '@/lib/topup/prepare-checkout-service'
 import { getUserIdFromRequest } from '@/lib/auth/get-user-id-from-request'
-import { attachUserIdToCheckoutRecords } from '@/lib/topup/attach-checkout-user'
+import { attachUserIdToCheckoutRecords } from '@/lib/checkout/attach-checkout-user'
 
 /** Pre-payment: routing rules + LCR, persist provider selection, create PENDING_PAYMENT transaction. */
 export async function POST(request: Request) {
@@ -16,22 +16,18 @@ export async function POST(request: Request) {
     const mobileNumber = typeof body.mobileNumber === 'string' ? body.mobileNumber.trim() : ''
     const operatorId = typeof body.operatorId === 'string' ? body.operatorId.trim() : ''
     const countryId = typeof body.countryId === 'string' ? body.countryId.trim() : ''
-    const amount = Number(body.amount)
-    const currency = typeof body.currency === 'string' ? body.currency.trim().toUpperCase() : 'INR'
 
-    if (!planId || !mobileNumber || !operatorId || !countryId || !Number.isFinite(amount) || amount <= 0) {
+    // Client monetary fields (amount, planPrice, fees, tax, payable, wallet, reward) are ignored.
+    // Payable is resolved server-side from catalog + fee settings.
+    if (!planId || !mobileNumber || !operatorId || !countryId) {
       return NextResponse.json(
-        { ok: false, error: 'Missing required fields: planId, mobileNumber, operatorId, countryId, amount' },
+        {
+          ok: false,
+          error: 'Missing required fields: planId, mobileNumber, operatorId, countryId',
+        },
         { status: 400 },
       )
     }
-
-    const serviceFee = typeof body.serviceFee === 'number' ? body.serviceFee : undefined
-    const tax = typeof body.tax === 'number' ? body.tax : undefined
-    const planPrice = typeof body.planPrice === 'number' ? body.planPrice : undefined
-    const platformFee = typeof body.platformFee === 'number' ? body.platformFee : undefined
-    const paymentGatewayFee =
-      typeof body.paymentGatewayFee === 'number' ? body.paymentGatewayFee : undefined
 
     const userId = await getUserIdFromRequest(request)
     const result = await prepareCheckout({
@@ -40,14 +36,7 @@ export async function POST(request: Request) {
       mobileNumber,
       operatorId,
       countryId,
-      amount,
-      currency,
-      planPrice,
       userId: userId || undefined,
-      serviceFee,
-      platformFee,
-      paymentGatewayFee,
-      tax,
     })
 
     if (!result.ok) {
@@ -80,6 +69,7 @@ export async function POST(request: Request) {
       selectedProviderCost: result.selectedProviderCost,
       selectedProviderCurrency: result.selectedProviderCurrency,
       operatorName: result.operatorName,
+      payable: result.payable,
     })
   } catch (e) {
     console.error('topup/prepare-checkout:', e)

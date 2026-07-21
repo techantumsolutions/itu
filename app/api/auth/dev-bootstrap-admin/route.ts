@@ -28,15 +28,9 @@ export async function POST(req: Request) {
     const result = await bootstrapSuperAdmin({ resetPassword })
     let message: string
     if (result.created) {
-      message =
-        result.passwordSource === 'env'
-          ? 'Super admin created. Sign in with ADMIN_BOOTSTRAP_PASSWORD from .env.'
-          : 'Super admin created. Sign in with email above and password 1234567890 (dev default).'
+      message = 'Super admin created. Sign in with ADMIN_BOOTSTRAP_PASSWORD from .env.'
     } else if (result.passwordReset) {
-      message =
-        result.passwordSource === 'env'
-          ? 'Super admin password reset. Sign in with ADMIN_BOOTSTRAP_PASSWORD from .env.'
-          : 'Super admin password reset. Sign in with email above and password 1234567890 (dev default).'
+      message = 'Super admin password reset. Sign in with ADMIN_BOOTSTRAP_PASSWORD from .env.'
     } else {
       message = 'Super admin profile ensured. Existing password was not changed.'
     }

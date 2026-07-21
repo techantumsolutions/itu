@@ -217,7 +217,10 @@ async function measureCacheSpeedup(urlPath: string, category: Category): Promise
 
 async function adminCookie(): Promise<string | null> {
   const email = process.env.VERIFY_ADMIN_EMAIL ?? process.env.ADMIN_BOOTSTRAP_EMAIL ?? 'admin@itu.com'
-  const password = process.env.VERIFY_ADMIN_PASSWORD ?? process.env.ADMIN_BOOTSTRAP_PASSWORD ?? '1234567890'
+  const password = process.env.VERIFY_ADMIN_PASSWORD ?? process.env.ADMIN_BOOTSTRAP_PASSWORD
+  if (!password?.trim()) {
+    throw new Error('Set VERIFY_ADMIN_PASSWORD or ADMIN_BOOTSTRAP_PASSWORD')
+  }
   try {
     const res = await fetch(`${BASE}/api/auth/login`, {
       method: 'POST',

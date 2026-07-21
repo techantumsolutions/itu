@@ -258,11 +258,11 @@ export async function runStep7Promote(
   config: any,
   syncRunId?: string | null
 ): Promise<{ success: boolean; message: string; data?: any }> {
-  const { trustedOperators, domainRegistry, nonTelecomRegistry } = await aggLoadCatalogIntelligenceRegistries().catch(() => ({
-    trustedOperators: [],
-    domainRegistry: [],
-    nonTelecomRegistry: [],
-  }))
+  const { trustedOperators, domainRegistry, nonTelecomRegistry } = await aggLoadCatalogIntelligenceRegistries().catch((): Awaited<ReturnType<typeof aggLoadCatalogIntelligenceRegistries>> => ({
+      trustedOperators: [],
+      domainRegistry: [],
+      nonTelecomRegistry: [],
+    }))
   const catalogEngine = new CatalogIntelligenceEngine(trustedOperators, domainRegistry, nonTelecomRegistry)
   const registryMatcher = await createRegistryMatcher()
 
@@ -535,9 +535,9 @@ export async function runStep7Promote(
     promotedPlans += planResult.promoted
     skippedCrossCountryPlans += planResult.skippedCrossCountry
 
-    if (systemOperator.id) {
+    if (systemOperatorId) {
       await OperatorTrustEngine.learnFromPromotion(
-        systemOperator.id,
+        systemOperatorId,
         displayOperatorName,
         countryIso3 || '*',
         providerId,

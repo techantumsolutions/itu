@@ -33,6 +33,11 @@ import {
   assertWithinMonthlyRechargeLimit,
   getMonthlyRechargeLimitEur,
 } from '@/lib/settings/recharge-monthly-limit'
+import {
+  resolveServerCheckoutPricing,
+  serverPricingToTransactionMeta,
+  type ServerCheckoutPricing,
+} from '@/lib/checkout/server-checkout-pricing'
 
 function enc(v: string): string {
   return encodeURIComponent(v)
@@ -50,17 +55,7 @@ export type PrepareCheckoutInput = {
   mobileNumber: string
   operatorId: string
   countryId: string
-  /** Total in recharge currency (plan + fees) used for routing / transaction amount. */
-  amount: number
-  currency: string
-  /** Plan face value only (before fees), as shown on summary. */
-  planPrice?: number
   userId?: string
-  /** Combined platform + gateway fee (legacy). Prefer platformFee + paymentGatewayFee. */
-  serviceFee?: number
-  platformFee?: number
-  paymentGatewayFee?: number
-  tax?: number
 }
 
 export type PrepareCheckoutResult = {
@@ -78,9 +73,29 @@ export type PrepareCheckoutResult = {
   lcrResult?: LcrSelectionResult
   error?: string
   operatorName?: string
+  /** Server-authoritative payable (plan + fees) in recharge currency. */
+  payable?: {
+    planPrice: number
+    currency: string
+    platformFee: number
+    paymentGatewayFee: number
+    tax: number
+    serviceFee: number
+    payableAmount: number
+  }
 }
 
-async function createPendingTransaction(input: PrepareCheckoutInput & { operatorName: string }): Promise<string | null> {
+async function createPendingTransaction(input: {
+  planId: string
+  systemPlanId?: string
+  mobileNumber: string
+  operatorId: string
+  countryId: string
+  userId?: string
+  operatorName: string
+  pricing: ServerCheckoutPricing
+}): Promise<string | null> {
+  const pricingMeta = serverPricingToTransactionMeta(input.pricing)
   const res = await supabaseRest('transactions?select=id', {
     method: 'POST',
     headers: { Prefer: 'return=representation' },
@@ -88,17 +103,18 @@ async function createPendingTransaction(input: PrepareCheckoutInput & { operator
       {
         user_id: input.userId || null,
         type: 'recharge',
-        amount: input.amount,
-        currency: input.currency,
+        amount: input.pricing.payableAmount,
+        currency: input.pricing.currency,
         status: 'pending_payment',
         description: `Recharge ${input.mobileNumber}`,
         metadata: {
           plan_id: input.planId,
-          system_plan_id: input.systemPlanId || null,
+          system_plan_id: input.pricing.systemPlanId || input.systemPlanId || null,
           mobile_number: input.mobileNumber,
           operator_id: input.operatorId,
           country_id: input.countryId,
           checkout_phase: 'provider_selected_awaiting_payment',
+          ...pricingMeta,
         },
       },
     ]),
@@ -115,35 +131,24 @@ async function createPendingRechargeOrder(input: {
   operatorId: string
   operatorName: string
   countryId: string
-  amount: number
-  currency: string
-  planPrice?: number
+  pricing: ServerCheckoutPricing
   /** Real catalog plan display name (not operator + uuid). */
   planName?: string
   userId?: string
   rechargeAttemptId?: string
-  serviceFee?: number
-  platformFee?: number
-  paymentGatewayFee?: number
-  tax?: number
   selectedProviderId?: string
   selectedProviderName?: string
   selectedProviderCost?: number
   selectedProviderCurrency?: string
   routingType?: string
 }): Promise<string | null> {
-  const currency = (input.currency || 'INR').trim().toUpperCase()
-  const platformFee = Math.max(0, input.platformFee ?? 0)
-  const paymentGatewayFee = Math.max(0, input.paymentGatewayFee ?? 0)
-  const serviceFee =
-    platformFee + paymentGatewayFee > 0
-      ? platformFee + paymentGatewayFee
-      : Math.max(0, input.serviceFee ?? 0)
-  const tax = input.tax ?? 0
-  const planPrice =
-    input.planPrice != null && Number.isFinite(input.planPrice) && input.planPrice > 0
-      ? input.planPrice
-      : Math.max(0, input.amount - serviceFee - tax)
+  const currency = input.pricing.currency
+  const platformFee = input.pricing.platformFee
+  const paymentGatewayFee = input.pricing.paymentGatewayFee
+  const serviceFee = input.pricing.serviceFee
+  const tax = input.pricing.tax
+  const planPrice = input.pricing.planPrice
+  const amount = input.pricing.payableAmount
   const providerCost =
     input.selectedProviderCost != null && Number.isFinite(input.selectedProviderCost)
       ? input.selectedProviderCost
@@ -154,6 +159,7 @@ async function createPendingRechargeOrder(input: {
   const routingType = input.routingType ? String(input.routingType).trim().toUpperCase() : null
   const planDisplayName =
     (input.planName && input.planName.trim()) ||
+    input.pricing.planName ||
     `${input.operatorName} Plan`
 
   // Enforce mandatory user_id lookup fallback
@@ -175,7 +181,7 @@ async function createPendingRechargeOrder(input: {
     sku_code: input.planId,
     plan_id: input.planId,
     product_name: planDisplayName,
-    send_amount: input.amount,
+    send_amount: amount,
     send_currency: currency,
     receive_amount: providerCost,
     receive_currency: providerCostCurrency,
@@ -200,9 +206,10 @@ async function createPendingRechargeOrder(input: {
       payment_gateway_fee: paymentGatewayFee,
       tax,
       tax_currency: currency,
-      total_payable: input.amount,
+      total_payable: amount,
       payment_currency: currency,
-      user_pay_amount: input.amount,
+      user_pay_amount: amount,
+      pricing_source: 'server',
       selected_provider: input.selectedProviderId,
       provider_cost: providerCost,
       provider_cost_currency: providerCostCurrency,
@@ -218,7 +225,7 @@ async function createPendingRechargeOrder(input: {
     plan_price_currency: currency,
     service_fee_currency: currency,
     tax_currency: currency,
-    total_payable: input.amount,
+    total_payable: amount,
     payment_currency: currency,
     provider_cost: providerCost,
     provider_cost_currency: providerCostCurrency,
@@ -346,8 +353,6 @@ async function selectValidatedProviderFromChain(input: {
         planId: input.planId,
         routingStrategy: input.routingResult.settings?.routingStrategy || 'LEAST_COST',
         routingRuleMatched: input.routingResult.routingType === 'RULE' ? 'Yes' : 'No',
-        selectedProvider: candidate.providerId,
-        providerPlanId: candidate.providerPlanId,
         ...candidatePricingLog(candidate),
         providerPriority: candidate.providerPriority,
         executionResult: 'PROVIDER_PRE_VALIDATION_SKIPPED',
@@ -395,7 +400,6 @@ async function logProviderSelection(input: {
       planId: input.planId,
       routingStrategy: input.routingResult.settings?.routingStrategy || 'LEAST_COST',
       routingRuleMatched: input.routingResult.routingType === 'RULE' ? 'Yes' : 'No',
-      selectedProvider: e.providerId,
       ...candidatePricingLog(e),
       providerPriority: e.providerPriority,
       executionResult: isFiltered ? 'LCR_PROVIDER_FILTERED' : 'LCR_PROVIDER_DISCOVERED',
@@ -413,37 +417,46 @@ async function logProviderSelection(input: {
     })),
     insufficientBalance: input.insufficientBalance ?? [],
     inactive: evaluated.filter((e) => e.activeStatus === false).map((e) => e.providerId),
-    selected: (input.selected ?? input.routingResult.selected)
-      ? {
-          id: input.routingResult.selected.providerId,
-          name: input.routingResult.selected.providerName,
-          cost: input.routingResult.selected.provider_wholesale_amount ?? input.routingResult.selected.price,
-          currency: input.routingResult.selected.provider_wholesale_currency ?? input.routingResult.selected.currency,
-        }
-      : null,
+    selected: (() => {
+      const sel = input.selected ?? input.routingResult.selected
+      if (!sel) return null
+      return {
+        id: sel.providerId,
+        name: sel.providerName,
+        cost: sel.provider_wholesale_amount ?? sel.price,
+        currency: sel.provider_wholesale_currency ?? sel.currency,
+      }
+    })(),
   })
 }
 
 export async function prepareCheckout(input: PrepareCheckoutInput): Promise<PrepareCheckoutResult> {
+  const pricingResult = await resolveServerCheckoutPricing({
+    planId: input.planId,
+    systemPlanId: input.systemPlanId,
+  })
+  if (!pricingResult.ok) {
+    return { ok: false, error: pricingResult.error }
+  }
+  const pricing = pricingResult.pricing
+  const effectiveSystemPlanId = pricing.systemPlanId || input.systemPlanId
+
   const normalizedCountryId = await normalizeCountryToIso3(input.countryId)
   const operatorInfo = await resolveSystemOperator(input.operatorId, normalizedCountryId)
   const normalizedInput = {
     ...input,
+    systemPlanId: effectiveSystemPlanId || undefined,
     countryId: normalizedCountryId,
     operatorId: operatorInfo.id,
   }
 
-  // Rolling 30-day EUR recharge cap from fee-range max amounts
-  const planFace =
-    typeof input.planPrice === 'number' && Number.isFinite(input.planPrice) && input.planPrice > 0
-      ? input.planPrice
-      : input.amount
+  // Rolling 30-day EUR recharge cap from fee-range max amounts (server face only)
   try {
     const feeConfig = await loadRechargeProcessingFeeConfig()
     const limitCheck = await assertWithinMonthlyRechargeLimit({
       config: feeConfig,
-      planPrice: planFace,
-      planCurrency: input.currency || 'INR',
+      planPrice: pricing.planPrice,
+      planCurrency: pricing.currency,
       userId: input.userId,
       phoneNumber: input.mobileNumber,
     })
@@ -466,8 +479,14 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
   }
 
   const transactionId = await createPendingTransaction({
-    ...normalizedInput,
+    planId: normalizedInput.planId,
+    systemPlanId: normalizedInput.systemPlanId,
+    mobileNumber: normalizedInput.mobileNumber,
+    operatorId: normalizedInput.operatorId,
+    countryId: normalizedInput.countryId,
+    userId: normalizedInput.userId,
     operatorName: operatorInfo.name,
+    pricing,
   })
   if (!transactionId) {
     return { ok: false, error: 'Failed to create pending transaction' }
@@ -497,6 +516,7 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
   let resolvedPlanName =
     (typeof plan?.uti_plan_name === 'string' && plan.uti_plan_name.trim()) ||
     (typeof plan?.name === 'string' && plan.name.trim()) ||
+    pricing.planName ||
     ''
   if (!resolvedPlanName && normalizedInput.systemPlanId) {
     const sysRes = await supabaseRest(
@@ -545,8 +565,8 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
     planId: normalizedInput.planId,
     systemPlanId: normalizedInput.systemPlanId,
     phoneDigits,
-    amount: input.amount,
-    currency: input.currency,
+    amount: pricing.payableAmount,
+    currency: pricing.currency,
     countryCode,
     operatorCode,
   })
@@ -593,8 +613,8 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
     distributorRef: transactionId,
     internalPlanId: snapshot.internal_plan_id,
     phoneNumber: phoneDigits,
-    sendAmount: input.amount,
-    currency: input.currency || 'INR',
+    sendAmount: pricing.payableAmount,
+    currency: pricing.currency,
     routingDecision: { ...snapshot, lcr_result: lcrResult },
     status: 'pending_payment',
     selectedProviderId: selected.providerId,
@@ -619,8 +639,6 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
     routingStrategy: snapshot.routing_strategy,
     routingRuleMatched: routingResult.routingType === 'RULE' ? 'Yes' : 'No',
     routingRuleId: routingResult.ruleId,
-    selectedProvider: selected.providerId,
-    providerPlanId: selected.providerPlanId,
     ...candidatePricingLog(selected),
     providerPriority: selected.providerPriority,
     executionResult: routingResult.routingType === 'RULE' ? 'RULE_PROVIDER_SELECTED' : 'LCR_PROVIDER_SELECTED',
@@ -633,16 +651,10 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
     operatorId: normalizedInput.operatorId,
     operatorName: operatorInfo.name,
     countryId: normalizedInput.countryId,
-    amount: input.amount,
-    currency: input.currency,
-    planPrice: input.planPrice,
+    pricing,
     planName: resolvedPlanName || undefined,
     userId: input.userId,
     rechargeAttemptId: attempt.id,
-    serviceFee: input.serviceFee,
-    platformFee: input.platformFee,
-    paymentGatewayFee: input.paymentGatewayFee,
-    tax: input.tax,
     selectedProviderId: selected.providerId,
     selectedProviderName: provider?.name || selected.providerName,
     selectedProviderCost: selected.provider_wholesale_amount ?? selected.price,
@@ -665,6 +677,7 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
     body: JSON.stringify({
       metadata: {
         ...prevMeta,
+        ...serverPricingToTransactionMeta(pricing),
         plan_id: normalizedInput.planId,
         system_plan_id: normalizedInput.systemPlanId || null,
         mobile_number: normalizedInput.mobileNumber,
@@ -691,6 +704,8 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
     transactionId,
     rechargeAttemptId: attempt.id,
     selectedProvider: lcrResult.selectedProviderName,
+    payableAmount: pricing.payableAmount,
+    currency: pricing.currency,
   })
 
   return {
@@ -707,188 +722,20 @@ export async function prepareCheckout(input: PrepareCheckoutInput): Promise<Prep
     routingResult: snapshot,
     lcrResult,
     operatorName: operatorInfo.name,
+    payable: {
+      planPrice: pricing.planPrice,
+      currency: pricing.currency,
+      platformFee: pricing.platformFee,
+      paymentGatewayFee: pricing.paymentGatewayFee,
+      tax: pricing.tax,
+      serviceFee: pricing.serviceFee,
+      payableAmount: pricing.payableAmount,
+    },
   }
 }
 
-/** Link a payment order row to a pre-payment checkout session. */
-export async function linkPaymentOrderToCheckoutSession(input: {
-  paymentOrderId: string
-  checkoutSessionId: string
-  transactionId: string
-  rechargeAttemptId?: string
-  selectedProviderId?: string
-  selectedProviderName?: string
-  selectedProviderPlanId?: string
-  selectedProviderCost?: number | null
-  selectedProviderCurrency?: string | null
-  routingResult?: unknown
-  lcrResult?: unknown
-  providerSelectionTimestamp?: string
-  /** Final charged amount in payment currency (summary page grand total). */
-  totalPayable?: number
-  paymentCurrency?: string
-  /** Checkout FX + fee snapshot from summary page (rates at recharge time). */
-  checkoutPricing?: {
-    platformFee?: number
-    paymentGatewayFee?: number
-    tax?: number
-    planPrice?: number
-    planPriceCurrency?: string
-    totalInRechargeCurrency?: number
-    fxRate?: number | null
-    fxFromCurrency?: string
-    fxToCurrency?: string
-  }
-}) {
-  await supabaseRest(`payment_orders?id=eq.${enc(input.paymentOrderId)}`, {
-    method: 'PATCH',
-    headers: { Prefer: 'return=minimal' },
-    body: JSON.stringify({
-      status: 'pending_payment',
-      checkout_session_id: input.checkoutSessionId,
-      pending_transaction_id: input.transactionId,
-      lcr_attempt_id: input.rechargeAttemptId ?? null,
-      selected_provider_id: input.selectedProviderId ?? null,
-      selected_provider_name: input.selectedProviderName ?? null,
-      selected_provider_plan_id: input.selectedProviderPlanId ?? null,
-      selected_provider_cost: input.selectedProviderCost ?? null,
-      selected_provider_currency: input.selectedProviderCurrency ?? null,
-      routing_result: input.routingResult ?? null,
-      lcr_result: input.lcrResult ?? null,
-      provider_selection_timestamp: input.providerSelectionTimestamp ?? new Date().toISOString(),
-    }),
-  })
-
-  if (
-    input.transactionId &&
-    input.totalPayable != null &&
-    Number.isFinite(input.totalPayable) &&
-    input.paymentCurrency
-  ) {
-    await persistRechargeOrderPaymentTotals({
-      transactionId: input.transactionId,
-      totalPayable: input.totalPayable,
-      paymentCurrency: input.paymentCurrency,
-      checkoutPricing: input.checkoutPricing,
-    })
-  }
-}
-
-/** Update final customer charge on the linked recharge order (summary-page totals). */
-export async function persistRechargeOrderPaymentTotals(input: {
-  transactionId: string
-  totalPayable: number
-  paymentCurrency: string
-  checkoutPricing?: {
-    platformFee?: number
-    paymentGatewayFee?: number
-    tax?: number
-    planPrice?: number
-    planPriceCurrency?: string
-    totalInRechargeCurrency?: number
-    fxRate?: number | null
-    fxFromCurrency?: string
-    fxToCurrency?: string
-  }
-}) {
-  const currency = input.paymentCurrency.trim().toUpperCase()
-  const pricing = input.checkoutPricing ?? {}
-  const orderRes = await supabaseRest(
-    `recharge_orders?transaction_id=eq.${enc(input.transactionId)}&select=id,metadata,send_currency,plan_price_currency&limit=1`,
-    { cache: 'no-store' },
-  )
-  if (!orderRes.ok) return
-  const rows = (await orderRes.json()) as Array<{
-    id: string
-    metadata?: Record<string, unknown>
-    send_currency?: string | null
-    plan_price_currency?: string | null
-  }>
-  const order = rows[0]
-  if (!order?.id) return
-
-  const fromCurrency = (
-    pricing.fxFromCurrency ||
-    pricing.planPriceCurrency ||
-    order.plan_price_currency ||
-    order.send_currency ||
-    currency
-  )
-    .toString()
-    .trim()
-    .toUpperCase()
-  const toCurrency = (pricing.fxToCurrency || currency).toString().trim().toUpperCase()
-  const fxRate =
-    pricing.fxRate != null && Number.isFinite(pricing.fxRate)
-      ? pricing.fxRate
-      : fromCurrency === toCurrency
-        ? 1
-        : null
-
-  const platformFee =
-    pricing.platformFee != null && Number.isFinite(pricing.platformFee) ? pricing.platformFee : undefined
-  const paymentGatewayFee =
-    pricing.paymentGatewayFee != null && Number.isFinite(pricing.paymentGatewayFee)
-      ? pricing.paymentGatewayFee
-      : undefined
-  const serviceFee =
-    platformFee != null || paymentGatewayFee != null
-      ? (platformFee ?? 0) + (paymentGatewayFee ?? 0)
-      : undefined
-
-  const nextMeta: Record<string, unknown> = {
-    ...(order.metadata ?? {}),
-    total_payable: input.totalPayable,
-    payment_currency: currency,
-    user_pay_amount: input.totalPayable,
-  }
-  if (platformFee != null) nextMeta.platform_fee = platformFee
-  if (paymentGatewayFee != null) nextMeta.payment_gateway_fee = paymentGatewayFee
-  if (serviceFee != null) {
-    nextMeta.service_fee = serviceFee
-    nextMeta.service_fee_currency = fromCurrency
-  }
-  if (pricing.tax != null) nextMeta.tax = pricing.tax
-  if (pricing.planPrice != null) nextMeta.plan_price = pricing.planPrice
-  if (pricing.planPriceCurrency) nextMeta.plan_price_currency = pricing.planPriceCurrency
-  if (pricing.totalInRechargeCurrency != null) {
-    nextMeta.total_in_recharge_currency = pricing.totalInRechargeCurrency
-  }
-  if (fxRate != null) {
-    nextMeta.fx_rate = fxRate
-    nextMeta.fx_from_currency = fromCurrency
-    nextMeta.fx_to_currency = toCurrency
-    nextMeta.checkout_fx_rate = fxRate
-  }
-
-  const columnPatch: Record<string, unknown> = {
-    total_payable: input.totalPayable,
-    payment_currency: currency,
-    metadata: nextMeta,
-  }
-  if (platformFee != null) columnPatch.platform_fee = platformFee
-  if (paymentGatewayFee != null) columnPatch.payment_gateway_fee = paymentGatewayFee
-  if (serviceFee != null) columnPatch.service_fee = serviceFee
-  if (pricing.tax != null) columnPatch.tax = pricing.tax
-  if (pricing.planPrice != null) columnPatch.plan_price = pricing.planPrice
-  if (pricing.planPriceCurrency) columnPatch.plan_price_currency = pricing.planPriceCurrency
-  if (fxRate != null) {
-    columnPatch.fx_rate = fxRate
-    columnPatch.fx_from_currency = fromCurrency
-    columnPatch.fx_to_currency = toCurrency
-  }
-
-  const withColumns = await supabaseRest(`recharge_orders?id=eq.${enc(order.id)}`, {
-    method: 'PATCH',
-    headers: { Prefer: 'return=minimal' },
-    body: JSON.stringify(columnPatch),
-  })
-
-  if (!withColumns.ok) {
-    await supabaseRest(`recharge_orders?id=eq.${enc(order.id)}`, {
-      method: 'PATCH',
-      headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ metadata: nextMeta }),
-    })
-  }
-}
+/** @deprecated Import from `@/lib/checkout/link-payment-order` */
+export {
+  linkPaymentOrderToCheckoutSession,
+  persistRechargeOrderPaymentTotals,
+} from '@/lib/checkout/link-payment-order'

@@ -18,7 +18,7 @@ import {
   formatMoney,
   normalizeCurrencyCode,
 } from '@/lib/topup/currency-conversion'
-import { formatPlanRechargeValue } from '@/lib/catalog/plan-recharge-value'
+import { formatPlanRechargeValue } from '@/lib/catalog/format-plan-recharge-value'
 import { buildInternationalMobile, getDialCode } from '@/lib/lcr/countries'
 import { validateRazorpayPaymentAmount } from '@/lib/payments/razorpay-amount'
 import {
@@ -42,7 +42,7 @@ import {
 import { countriesList, getFlagEmoji, isValidPhoneNumber } from '@/lib/country-codes'
 import { getCountryCallingCode } from 'libphonenumber-js'
 import { useFingerprint } from '@/hooks/use-fingerprint'
-import { buildUserAuthHeaders } from '@/lib/auth/get-user-id-from-request'
+import { buildUserAuthHeaders } from '@/lib/auth/client-auth-headers'
 import { readLocaleCookiesFromDocument } from '@/lib/locale/locale-cookies'
 import { RecaptchaCheckbox } from '@/components/security/RecaptchaCheckbox'
 import { useRecaptchaField } from '@/hooks/use-recaptcha-field'
@@ -1208,27 +1208,7 @@ export default function TopupSummaryPage() {
           credentials: 'include',
           headers,
           body: JSON.stringify({
-            planId: selectedPlan.internalPlanId || selectedPlan.id,
-            systemPlanId: selectedPlan.systemPlanId || selectedPlan.id,
-            mobileNumber: buildInternationalMobile(countryCode, phoneNumber),
-            operatorId: operatorProviderId || operator,
-            countryId: countryCode,
-            amount: amounts.totalPayable,
-            currency: amounts.payableCurrency,
-            walletCurrency: activeWalletCurrency,
-            checkoutSessionId,
-            usedRewardPoints: amounts.pointsUsed,
-            checkoutPricing: {
-              planPrice: amounts.subtotal,
-              planPriceCurrency: amounts.rechargeCurrency,
-              platformFee: amounts.platformFee,
-              paymentGatewayFee: amounts.paymentGatewayFee,
-              tax: amounts.tax,
-              totalInRechargeCurrency: amounts.totalInRecharge,
-              fxRate: conversionRate ?? (amounts.payableCurrency === amounts.rechargeCurrency ? 1 : null),
-              fxFromCurrency: amounts.rechargeCurrency,
-              fxToCurrency: amounts.payableCurrency,
-            },
+            transactionId: checkoutSessionId,
           }),
         })
         const data = await res.json()

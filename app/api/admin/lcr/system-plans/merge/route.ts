@@ -74,9 +74,9 @@ export async function POST(request: Request) {
     })
 
     return NextResponse.json({
+      ...result,
       success: true,
       targetId: targetPlanId,
-      ...result,
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown merge error'

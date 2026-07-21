@@ -1,6 +1,6 @@
 import { resolveWholesalePricing } from '@/lib/catalog/provider-wholesale-pricing'
 import { isValueTopupSkuRaw, VALUE_TOPUP_WALLET_CURRENCY } from '@/lib/catalog/valuetopup-pricing'
-import { extractPricingFromRaw } from '@/lib/admin/provider-pricing-extractor'
+import { extractPricingFromRaw } from '@/lib/pricing/provider-pricing-extractor'
 
 export type RawPlanPricingRow = {
   amount?: number | null

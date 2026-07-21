@@ -3,6 +3,15 @@ import { signOtpUserId } from '@/lib/auth/otp-session-cookie'
 
 const USER_ID = '11111111-1111-4111-8111-111111111111'
 
+function setNodeEnv(value: string) {
+  Object.defineProperty(process.env, 'NODE_ENV', {
+    value,
+    configurable: true,
+    writable: true,
+    enumerable: true,
+  })
+}
+
 describe('getUserIdFromRequest', () => {
   const env = process.env
 
@@ -51,7 +60,7 @@ describe('getUserIdFromRequest', () => {
   })
 
   it('never trusts x-user-id header in production', async () => {
-    process.env.NODE_ENV = 'production'
+    setNodeEnv('production')
     process.env.ALLOW_INSECURE_USER_HEADERS = 'true'
     const request = new Request('http://localhost/api/topup/prepare-checkout', {
       headers: {

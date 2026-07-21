@@ -5,7 +5,7 @@ import {
   type AdminPermissionKey,
 } from '@/lib/auth/admin-permissions'
 import { normalizeAppRole } from '@/lib/auth/build-auth-user'
-import { isClientAdminUser } from '@/lib/tickets/auth-headers'
+import { isClientAdminUser } from '@/lib/auth/client-role'
 
 /** Effective app role (matches server `buildUserFromProfile`, including canonical admin email). */
 export function clientAppRole(user: User | null): string {
@@ -20,6 +20,14 @@ export function clientHasAdminPermission(user: User | null, permission: AdminPer
     adminPermissions: user.adminPermissions ?? null,
     permission,
   })
+}
+
+/** True if the admin may issue wallet refunds (never granted by view-only). */
+export function clientCanRefundTransactions(user: User | null): boolean {
+  return (
+    clientHasAdminPermission(user, 'transactions.refund') ||
+    clientHasAdminPermission(user, 'wallet.manage')
+  )
 }
 
 /** When false, admin UI shows P{n} labels instead of real provider names. */

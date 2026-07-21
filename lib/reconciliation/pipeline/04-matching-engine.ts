@@ -1,5 +1,4 @@
 import { NormalizedSupplierRow } from '../types';
-import { supabaseRest } from '../../db/supabase-rest';
 
 export interface PlatformLookups {
   providerTxIdMap: Map<string, any>;
@@ -62,35 +61,36 @@ export class MatchingEngine {
     const startDate = new Date(minTime - 24 * 60 * 60 * 1000).toISOString();
     const endDate = new Date(maxTime + 24 * 60 * 60 * 1000).toISOString();
 
-    // 2. Fetch platform records in bulk concurrently
-    const [txRes, lcrRes, payRes, refundRes, providerRes] = await Promise.all([
-      supabaseRest(
-        `transactions?created_at=gte.${encodeURIComponent(startDate)}&created_at=lte.${encodeURIComponent(endDate)}&select=id,user_id,type,amount,currency,status,metadata,created_at,profiles(name,email,phone),recharge_orders(id,product_name,sku_code,plan_id,provider,operator_name,status,phone_number,send_amount,send_currency,receive_amount,receive_currency,provider_ref,metadata,payment_status)`,
-        { cache: 'no-store' }
-      ),
-      supabaseRest(
-        `lcr_v2_recharge_attempts?created_at=gte.${encodeURIComponent(startDate)}&created_at=lte.${encodeURIComponent(endDate)}&select=id,distributor_ref,internal_plan_id,phone_number,send_amount,currency,status,routing_decision,attempts,selected_provider_id,provider_adapter,provider_ref,created_at`,
-        { cache: 'no-store' }
-      ),
-      supabaseRest(
-        `payment_events?created_at=gte.${encodeURIComponent(startDate)}&created_at=lte.${encodeURIComponent(endDate)}&select=id,transaction_id,provider,provider_payment_id,status,amount,currency`,
-        { cache: 'no-store' }
-      ),
-      supabaseRest(
-        `refunds?created_at=gte.${encodeURIComponent(startDate)}&created_at=lte.${encodeURIComponent(endDate)}&select=id,transaction_id,amount,currency,status,provider_ref`,
-        { cache: 'no-store' }
-      ),
-      supabaseRest(
-        `lcr_providers?select=id,code,name,adapter_key`,
-        { cache: 'no-store' }
-      ),
-    ]);
-
-    const transactions = txRes.ok ? await txRes.json() : [];
-    const attempts = lcrRes.ok ? await lcrRes.json() : [];
-    const payments = payRes.ok ? await payRes.json() : [];
-    const refunds = refundRes.ok ? await refundRes.json() : [];
-    const providers = providerRes.ok ? await providerRes.json() : [];
+    // 2. Fetch platform records in bounded pages (never unbounded single-shot)
+    const { fetchPostgrestPages } = await import('@/lib/db/postgrest-paginate')
+    const dateFilter = `created_at=gte.${encodeURIComponent(startDate)}&created_at=lte.${encodeURIComponent(endDate)}`
+    const [transactions, attempts, payments, refunds, providers] = await Promise.all([
+      fetchPostgrestPages<any>({
+        pathWithQuery: `transactions?${dateFilter}&select=id,user_id,type,amount,currency,status,metadata,created_at,profiles(name,email,phone),recharge_orders(id,product_name,sku_code,plan_id,provider,operator_name,status,phone_number,send_amount,send_currency,receive_amount,receive_currency,provider_ref,metadata,payment_status)`,
+        pageSize: 500,
+        maxRows: 20_000,
+      }),
+      fetchPostgrestPages<any>({
+        pathWithQuery: `lcr_v2_recharge_attempts?${dateFilter}&select=id,distributor_ref,internal_plan_id,phone_number,send_amount,currency,status,routing_decision,attempts,selected_provider_id,provider_adapter,provider_ref,created_at`,
+        pageSize: 500,
+        maxRows: 20_000,
+      }),
+      fetchPostgrestPages<any>({
+        pathWithQuery: `payment_events?${dateFilter}&select=id,transaction_id,provider,provider_payment_id,status,amount,currency`,
+        pageSize: 500,
+        maxRows: 20_000,
+      }),
+      fetchPostgrestPages<any>({
+        pathWithQuery: `refunds?${dateFilter}&select=id,transaction_id,amount,currency,status,provider_ref`,
+        pageSize: 500,
+        maxRows: 20_000,
+      }),
+      fetchPostgrestPages<any>({
+        pathWithQuery: `lcr_providers?select=id,code,name,adapter_key`,
+        pageSize: 200,
+        maxRows: 2_000,
+      }),
+    ]) as [any[], any[], any[], any[], any[]]
 
     // 3. Build relations lookup tables
     for (const attempt of attempts) {

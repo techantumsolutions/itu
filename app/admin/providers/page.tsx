@@ -37,7 +37,7 @@ import { CompactDateTime } from '@/app/admin/integrations/_components/integratio
 import { useAuthStore } from '@/lib/stores'
 import { toast } from 'sonner'
 import type { User } from '@/lib/types'
-import { isClientAdminUser } from '@/lib/tickets/auth-headers'
+import { isClientAdminUser } from '@/lib/auth/client-role'
 import { clientHasAdminPermission } from '@/lib/auth/client-features'
 import { useProviderDisplay } from '@/components/admin/provider-display-context'
 

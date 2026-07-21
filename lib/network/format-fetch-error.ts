@@ -15,16 +15,21 @@ export function formatFetchError(error: unknown): FormattedFetchError {
   const cause = (error as Error & { cause?: NodeJS.ErrnoException }).cause
   const parts: string[] = [error.message]
 
-  if (cause?.code) parts.push(`code=${cause.code}`)
-  if (cause?.hostname) parts.push(`host=${cause.hostname}`)
-  if (cause?.syscall) parts.push(`syscall=${cause.syscall}`)
-  if (cause?.message && cause.message !== error.message) parts.push(cause.message)
+  if (cause && typeof cause === 'object') {
+    const c = cause as NodeJS.ErrnoException & { hostname?: string }
+    if (c.code) parts.push(`code=${c.code}`)
+    if (c.hostname) parts.push(`host=${c.hostname}`)
+    if (c.syscall) parts.push(`syscall=${c.syscall}`)
+    if (c.message && c.message !== error.message) parts.push(c.message)
 
-  return {
-    message: parts.join(' | '),
-    code: cause?.code,
-    errno: cause?.errno,
-    syscall: cause?.syscall,
-    hostname: cause?.hostname,
+    return {
+      message: parts.join(' | '),
+      code: c.code,
+      errno: typeof c.errno === 'number' ? c.errno : undefined,
+      syscall: c.syscall,
+      hostname: c.hostname,
+    }
   }
+
+  return { message: parts.join(' | ') }
 }

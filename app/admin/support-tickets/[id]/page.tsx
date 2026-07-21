@@ -25,7 +25,7 @@ import {
   apiAdminSetStatus,
 } from '@/lib/tickets/client-api'
 import type { TicketAdminDetail, TicketStatus, TicketMessage } from '@/lib/tickets/types'
-import { isClientAdminUser } from '@/lib/tickets/auth-headers'
+import { isClientAdminUser } from '@/lib/auth/client-role'
 import { toast } from 'sonner'
 import { clientHasAdminPermission } from '@/lib/auth/client-features'
 import { io } from 'socket.io-client'

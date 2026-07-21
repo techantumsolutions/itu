@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import localFont from 'next/font/local'
 import { Analytics } from '@vercel/analytics/next'
 import { Toaster } from '@/components/ui/sonner'
+import { SentryClientInit } from '@/components/observability/sentry-client-init'
 import './globals.css'
 
 const aeonik = localFont({
@@ -54,6 +55,7 @@ export default function RootLayout({
           })();
         ` }} />
         {children}
+        <SentryClientInit />
         <Toaster position="top-center" richColors />
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

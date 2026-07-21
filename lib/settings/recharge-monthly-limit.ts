@@ -5,7 +5,7 @@ import {
   LCR_BASE_CURRENCY,
   loadCatalogExchangeRates,
 } from '@/lib/routing/exchange-rates'
-import { convertUsingEurBaseRates, type EurBaseRates } from '@/lib/topup/currency-conversion'
+import { convertUsingEurBaseRates, type EurBaseRates } from '@/lib/checkout/currency-conversion'
 import type { RechargeProcessingFeeConfig } from '@/lib/settings/recharge-processing-fees'
 
 const MONTHLY_WINDOW_MS = 30 * 24 * 60 * 60 * 1000

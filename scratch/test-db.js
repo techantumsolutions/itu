@@ -8,6 +8,15 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 async function run() {
   const email = 'test-admin-' + Date.now() + '@example.com';
+  const password = (process.env.TEST_USER_PASSWORD || '').trim();
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    console.error('Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env');
+    return;
+  }
+  if (!password) {
+    console.error('Set TEST_USER_PASSWORD in .env (password for the temporary test auth user)');
+    return;
+  }
   console.log('Creating auth user:', email);
 
   // 1. Create auth user
@@ -18,7 +27,7 @@ async function run() {
       Authorization: 'Bearer ' + SUPABASE_SERVICE_ROLE_KEY,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ email, password: 'password123', email_confirm: true })
+    body: JSON.stringify({ email, password, email_confirm: true })
   });
   const authData = await authRes.json();
   if (!authRes.ok) { console.error('Auth Error:', authData); return; }

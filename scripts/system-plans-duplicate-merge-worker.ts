@@ -14,6 +14,7 @@
 import { readFileSync, existsSync } from 'fs'
 import { resolve } from 'path'
 import { sweepDuplicateSystemPlans } from '@/lib/aggregator/system-plan-duplicate-sweep'
+import { withRedisLock } from '@/lib/cache/redis-lock'
 
 function loadDotEnv() {
   const path = resolve(process.cwd(), '.env')
@@ -56,7 +57,14 @@ async function runSweep() {
   const startedAt = new Date().toISOString()
 
   try {
-    const result = await sweepDuplicateSystemPlans()
+    const locked = await withRedisLock('lock:system-plans-duplicate-merge', 240, async () => {
+      return sweepDuplicateSystemPlans()
+    })
+    if (!locked.acquired) {
+      console.log(`[system-plans-duplicate-merge] ${startedAt} skipped — lock held by another runner`)
+      return
+    }
+    const result = locked.result
     console.log(
       `[system-plans-duplicate-merge] ${startedAt} operators=${result.operatorsScanned} plans=${result.plansScanned} groups=${result.duplicateGroupsFound} merged=${result.plansMerged} rounds=${result.mergeRounds}`,
     )

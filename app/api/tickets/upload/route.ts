@@ -1,8 +1,11 @@
 import { NextResponse } from 'next/server'
-import { supabaseGetUser } from '@/lib/supabase/auth-rest'
+import { resolveUserIdFromAccessToken } from '@/lib/auth/session-cache'
 import { verifyOtpSessionCookie } from '@/lib/auth/otp-session-cookie'
-import fs from 'fs'
-import path from 'path'
+import {
+  sanitizeStorageFileName,
+  STORAGE_BUCKETS,
+  uploadObject,
+} from '@/lib/storage/object-storage'
 
 export async function POST(req: Request) {
   try {
@@ -12,14 +15,10 @@ export async function POST(req: Request) {
 
     const token = m?.[1] ? decodeURIComponent(m[1]) : ''
     if (token) {
-      const authUser = await supabaseGetUser(token)
-      if (authUser?.id) {
-        userId = authUser.id
-      }
+      userId = await resolveUserIdFromAccessToken(token)
     }
 
     if (!userId) {
-      // Fallback: verified OTP session cookie
       userId = verifyOtpSessionCookie(cookie)
     }
 
@@ -34,7 +33,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'No file uploaded' }, { status: 400 })
     }
 
-    // Validate MIME type
     const fileType = file.type
     const allowedMimeTypes = [
       'image/png',
@@ -51,7 +49,6 @@ export async function POST(req: Request) {
       )
     }
 
-    // Validate file extension
     const ext = file.name.split('.').pop()?.toLowerCase() || ''
     const allowedExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf']
     if (!allowedExtensions.includes(ext)) {
@@ -63,25 +60,22 @@ export async function POST(req: Request) {
 
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
+    const fileName = sanitizeStorageFileName(`ticket-${userId}-${Date.now()}.${ext}`)
 
-    const fileName = `ticket-${userId}-${Date.now()}.${ext}`
-
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'tickets')
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true })
-    }
-
-    const filePath = path.join(uploadDir, fileName)
-    fs.writeFileSync(filePath, buffer)
-
-    const fileUrl = `/uploads/tickets/${fileName}`
+    const uploaded = await uploadObject({
+      bucket: STORAGE_BUCKETS.tickets,
+      path: `${userId}/${fileName}`,
+      body: buffer,
+      contentType: fileType,
+    })
 
     return NextResponse.json({
       ok: true,
-      url: fileUrl,
+      url: uploaded.publicUrl,
     })
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Upload failed'
     console.error('Ticket attachment upload failed:', e)
-    return NextResponse.json({ ok: false, error: e.message || 'Upload failed' }, { status: 500 })
+    return NextResponse.json({ ok: false, error: message }, { status: 500 })
   }
 }

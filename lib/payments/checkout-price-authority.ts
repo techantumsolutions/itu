@@ -27,7 +27,7 @@ import {
   convertUsingEurBaseRates,
   normalizeCurrencyCode,
   type EurBaseRates,
-} from '@/lib/topup/currency-conversion'
+} from '@/lib/checkout/currency-conversion'
 import { razorpayCurrencyExponent } from '@/lib/payments/razorpay-amount'
 
 export type PriceValidation =

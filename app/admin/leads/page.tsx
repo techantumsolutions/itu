@@ -59,7 +59,7 @@ export default function AdminLeadsPage() {
 
   const canView = user && (clientHasAdminPermission(user, 'leads.view') || clientHasAdminPermission(user, 'customers.view'))
   const canEdit = user && (clientHasAdminPermission(user, 'leads.edit') || clientHasAdminPermission(user, 'customers.edit'))
-  const canDelete = user && clientHasAdminPermission(user, 'customers.delete')
+  const canDelete = user && clientHasAdminPermission(user, 'customers.edit')
 
   const loadLeads = useCallback(async () => {
     if (!user || !canView) return

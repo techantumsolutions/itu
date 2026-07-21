@@ -1,24 +1,28 @@
 import { NextResponse } from 'next/server'
-import { getRequestUser } from '@/lib/tickets/auth-headers'
-import { supabaseRest } from '@/lib/db/supabase-rest'
 
-export async function POST(request: Request) {
-  const user = await getRequestUser(request)
-  if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const body = await request.json().catch(() => ({}))
-  const amount = Number(body.amount)
-  const description = typeof body.description === 'string' ? body.description : 'Wallet debit'
-  const metadata = body.metadata && typeof body.metadata === 'object' ? body.metadata : {}
-  const currency = typeof body.currency === 'string' ? body.currency.trim().toUpperCase() : 'USD'
-  if (!Number.isFinite(amount) || amount <= 0) return NextResponse.json({ error: 'Invalid amount' }, { status: 400 })
+/**
+ * REMOVED: Public wallet debit.
+ *
+ * Previously any authenticated user could insert
+ *   type=recharge, status=completed
+ * with a client-chosen amount, which credited/debited wallets via
+ * app_update_wallet_balance — bypassing verified payment.
+ *
+ * Wallet debits are only allowed inside verified checkout:
+ *   - POST /api/payment/wallet/checkout
+ *   - POST /api/payment/razorpay/verify (hybrid wallet portion)
+ */
+export async function POST() {
+  return NextResponse.json(
+    {
+      ok: false,
+      error: 'Wallet deduct is disabled. Debits only occur through verified payment checkout.',
+      code: 'WALLET_DEDUCT_REMOVED',
+    },
+    { status: 410 },
+  )
+}
 
-  const res = await supabaseRest('transactions', {
-    method: 'POST',
-    headers: { Prefer: 'return=representation' },
-    body: JSON.stringify([{ user_id: user.id, type: 'recharge', amount, currency, status: 'completed', description, metadata }]),
-  })
-  if (!res.ok) return NextResponse.json({ error: 'Failed to persist debit' }, { status: 500 })
-  const rows = (await res.json().catch(() => [])) as Array<{ id: string }>
-  const transactionId = rows[0]?.id ?? ''
-  return NextResponse.json({ ok: true, transactionId })
+export async function GET() {
+  return POST()
 }

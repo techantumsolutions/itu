@@ -21,10 +21,22 @@ function normalizeSupabaseBaseUrl(raw: string): string {
     .replace(/\/$/, '')
 }
 
+function supabaseAuthHeaders(extra?: HeadersInit): HeadersInit {
+  const key = runtimeEnv('SUPABASE_SERVICE_ROLE_KEY')
+  if (!key) {
+    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set for database-backed catalog')
+  }
+  return {
+    apikey: key,
+    Authorization: `Bearer ${key}`,
+    'Content-Type': 'application/json',
+    ...(extra as Record<string, string>),
+  }
+}
+
 export async function supabaseRest(pathWithQuery: string, init?: RequestInit): Promise<Response> {
   const baseRaw = runtimeEnv('SUPABASE_URL')
-  const key = runtimeEnv('SUPABASE_SERVICE_ROLE_KEY')
-  if (!baseRaw || !key) {
+  if (!baseRaw) {
     throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set for database-backed catalog')
   }
   const base = normalizeSupabaseBaseUrl(baseRaw)
@@ -32,11 +44,31 @@ export async function supabaseRest(pathWithQuery: string, init?: RequestInit): P
   return fetch(url, {
     ...init,
     headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      ...(init?.headers as Record<string, string>),
+      ...supabaseAuthHeaders(init?.headers),
     },
+    cache: 'no-store',
+  })
+}
+
+/** Call a Postgres function via PostgREST RPC (single DB transaction when the function is transactional). */
+export async function supabaseRpc(
+  functionName: string,
+  args: Record<string, unknown>,
+  init?: RequestInit,
+): Promise<Response> {
+  const baseRaw = runtimeEnv('SUPABASE_URL')
+  if (!baseRaw) {
+    throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set for database-backed catalog')
+  }
+  const base = normalizeSupabaseBaseUrl(baseRaw)
+  const url = `${base}/rest/v1/rpc/${functionName.replace(/^\//, '')}`
+  return fetch(url, {
+    ...init,
+    method: 'POST',
+    headers: {
+      ...supabaseAuthHeaders(init?.headers),
+    },
+    body: JSON.stringify(args),
     cache: 'no-store',
   })
 }

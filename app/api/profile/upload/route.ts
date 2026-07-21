@@ -1,29 +1,29 @@
 import { NextResponse } from 'next/server'
-import { supabaseGetUser } from '@/lib/supabase/auth-rest'
+import { resolveSupabaseUserFromAccessToken, resolveUserIdFromAccessToken } from '@/lib/auth/session-cache'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 import { fetchProfileForUser } from '@/lib/auth/get-admin-from-request'
 import { buildUserFromProfile } from '@/lib/auth/build-auth-user'
 import { verifyOtpSessionCookie } from '@/lib/auth/otp-session-cookie'
-import fs from 'fs'
-import path from 'path'
+import {
+  sanitizeStorageFileName,
+  STORAGE_BUCKETS,
+  uploadObject,
+} from '@/lib/storage/object-storage'
 
 export async function POST(req: Request) {
   try {
     const cookie = req.headers.get('cookie') ?? ''
     const m = cookie.match(/(?:^|;\s*)sb-access-token=([^;]+)/)
     let userId: string | null = null
-    let authUser: any = null
+    let authUser: { id: string; email?: string; user_metadata?: Record<string, unknown> } | null = null
 
     const token = m?.[1] ? decodeURIComponent(m[1]) : ''
     if (token) {
-      authUser = await supabaseGetUser(token)
-      if (authUser?.id) {
-        userId = authUser.id
-      }
+      authUser = await resolveSupabaseUserFromAccessToken(token)
+      userId = authUser?.id ?? (await resolveUserIdFromAccessToken(token))
     }
 
     if (!userId) {
-      // Fallback: verified OTP session cookie
       userId = verifyOtpSessionCookie(cookie)
     }
 
@@ -31,7 +31,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Enforce that the user must be registered with email to upload avatar
     const currentProfile = await fetchProfileForUser(userId)
     const isAdmin = currentProfile?.app_role === 'admin' || currentProfile?.app_role === 'super_admin'
     if (currentProfile && !currentProfile.is_registered_with_email && !isAdmin) {
@@ -48,7 +47,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'No file uploaded' }, { status: 400 })
     }
 
-    // Validate MIME type
     const fileType = file.type
     if (fileType !== 'image/png' && fileType !== 'image/jpeg' && fileType !== 'image/jpg') {
       return NextResponse.json(
@@ -57,7 +55,6 @@ export async function POST(req: Request) {
       )
     }
 
-    // Validate file extension
     const ext = file.name.split('.').pop()?.toLowerCase() || ''
     if (ext !== 'png' && ext !== 'jpg' && ext !== 'jpeg') {
       return NextResponse.json(
@@ -69,21 +66,19 @@ export async function POST(req: Request) {
     const arrayBuffer = await file.arrayBuffer()
     const buffer = Buffer.from(arrayBuffer)
 
-    // Generate unique filename to avoid browser cache issues
     const sanitizedExt = ext === 'png' ? 'png' : 'jpg'
-    const fileName = `avatar-${userId}-${Date.now()}.${sanitizedExt}`
+    const fileName = sanitizeStorageFileName(`avatar-${userId}-${Date.now()}.${sanitizedExt}`)
 
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads')
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true })
-    }
+    const uploaded = await uploadObject({
+      bucket: STORAGE_BUCKETS.avatars,
+      path: `${userId}/${fileName}`,
+      body: buffer,
+      contentType: fileType,
+      upsert: true,
+    })
 
-    const filePath = path.join(uploadDir, fileName)
-    fs.writeFileSync(filePath, buffer)
+    const imageUrl = uploaded.publicUrl
 
-    const imageUrl = `/uploads/${fileName}`
-
-    // Update the profiles table
     const updateRes = await supabaseRest(`profiles?id=eq.${encodeURIComponent(userId)}`, {
       method: 'PATCH',
       headers: {
@@ -101,10 +96,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: 'Failed to update profile image in database' }, { status: 500 })
     }
 
-    // Fetch the updated profile and construct client user object
     const profile = await fetchProfileForUser(userId)
-    
-    // Construct authUser if we didn't have it (fallback case)
+
     if (!authUser && profile) {
       authUser = {
         id: userId,
@@ -120,8 +113,9 @@ export async function POST(req: Request) {
       imageUrl,
       user: clientUser,
     })
-  } catch (e: any) {
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : 'Profile image upload failed'
     console.error('Profile image upload failed:', e)
-    return NextResponse.json({ ok: false, error: e.message || 'Profile image upload failed' }, { status: 500 })
+    return NextResponse.json({ ok: false, error: message || 'Profile image upload failed' }, { status: 500 })
   }
 }

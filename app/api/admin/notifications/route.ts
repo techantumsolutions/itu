@@ -1,18 +1,16 @@
 import { NextResponse } from 'next/server'
-import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 
 export async function GET(request: Request) {
   try {
-    const ctx = await getAdminFromAccessCookie(request)
-    if (!ctx?.user || (ctx.user.role !== 'admin' && ctx.user.role !== 'super_admin')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied = await requireAdminPermission(request, 'dashboard.view')
+    if (denied) return denied
 
     // Fetch the 50 most recent notifications
     const res = await supabaseRest(
       'admin_notifications?select=id,title,message,type,details,is_read,created_at&order=created_at.desc&limit=50',
-      { cache: 'no-store' }
+      { cache: 'no-store' },
     )
 
     if (!res.ok) {
@@ -23,7 +21,9 @@ export async function GET(request: Request) {
     const notifications = await res.json().catch(() => [])
 
     // Get exact count of unread notifications
-    const countRes = await supabaseRest('admin_notifications?is_read=eq.false&select=id', { cache: 'no-store' })
+    const countRes = await supabaseRest('admin_notifications?is_read=eq.false&select=id', {
+      cache: 'no-store',
+    })
     const unreadRows = countRes.ok ? await countRes.json().catch(() => []) : []
     const unreadCount = unreadRows.length
 
@@ -36,10 +36,8 @@ export async function GET(request: Request) {
 
 export async function PATCH(request: Request) {
   try {
-    const ctx = await getAdminFromAccessCookie(request)
-    if (!ctx?.user || (ctx.user.role !== 'admin' && ctx.user.role !== 'super_admin')) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
+    const denied = await requireAdminPermission(request, 'dashboard.view')
+    if (denied) return denied
 
     const body = await request.json().catch(() => ({}))
     const { id, markAllAsRead } = body

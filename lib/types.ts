@@ -12,8 +12,8 @@ export interface User {
   rewardPoints: number
   createdAt: string
   /**
-   * When `role === 'admin'`, map of feature flags. `null` = legacy full admin (all features).
-   * Ignored for `super_admin`.
+   * When `role === 'admin'`, map of feature flags.
+   * `null` / missing = no permissions (deny by default). Ignored for `super_admin`.
    */
   adminPermissions?: Record<string, boolean> | null
   /** Same as `role` for admin kinds; optional mirror for APIs. */

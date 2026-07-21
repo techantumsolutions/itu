@@ -20,6 +20,9 @@ build/
 .env.production.local
 .env*.local
 
+# Local / host backup artifacts (encrypted dumps, volume tars)
+.backups/
+
 # Debug / logs
 npm-debug.log*
 yarn-debug.log*
@@ -53,6 +56,9 @@ supabase-local/
 # Docker
 docker-data/
 volumes/
+
+# VPS deploy state (current/previous SHA + pinned image refs)
+.deploy/
 
 package-lock.json
 detect-log.jsonl

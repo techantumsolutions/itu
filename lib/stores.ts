@@ -43,6 +43,7 @@ export const useAuthStore = create<AuthState>()(
             temp_token?: string
             totp_enabled?: boolean
             otp?: string
+            user?: User | null
           }
 
           if (!res.ok && !data.requires_2fa) {
@@ -171,28 +172,10 @@ export const useWalletStore = create<WalletState>()(
           set({ isLoading: false })
         }
       },
-      deduct: async (amount: number, description: string, metadata?: Transaction['metadata']) => {
-        set({ isLoading: true })
-        try {
-          const userId = useAuthStore.getState().user?.id
-          const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-          if (userId) headers['x-user-id'] = userId
-
-          const res = await fetch('/api/wallet/deduct', {
-            method: 'POST',
-            credentials: 'include',
-            headers,
-            body: JSON.stringify({ amount, description, metadata }),
-          })
-          if (res.ok) {
-            await get().fetchBalance()
-            await get().fetchTransactions()
-            return true
-          }
-          return false
-        } finally {
-          set({ isLoading: false })
-        }
+      deduct: async (_amount: number, _description: string, _metadata?: Transaction['metadata']) => {
+        // Public /api/wallet/deduct removed — wallet debits only via verified payment checkout.
+        console.warn('[wallet] deduct() is disabled; use /api/payment/wallet/checkout')
+        return false
       },
       addRewardPoints: (points: number, orderId: string) => {
         void fetch('/api/rewards/ledger', {

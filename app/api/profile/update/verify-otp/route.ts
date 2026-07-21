@@ -94,7 +94,7 @@ export async function POST(req: Request) {
       const defaultCountry = (currentProfile?.country || 'IN') as any
       
       const parsedGlobal = value.startsWith('+')
-        ? parsePhoneNumberFromString(value, undefined, actualMetadata)
+        ? parsePhoneNumberFromString(value, actualMetadata)
         : parsePhoneNumberFromString(value, defaultCountry, actualMetadata)
         
       let nationalNumber = value

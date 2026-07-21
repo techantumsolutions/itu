@@ -84,7 +84,7 @@ export async function POST(req: Request) {
         const currentProfile = await fetchProfileForUser(userId)
         const defaultCountry = (currentProfile?.country || 'IN') as any
         const parsed = value.startsWith('+')
-          ? parsePhoneNumberFromString(value, undefined, actualMetadata)
+          ? parsePhoneNumberFromString(value, actualMetadata)
           : parsePhoneNumberFromString(value, defaultCountry, actualMetadata)
         let nationalNumber = value
         let dialCode = currentProfile?.country_code || '91'

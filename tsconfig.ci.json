@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "node_modules",
+    ".next",
+    "scratch",
+    "supabase-local",
+    "coverage",
+    "scripts/**/*.mjs",
+    "**/*.test.ts",
+    "**/*.test.tsx"
+  ]
+}

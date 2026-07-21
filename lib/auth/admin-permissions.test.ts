@@ -59,11 +59,31 @@ describe('admin permissions migration', () => {
     expect(migrated['help.view']).toBe(false)
   })
 
-  it('null permissions grants full access for legacy admins', () => {
+  it('null permissions denies access for limited admins', () => {
     expect(
       hasAdminPermission({
         appRole: 'admin',
         adminPermissions: null,
+        permission: 'plans.view',
+      }),
+    ).toBe(false)
+  })
+
+  it('empty permission map denies access', () => {
+    expect(
+      hasAdminPermission({
+        appRole: 'admin',
+        adminPermissions: {},
+        permission: 'plans.view',
+      }),
+    ).toBe(false)
+  })
+
+  it('explicit permission grants access', () => {
+    expect(
+      hasAdminPermission({
+        appRole: 'admin',
+        adminPermissions: { 'plans.view': true },
         permission: 'plans.view',
       }),
     ).toBe(true)
@@ -73,7 +93,7 @@ describe('admin permissions migration', () => {
     expect(
       hasAdminPermission({
         appRole: 'super_admin',
-        adminPermissions: {},
+        adminPermissions: null,
         permission: 'plans.view',
       }),
     ).toBe(true)

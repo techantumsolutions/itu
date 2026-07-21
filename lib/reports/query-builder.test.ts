@@ -50,7 +50,7 @@ describe('Report Query Builder', () => {
     expect(query.countQuery).toContain('created_at=gte.2026-06-01T00:00:00Z')
     expect(query.countQuery).not.toContain('order=')
     expect(query.countQuery).not.toContain('limit=')
-  } )
+  })
 
   it('maps dynamic server-side filters and ignores client-side filters in query', () => {
     const filters: ReportFilters = {
@@ -73,13 +73,12 @@ describe('Report Query Builder', () => {
 
     const query = buildQuery(mockConfig, filters, undefined, 1, 50)
 
-    // UUID `id` is skipped (client-side search); text columns stay in the OR clause
     expect(query.dataQuery).toContain('or=(user_email.ilike.*user%40example.com*)')
     expect(query.dataQuery).not.toContain('id.ilike.')
   })
 
-  it('skips server-side search for loadAll reports (client search after fetch)', () => {
-    const loadAllConfig: ReportConfig = {
+  it('uses server-side pagination even when fetchLimit is high (no loadAll for list reports)', () => {
+    const highLimitConfig: ReportConfig = {
       ...mockConfig,
       source: { ...mockConfig.source, fetchLimit: 50000 },
     }
@@ -88,13 +87,15 @@ describe('Report Query Builder', () => {
       search: 'abc-123',
     }
 
-    const query = buildQuery(loadAllConfig, filters, undefined, 1, 50)
+    const query = buildQuery(highLimitConfig, filters, undefined, 1, 50)
 
-    expect(query.loadAll).toBe(true)
-    expect(query.dataQuery).not.toContain('or=(')
+    expect(query.loadAll).toBe(false)
+    expect(query.dataQuery).toContain('limit=50')
+    expect(query.dataQuery).toContain('offset=0')
+    expect(query.dataQuery).toContain('or=(')
   })
 
-  it('fetches complete set (using fetchLimit) without server pagination when aggregation is defined', () => {
+  it('fetches bounded set for aggregation (loadAll) without server pagination offset', () => {
     const aggConfig: ReportConfig = {
       ...mockConfig,
       aggregation: {
@@ -111,7 +112,7 @@ describe('Report Query Builder', () => {
 
     expect(query.isAggregated).toBe(true)
     expect(query.loadAll).toBe(true)
-    expect(query.dataQuery).toContain('limit=50000') // fetchLimit default
+    expect(query.dataQuery).toContain('limit=10000')
     expect(query.dataQuery).not.toContain('offset=')
   })
 })

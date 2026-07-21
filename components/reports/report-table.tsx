@@ -263,6 +263,9 @@ export function ReportTable({
     runExport(selectedOriginalRows, columns, {
       format,
       fileName: `selected_rows_${Date.now()}`,
+      filters: {
+        dateRange: { from: '', to: '' },
+      },
     })
   }
 

@@ -39,7 +39,7 @@ const DASHBOARD_SUMMARY: ReportConfig = {
     table:  'transactions',
     select: 'id,status,amount,currency,created_at',
     staticFilters: ['type=eq.recharge', 'status=neq.pending_payment'],
-    fetchLimit: 50000,
+    fetchLimit: 10000,
   },
   dateColumn: 'created_at',
 
@@ -105,7 +105,7 @@ const TRANSACTIONS: ReportConfig = {
     table:  'recharge_orders',
     select: 'id,created_at,status,payment_status,phone_number,operator_name,operator_code,country_iso,provider,provider_ref,failure_reason,send_amount,send_currency,receive_amount,receive_currency,user_id,transaction_id,metadata,profiles(email,name,phone,country),transactions(id,amount,currency,status,metadata,created_at)',
     staticFilters: ['status=neq.pending_payment'],
-    fetchLimit: 50000,
+    fetchLimit: 10000,
   },
   dateColumn: 'created_at',
   searchColumns: ['id', 'phone_number', 'provider', 'operator_name', 'transaction_id', 'provider_ref'],
@@ -202,7 +202,7 @@ const COUNTRY: ReportConfig = {
     table: 'transactions',
     select: 'amount,status,currency,metadata,created_at,user_id,profiles(country),recharge_orders(country_iso,operator_name,provider,send_amount,metadata)',
     staticFilters: ['type=eq.recharge', 'status=neq.pending_payment'],
-    fetchLimit: 50000,
+    fetchLimit: 10000,
   },
   dateColumn: 'created_at',
 
@@ -312,7 +312,7 @@ const DESTINATION_NETWORK: ReportConfig = {
     table: 'transactions',
     select: 'id,status,amount,currency,created_at,metadata,recharge_orders(operator_name,operator_code,country_iso,provider,status,failure_reason,receive_amount,metadata)',
     staticFilters: ['type=eq.recharge', 'status=neq.pending_payment'],
-    fetchLimit: 50000,
+    fetchLimit: 10000,
   },
   dateColumn: 'created_at',
 
@@ -458,7 +458,7 @@ const PROVIDER: ReportConfig = {
     table: 'transactions',
     select: 'id,status,amount,currency,created_at,metadata,recharge_orders(provider,provider_ref,status,failure_reason,receive_amount,metadata)',
     staticFilters: ['type=eq.recharge', 'status=neq.pending_payment'],
-    fetchLimit: 50000,
+    fetchLimit: 10000,
   },
   dateColumn: 'created_at',
 
@@ -575,7 +575,7 @@ const FINANCIAL: ReportConfig = {
     table: 'recharge_orders',
     select: 'id,status,payment_status,created_at,transaction_id,send_amount,send_currency,receive_amount,receive_currency,transactions(amount,currency,status,metadata)',
     staticFilters: ['status=neq.pending_payment'],
-    fetchLimit: 100000,
+    fetchLimit: 10000,
   },
   dateColumn: 'created_at',
 
@@ -976,7 +976,7 @@ const CUSTOMER: ReportConfig = {
     table:  'recharge_orders',
     select: 'id,status,payment_status,created_at,user_id,country_iso,provider,phone_number,send_amount,send_currency,receive_amount,metadata,profiles(email,name,phone,country,app_role),transactions(amount,currency,status,metadata)',
     staticFilters: ['status=neq.pending_payment'],
-    fetchLimit: 50000,
+    fetchLimit: 10000,
   },
   dateColumn: 'created_at',
   searchColumns: ['email', 'customer_name', 'phone', 'country', 'role'],

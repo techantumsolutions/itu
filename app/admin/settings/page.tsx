@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/select"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useAuthStore } from "@/lib/stores"
-import { isClientSuperAdmin } from "@/lib/tickets/auth-headers"
+import { isClientSuperAdmin } from "@/lib/auth/client-role"
 import { clientHasAdminPermission } from "@/lib/auth/client-features"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"

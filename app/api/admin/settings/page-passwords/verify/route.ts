@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getAdminFromAccessCookie } from '@/lib/auth/get-admin-from-request'
+import { requireAdminPermission } from '@/lib/auth/require-admin-feature'
 import { supabaseRest } from '@/lib/db/supabase-rest'
 
 function findProtectedConfig(pathname: string, config: Record<string, string>) {
@@ -14,10 +14,8 @@ function findProtectedConfig(pathname: string, config: Record<string, string>) {
 }
 
 export async function POST(request: Request) {
-  const ctx = await getAdminFromAccessCookie(request)
-  if (!ctx?.user || (ctx.user.role !== 'admin' && ctx.user.role !== 'super_admin')) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const denied = await requireAdminPermission(request, 'settings.view')
+  if (denied) return denied
 
   try {
     const body = (await request.json().catch(() => ({}))) as { path?: string; password?: string }

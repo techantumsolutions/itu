@@ -27,7 +27,7 @@ import {
 import { Label } from '@/components/ui/label'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import type { SystemPlanProviderCostBreakdown } from '@/lib/admin/provider-cost-breakdown'
-import { formatMoney } from '@/lib/admin/provider-pricing-extractor'
+import { formatMoney } from '@/lib/pricing/provider-pricing-extractor'
 import { useAuthStore } from '@/lib/stores'
 import { clientHasAdminPermission } from '@/lib/auth/client-features'
 import { useProviderDisplay } from '@/components/admin/provider-display-context'

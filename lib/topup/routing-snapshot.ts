@@ -127,7 +127,7 @@ export async function buildRoutingDecisionSnapshot(input: {
     filtered_provider_count,
     selected_provider: selected.providerName || selected.providerId || null,
     selected_provider_id: selected.providerId,
-    selected_provider_plan_id: selected.providerPlanId,
+    selected_provider_plan_id: selected.providerPlanId ?? null,
     selected_provider_cost: selectedProviderCost,
     selected_provider_currency: selectedProviderCurrency,
     fallback_queue: fallbackQueue,
@@ -146,9 +146,9 @@ export async function buildRoutingDecisionSnapshot(input: {
     ruleId: routingResult.ruleId,
     selectedProviderId: selected.providerId,
     selectedProviderName: selected.providerName || selected.providerId,
-    selectedProviderPlanId: selected.providerPlanId,
+    selectedProviderPlanId: selected.providerPlanId ?? '',
     selectedProviderCost: selectedProviderCost,
-    selectedProviderCurrency: selectedProviderCurrency,
+    selectedProviderCurrency: selectedProviderCurrency ?? null,
     routingDecisionReason,
   }
 
