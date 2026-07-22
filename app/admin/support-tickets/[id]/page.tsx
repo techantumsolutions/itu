@@ -293,8 +293,15 @@ export default function AdminSupportTicketDetailPage() {
           {/* 3. Attachment (if exists) */}
           {data.attachmentUrl && (
             <section className="rounded-2xl border border-border/70 bg-card/80 p-4 shadow-elevated-sm space-y-3">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Attachments</h2>
-              {/\.(png|jpe?g|gif|webp)$/i.test(data.attachmentUrl) ? (
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Attachments</h2>
+                <Button variant="outline" size="sm" asChild className="gap-1.5 rounded-lg">
+                  <a href={data.attachmentUrl} target="_blank" rel="noopener noreferrer">
+                    View
+                  </a>
+                </Button>
+              </div>
+              {/\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(data.attachmentUrl) ? (
                 <div className="max-w-sm rounded-lg overflow-hidden border border-border bg-muted/10 shadow-sm">
                   <a href={data.attachmentUrl} target="_blank" rel="noopener noreferrer">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -308,7 +315,7 @@ export default function AdminSupportTicketDetailPage() {
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-800 hover:underline bg-neutral-100 px-3 py-1.5 rounded-lg border border-neutral-200"
                 >
-                  <span>📎</span> Download / View File
+                  Open attached file in a new window
                 </a>
               )}
             </section>

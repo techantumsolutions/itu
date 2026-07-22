@@ -9,6 +9,7 @@ import type {
 } from './types'
 import * as filePersistence from './persistence'
 import { formatProfilePhone } from '@/lib/auth/build-auth-user'
+import { toPublicStorageUrl } from '@/lib/storage/public-url'
 
 type TicketRow = {
   id: string
@@ -72,7 +73,7 @@ function toTicket(
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    attachmentUrl: row.attachment_url ?? undefined,
+    attachmentUrl: toPublicStorageUrl(row.attachment_url) ?? undefined,
     userPhone,
   }
 }

@@ -4,6 +4,7 @@
  */
 
 import { runtimeEnv } from '@/lib/env/runtime'
+import { publicSupabaseBaseUrl } from '@/lib/storage/public-url'
 
 export type UploadObjectInput = {
   bucket: string
@@ -21,7 +22,8 @@ export type UploadObjectResult = {
   publicUrl: string
 }
 
-function storageBaseUrl(): string {
+/** Internal API base (Docker Kong / localhost) for authenticated upload calls. */
+function storageApiBaseUrl(): string {
   const baseRaw = runtimeEnv('SUPABASE_URL')
   if (!baseRaw) throw new Error('SUPABASE_URL missing')
   return baseRaw.trim().replace(/\/rest\/v1\/?$/i, '').replace(/\/$/, '')
@@ -34,10 +36,10 @@ function serviceKey(): string {
 }
 
 export async function uploadObject(input: UploadObjectInput): Promise<UploadObjectResult> {
-  const base = storageBaseUrl()
+  const apiBase = storageApiBaseUrl()
   const key = serviceKey()
   const path = input.path.replace(/^\/+/, '')
-  const url = `${base}/storage/v1/object/${input.bucket}/${path}`
+  const url = `${apiBase}/storage/v1/object/${input.bucket}/${path}`
 
   const res = await fetch(url, {
     method: 'POST',
@@ -56,10 +58,13 @@ export async function uploadObject(input: UploadObjectInput): Promise<UploadObje
     throw new Error(`storage_upload_failed:${res.status}:${err}`)
   }
 
+  // Browser-reachable URL (NEXT_PUBLIC_SUPABASE_URL), not Docker-internal Kong.
+  const publicBase = publicSupabaseBaseUrl() || apiBase
+
   return {
     bucket: input.bucket,
     path,
-    publicUrl: `${base}/storage/v1/object/public/${input.bucket}/${path}`,
+    publicUrl: `${publicBase}/storage/v1/object/public/${input.bucket}/${path}`,
   }
 }
 

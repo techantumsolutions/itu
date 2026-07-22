@@ -28,7 +28,10 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     }
 
     if (receipt.status !== 'paid') {
-      return NextResponse.json({ error: 'Receipt not available until payment succeeds' }, { status: 403 })
+      return NextResponse.json(
+        { error: 'Receipt not available until payment succeeds' },
+        { status: 403 },
+      )
     }
 
     const pdf = await generateRechargeReceiptPdf(receipt)
@@ -36,6 +39,7 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `inline; filename="itu-receipt-${receipt.receiptNumber}.pdf"`,
+        'Cache-Control': 'private, no-store',
       },
     })
   } catch (error) {

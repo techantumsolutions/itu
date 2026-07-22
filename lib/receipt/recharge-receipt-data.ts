@@ -61,25 +61,95 @@ type ReceiptRow = {
   provider_ref?: string | null
   metadata?: Record<string, unknown> | null
   created_at: string
-  transactions?: Array<{
+  /** PostgREST many-to-one returns an object; one-to-many returns an array. */
+  transactions?:
+    | {
+        id: string
+        user_id?: string | null
+        amount?: number | string | null
+        currency?: string | null
+        status?: string | null
+        metadata?: Record<string, unknown> | null
+      }
+    | Array<{
+        id: string
+        user_id?: string | null
+        amount?: number | string | null
+        currency?: string | null
+        status?: string | null
+        metadata?: Record<string, unknown> | null
+      }>
+    | null
+}
+
+function resolveReceiptStatus(
+  status: string,
+  metadata?: Record<string, unknown>,
+  transactionStatus?: string | null,
+): RechargeReceiptData['status'] {
+  const normalized = status.trim().toLowerCase()
+  const txStatus = (transactionStatus || '').trim().toLowerCase()
+  if (
+    metadata?.topup_status === 'success' ||
+    normalized === 'completed' ||
+    normalized === 'success' ||
+    txStatus === 'completed' ||
+    txStatus === 'success'
+  ) {
+    return 'paid'
+  }
+  if (
+    normalized === 'failed' ||
+    normalized === 'cancelled' ||
+    normalized === 'refunded' ||
+    txStatus === 'failed' ||
+    txStatus === 'cancelled' ||
+    txStatus === 'refunded'
+  ) {
+    return 'failed'
+  }
+  return 'pending'
+}
+
+function normalizeTransactionEmbed(
+  raw: ReceiptRow['transactions'],
+): {
+  id: string
+  user_id?: string | null
+  amount?: number | string | null
+  currency?: string | null
+  status?: string | null
+  metadata?: Record<string, unknown> | null
+} | null {
+  if (!raw) return null
+  if (Array.isArray(raw)) return raw[0] ?? null
+  return raw
+}
+
+async function fetchTransactionOwner(transactionId: string | null | undefined): Promise<{
+  id: string
+  user_id?: string | null
+  amount?: number | string | null
+  currency?: string | null
+  status?: string | null
+  metadata?: Record<string, unknown> | null
+} | null> {
+  const id = (transactionId || '').trim()
+  if (!id) return null
+  const res = await supabaseRest(
+    `transactions?id=eq.${enc(id)}&select=id,user_id,amount,currency,status,metadata&limit=1`,
+    { cache: 'no-store' },
+  )
+  if (!res.ok) return null
+  const rows = (await res.json()) as Array<{
     id: string
     user_id?: string | null
     amount?: number | string | null
     currency?: string | null
     status?: string | null
     metadata?: Record<string, unknown> | null
-  }> | null
-}
-
-function resolveReceiptStatus(status: string, metadata?: Record<string, unknown>): RechargeReceiptData['status'] {
-  const normalized = status.trim().toLowerCase()
-  if (metadata?.topup_status === 'success' || normalized === 'completed' || normalized === 'success') {
-    return 'paid'
-  }
-  if (normalized === 'failed' || normalized === 'cancelled' || normalized === 'refunded') {
-    return 'failed'
-  }
-  return 'pending'
+  }>
+  return rows[0] ?? null
 }
 
 function formatPlanValue(amount: number, currency: string): string {
@@ -98,7 +168,11 @@ export async function loadRechargeReceiptData(orderId: string): Promise<Recharge
   const row = rows[0]
   if (!row) return null
 
-  const transaction = row.transactions?.[0] ?? null
+  let transaction = normalizeTransactionEmbed(row.transactions)
+  if (!transaction?.user_id && row.transaction_id) {
+    transaction = (await fetchTransactionOwner(row.transaction_id)) ?? transaction
+  }
+
   const ownerUserId =
     (typeof row.user_id === 'string' && row.user_id.trim()) ||
     (typeof transaction?.user_id === 'string' && transaction.user_id.trim()) ||
@@ -138,7 +212,7 @@ export async function loadRechargeReceiptData(orderId: string): Promise<Recharge
     ? buildInternationalMobile(countryCode, row.phone_number)
     : row.phone_number
 
-  const receiptStatus = resolveReceiptStatus(row.status, metadata)
+  const receiptStatus = resolveReceiptStatus(row.status, metadata, transaction?.status)
   const statusLabel =
     receiptStatus === 'paid' ? 'Paid' : receiptStatus === 'failed' ? 'Failed' : 'Pending'
 

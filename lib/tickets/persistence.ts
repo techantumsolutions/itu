@@ -13,6 +13,7 @@ import type {
   TicketStatus,
   TicketWithThread,
 } from './types'
+import { toPublicStorageUrl } from '@/lib/storage/public-url'
 
 const DATA_DIR = path.join(process.cwd(), 'data')
 const DATA_FILE = path.join(DATA_DIR, 'tickets.json')
@@ -92,6 +93,7 @@ export async function listTicketsForUser(userId: string): Promise<Ticket[]> {
   const db = await readDbFile()
   return db.tickets
     .filter((t) => t.userId === userId)
+    .map((t) => ({ ...t, attachmentUrl: toPublicStorageUrl(t.attachmentUrl) }))
     .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1))
 }
 
@@ -105,7 +107,11 @@ export async function getTicketForUser(
   const messages = db.messages
     .filter((m) => m.ticketId === ticketId)
     .sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1))
-  return { ...ticket, messages }
+  return {
+    ...ticket,
+    attachmentUrl: toPublicStorageUrl(ticket.attachmentUrl),
+    messages,
+  }
 }
 
 export async function listTicketsAdmin(filters: {

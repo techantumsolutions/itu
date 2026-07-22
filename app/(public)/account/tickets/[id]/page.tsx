@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { format } from 'date-fns'
-import { ArrowLeft, Loader2, Send, RotateCw } from 'lucide-react'
+import { ArrowLeft, ExternalLink, Eye, Loader2, Send, RotateCw } from 'lucide-react'
 import { useAuthStore } from '@/lib/stores'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -17,6 +17,7 @@ import { toast } from 'sonner'
 import { io } from 'socket.io-client'
 import { getPublicSocketServerUrl } from '@/lib/tickets/socket-config'
 import { TicketChatSuggestions } from '@/components/ticket-chat-suggestions'
+import { isImageAttachmentUrl, toBrowserStorageUrl } from '@/lib/storage/public-url'
 
 export default function AccountTicketDetailPage() {
   const params = useParams()
@@ -121,6 +122,12 @@ export default function AccountTicketDetailPage() {
     return userMsgs.length > 0 ? userMsgs[userMsgs.length - 1]!.message : ''
   }, [data])
 
+  const attachmentUrl = useMemo(
+    () => toBrowserStorageUrl(data?.attachmentUrl),
+    [data?.attachmentUrl],
+  )
+  const attachmentIsImage = attachmentUrl ? isImageAttachmentUrl(attachmentUrl) : false
+
   if (!headers) return null
 
   if (loading) {
@@ -169,33 +176,55 @@ export default function AccountTicketDetailPage() {
               {format(new Date(data.updatedAt), 'MMM d, yyyy HH:mm')}
             </p>
           </div>
-          <TicketStatusBadge status={data.status} showHint />
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <TicketStatusBadge status={data.status} showHint />
+            {data.transactionId ? (
+              <Button variant="outline" size="sm" asChild className="gap-1.5 rounded-lg">
+                <Link href={`/account/transactions?txnId=${encodeURIComponent(data.transactionId)}`}>
+                  <ExternalLink className="size-3.5" />
+                  View Transaction
+                </Link>
+              </Button>
+            ) : null}
+          </div>
         </div>
       </div>
 
-      {data.attachmentUrl && (
+      {attachmentUrl ? (
         <section className="rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-elevated-sm space-y-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Ticket Attachment</h2>
-          {/\.(png|jpe?g|gif|webp)$/i.test(data.attachmentUrl) ? (
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Ticket Attachment</h2>
+            <Button variant="outline" size="sm" asChild className="gap-1.5 rounded-lg">
+              <a href={attachmentUrl} target="_blank" rel="noopener noreferrer">
+                <Eye className="size-3.5" />
+                View
+              </a>
+            </Button>
+          </div>
+          {attachmentIsImage ? (
             <div className="max-w-sm rounded-lg overflow-hidden border border-neutral-200 shadow-sm bg-neutral-50/50">
-              <a href={data.attachmentUrl} target="_blank" rel="noopener noreferrer">
+              <a href={attachmentUrl} target="_blank" rel="noopener noreferrer">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={data.attachmentUrl} alt="Ticket attachment" className="max-h-48 w-auto object-contain hover:opacity-95 transition-opacity" />
+                <img
+                  src={attachmentUrl}
+                  alt="Ticket attachment"
+                  className="max-h-48 w-auto object-contain hover:opacity-95 transition-opacity"
+                />
               </a>
             </div>
           ) : (
             <a
-              href={data.attachmentUrl}
+              href={attachmentUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 text-xs font-semibold text-neutral-800 hover:underline bg-neutral-100 px-3 py-1.5 rounded-lg border border-neutral-200"
             >
-              <span>📎</span> Download / View File
+              Open attached file in a new window
             </a>
           )}
         </section>
-      )}
-      {/* Original Issue Description */}
+      ) : null}
+
       <section className="rounded-2xl border border-orange-100 bg-orange-50/20 p-5 shadow-elevated-sm space-y-2">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-orange-800">Original Description</h2>
         <p className="text-sm text-neutral-800 whitespace-pre-wrap leading-relaxed">{data.description}</p>

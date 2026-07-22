@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -37,8 +38,12 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useWalletStore } from '@/lib/stores'
+import { useWalletStore, useAuthStore } from '@/lib/stores'
+import { useTopupStore, type TopupPlan } from '@/store/topupStore'
 import { isHiddenUserTransaction } from '@/lib/transactions/display-status'
+import { buildUserAuthHeaders } from '@/lib/auth/client-auth-headers'
+import { computeRechargeProcessingFeeAmount } from '@/lib/settings/recharge-processing-fees'
+import { buildInternationalMobile, getDialCode, normalizeCountryIso3, toPublicCountryCode } from '@/lib/lcr/countries'
 import {
   Search,
   Download,
@@ -56,7 +61,6 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import Link from 'next/link'
-import { useAuthStore } from '@/lib/stores'
 import { toast } from 'sonner'
 import { getCountryName, getFlagEmoji } from '@/lib/country-codes'
 
@@ -83,9 +87,21 @@ type RecurringSchedule = {
 const RECURRING_STORAGE_KEY = 'itu-recurring-schedules'
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
 
-export default function TransactionsPage() {
+function TransactionsPageContent() {
+  const router = useRouter()
   const { transactions, fetchTransactions } = useWalletStore()
   const user = useAuthStore((s) => s.user)
+  const searchParams = useSearchParams()
+  const deepLinkTxnId = searchParams.get('txnId')
+  const {
+    setPhoneDetails,
+    setOperator,
+    selectPlan,
+    calculatePricing,
+    setCheckoutSession,
+    setCheckoutBlock,
+    clearCheckoutBlock,
+  } = useTopupStore()
 
   useEffect(() => {
     void fetchTransactions()
@@ -106,6 +122,7 @@ export default function TransactionsPage() {
   const [pageSize, setPageSize] = useState<number>(10)
   const [ticketOpen, setTicketOpen] = useState(false)
   const [ticketTxId, setTicketTxId] = useState<string | null>(null)
+  const [deepLinkHandled, setDeepLinkHandled] = useState(false)
 
   const viewer = useMemo(
     () =>
@@ -359,6 +376,217 @@ export default function TransactionsPage() {
       retryAttempts: txn.status === 'failed' ? 1 : 0,
     })
     setDetailOpen(true)
+  }
+
+  useEffect(() => {
+    if (deepLinkHandled || !deepLinkTxnId || transactions.length === 0) return
+    const txn = transactions.find((t) => t.id === deepLinkTxnId)
+    if (!txn) {
+      setDeepLinkHandled(true)
+      toast.error('Linked transaction not found')
+      return
+    }
+    openTransactionDetail(txn)
+    setDeepLinkHandled(true)
+  }, [deepLinkHandled, deepLinkTxnId, transactions])
+
+  const downloadReceipt = async (rechargeOrderId: string) => {
+    try {
+      const res = await fetch(`/api/receipt/${encodeURIComponent(rechargeOrderId)}`, {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        throw new Error(data.error || `Failed to download receipt (${res.status})`)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      window.open(url, '_blank', 'noopener,noreferrer')
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `itu-receipt-${rechargeOrderId.slice(0, 8)}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Failed to download receipt')
+    }
+  }
+
+  const nationalPhoneFromTxn = (countryCode: string, mobileRaw: string): string => {
+    const digits = mobileRaw.replace(/\D/g, '')
+    const dial = getDialCode(countryCode)
+    if (dial && digits.startsWith(dial)) return digits.slice(dial.length)
+    return digits
+  }
+
+  const handleSendAgain = async (txn: (typeof transactions)[number]) => {
+    const meta = (txn.metadata ?? {}) as Record<string, unknown>
+    const countryRaw = String(meta.country_id || meta.country || 'IN').trim()
+    const countryCode = (toPublicCountryCode(normalizeCountryIso3(countryRaw)) || 'IN').toUpperCase()
+    const mobileRaw = String(meta.mobile_number || meta.phoneNumber || '').trim()
+    const operatorId = String(meta.operator_id || '').trim()
+    const operatorName = String(meta.carrierName || meta.carrier || '').trim()
+    const planId = String(meta.plan_id || meta.planId || '').trim()
+    const systemPlanId = String(meta.system_plan_id || meta.systemPlanId || '').trim()
+
+    if (!mobileRaw) {
+      toast.error('Destination number missing for this transaction')
+      router.push('/topup')
+      return
+    }
+
+    const nationalPhone = nationalPhoneFromTxn(countryCode, mobileRaw)
+    setPhoneDetails({ countryCode, phoneNumber: nationalPhone })
+    if (operatorName) setOperator(operatorName)
+    clearCheckoutBlock()
+
+    const goTopupUnavailable = () => {
+      toast.error('Plan not available please select new plan')
+      router.push('/topup')
+    }
+
+    if (!planId && !systemPlanId) {
+      goTopupUnavailable()
+      return
+    }
+
+    try {
+      const params = new URLSearchParams({
+        countryId: countryCode,
+        limit: '200',
+      })
+      if (operatorId) params.set('operatorId', operatorId)
+      else if (operatorName) params.set('operatorName', operatorName)
+
+      const plansRes = await fetch(`/api/plans?${params}`, {
+        credentials: 'include',
+        cache: 'no-store',
+      })
+      const plansJson = (await plansRes.json().catch(() => ({}))) as { plans?: TopupPlan[] }
+      const plans = Array.isArray(plansJson.plans) ? plansJson.plans : []
+      const matched =
+        plans.find((p) => p.systemPlanId && systemPlanId && p.systemPlanId === systemPlanId) ||
+        plans.find((p) => p.id === planId || p.internalPlanId === planId || p.systemPlanId === planId) ||
+        plans.find((p) => systemPlanId && (p.id === systemPlanId || p.internalPlanId === systemPlanId))
+
+      if (!matched) {
+        goTopupUnavailable()
+        return
+      }
+
+      const effectiveOperatorId = operatorId || ''
+      if (!effectiveOperatorId) {
+        goTopupUnavailable()
+        return
+      }
+
+      const subtotal =
+        Number(matched.recharge_amount) > 0
+          ? Number(matched.recharge_amount)
+          : Number(matched.price_inr) > 0
+            ? Number(matched.price_inr)
+            : 0
+      const rechargeCurrency = (matched.recharge_currency || 'INR').trim().toUpperCase() || 'INR'
+
+      let feePercents = { taxPercent: 0, platformFeePercent: 0, paymentGatewayFeePercent: 0 }
+      try {
+        const feeRes = await fetch(
+          `/api/settings/recharge-processing-fees?amount=${encodeURIComponent(String(subtotal))}&currency=${encodeURIComponent(rechargeCurrency)}`,
+          { cache: 'no-store', credentials: 'include' },
+        )
+        if (feeRes.ok) {
+          const feeData = await feeRes.json()
+          const resolved = feeData.resolved ?? feeData
+          feePercents = {
+            taxPercent: Number(resolved.taxPercent) || 0,
+            platformFeePercent: Number(resolved.platformFeePercent) || 0,
+            paymentGatewayFeePercent: Number(resolved.paymentGatewayFeePercent) || 0,
+          }
+        }
+      } catch {
+        /* defaults */
+      }
+
+      const feeParts = computeRechargeProcessingFeeAmount(subtotal, feePercents)
+      const processingFee = feeParts.total
+      const serviceFee = feeParts.platformFee + feeParts.paymentGatewayFee
+      const tax = feeParts.tax
+      const payableAmount = subtotal + processingFee
+
+      const res = await fetch('/api/topup/prepare-checkout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...buildUserAuthHeaders(user),
+        },
+        body: JSON.stringify({
+          planId: matched.internalPlanId || matched.id,
+          systemPlanId: matched.systemPlanId || matched.id,
+          mobileNumber: buildInternationalMobile(countryCode, nationalPhone),
+          operatorId: effectiveOperatorId,
+          countryId: countryCode,
+          amount: payableAmount,
+          currency: rechargeCurrency,
+          planPrice: subtotal,
+          serviceFee,
+          platformFee: feeParts.platformFee,
+          paymentGatewayFee: feeParts.paymentGatewayFee,
+          tax,
+        }),
+      })
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean
+        error?: string
+        code?: string
+        checkoutSessionId?: string
+        transactionId?: string
+        rechargeOrderId?: string
+        rechargeAttemptId?: string
+        selectedProviderName?: string
+        operatorName?: string
+        monthlyUsage?: { usedEur?: number; remainingEur?: number | null; limitEur?: number | null }
+      }
+
+      if (!res.ok || !data?.ok) {
+        const limitCodes = new Set(['MONTHLY_LIMIT_EXCEEDED', 'PLAN_EXCEEDS_BAND', 'FX_CONVERSION_FAILED'])
+        if (data?.code && limitCodes.has(data.code)) {
+          selectPlan(matched)
+          calculatePricing({ fee: processingFee, serviceFee, tax })
+          setCheckoutBlock({
+            code: data.code as 'MONTHLY_LIMIT_EXCEEDED' | 'PLAN_EXCEEDS_BAND' | 'FX_CONVERSION_FAILED',
+            message: data.error || 'Your monthly recharge limit is exceeded.',
+            usedEur: data.monthlyUsage?.usedEur,
+            remainingEur: data.monthlyUsage?.remainingEur,
+            limitEur: data.monthlyUsage?.limitEur,
+          })
+          router.push('/topup/summary')
+          return
+        }
+        goTopupUnavailable()
+        return
+      }
+
+      selectPlan(matched)
+      calculatePricing({ fee: processingFee, serviceFee, tax })
+      if (data.operatorName) setOperator(data.operatorName)
+      setCheckoutSession({
+        checkoutSessionId: data.checkoutSessionId!,
+        transactionId: data.transactionId,
+        rechargeOrderId: data.rechargeOrderId,
+        rechargeAttemptId: data.rechargeAttemptId,
+        selectedProviderName: data.selectedProviderName,
+        operatorProviderId: effectiveOperatorId,
+      })
+      router.push('/topup/summary')
+    } catch (e) {
+      console.error('send again failed:', e)
+      goTopupUnavailable()
+    }
   }
 
   const [saveContactOpen, setSaveContactOpen] = useState(false)
@@ -675,11 +903,9 @@ export default function TransactionsPage() {
                               View Details
                             </DropdownMenuItem>
                             {txn.type === 'recharge' && txn.status === 'completed' && (
-                              <DropdownMenuItem asChild>
-                                <Link href="/">
-                                  <RotateCcw className="mr-2 h-4 w-4" />
-                                  Send Again
-                                </Link>
+                              <DropdownMenuItem onClick={() => void handleSendAgain(txn)}>
+                                <RotateCcw className="mr-2 h-4 w-4" />
+                                Send Again
                               </DropdownMenuItem>
                             )}
                             {txn.type === 'recharge' && (() => {
@@ -711,15 +937,9 @@ export default function TransactionsPage() {
                               </DropdownMenuItem>
                             )}
                             {txn.rechargeOrderId ? (
-                              <DropdownMenuItem asChild>
-                                <a
-                                  href={`/api/receipt/${txn.rechargeOrderId}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                >
-                                  <Download className="mr-2 h-4 w-4" />
-                                  Download Receipt
-                                </a>
+                              <DropdownMenuItem onClick={() => void downloadReceipt(txn.rechargeOrderId!)}>
+                                <Download className="mr-2 h-4 w-4" />
+                                Download Receipt
                               </DropdownMenuItem>
                             ) : (
                               <DropdownMenuItem disabled>
@@ -976,5 +1196,17 @@ export default function TransactionsPage() {
         </Dialog>
       )}
     </div>
+  )
+}
+
+export default function TransactionsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex justify-center py-20 text-muted-foreground">Loading transactions…</div>
+      }
+    >
+      <TransactionsPageContent />
+    </Suspense>
   )
 }

@@ -44,15 +44,17 @@ x-prod-app-networks: &prod-app-networks
 x-prod-common-env: &prod-common-env
   NODE_ENV: production
   NODE_OPTIONS: --dns-result-order=ipv4first
-  # AUTH: requirepass on redis + REDIS_PASSWORD for clients (lib/cache/redis-connection injects into URL).
+  # AUTH: requirepass on redis. Prefer REDIS_URL with embedded password from .env
+  # (password may contain URL-special chars like / and =).
   REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required for production Redis AUTH}
-  REDIS_URL: redis://redis:6379
+  REDIS_URL: ${REDIS_URL:?REDIS_URL is required for production Redis}
   # Server-side API via Kong on supabase_network_itu (internal :8000, not host :54421).
   # Overrides .env SUPABASE_URL=http://127.0.0.1:54421 which only works on the Windows host.
   # Browser/CSP continues to use NEXT_PUBLIC_SUPABASE_URL from .env (host-mapped URL).
   SUPABASE_URL: http://supabase-kong:8000
-  # Never expose OTPs in production API responses (overrides any SHOW_DEV_OTP in .env).
-  SHOW_DEV_OTP: "false"
+  # Temporary: expose OTPs in API responses so the UI can show them on-screen (HTTP test server).
+  # Set back to "false" before real production with working email/SMS.
+  SHOW_DEV_OTP: "true"
   # Observability — version tag for logs/Sentry (set by deploy via .deploy/images.env DEPLOY_SHA when present).
   APP_VERSION: ${DEPLOY_SHA:-unknown}
   APP_ENV: production
