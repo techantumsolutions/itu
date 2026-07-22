@@ -255,6 +255,10 @@ jobs:
             git reset --hard origin/main
 
             chmod +x scripts/deploy-prod.sh scripts/deploy-healthcheck.sh scripts/deploy-rollback.sh
+            chmod +x k8s/scripts/*.sh 2>/dev/null || true
 
+            # Production is K3s (ns/itu). deploy-prod.sh auto-detects and will NOT
+            # bind Compose to :4009/:3001 while nginx owns the edge.
             export DEPLOY_SHA IMAGE_WEB IMAGE_SIDECAR REDIS_PASSWORD NEXT_PUBLIC_APP_URL
+            export DEPLOY_ORCHESTRATOR="${DEPLOY_ORCHESTRATOR:-k8s}"
             bash scripts/deploy-prod.sh

@@ -1,15 +1,11 @@
 #!/usr/bin/env bash
-# Post-deploy health gate for production compose stack.
+# Post-deploy health gate for production (K3s primary, Compose legacy).
 #
 # Verifies:
 #   1. GET /api/health          (liveness)
 #   2. GET /api/health/ready    (Redis + Supabase / database path)
-#   3. Redis PING via compose
+#   3. Redis PING (K8s itu-redis or Compose redis)
 #   4. Postgres reachable via Supabase DB container
-#
-# Usage:
-#   HEALTH_BASE_URL=http://<server-ip>:4009 bash scripts/deploy-healthcheck.sh
-#   NEXT_PUBLIC_APP_URL=http://<server-ip>:4009/ bash scripts/deploy-healthcheck.sh
 #
 set -euo pipefail
 
@@ -20,6 +16,7 @@ COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 ENV_FILE="${DEPLOY_ENV_FILE:-.deploy/images.env}"
 RETRIES="${HEALTH_RETRIES:-24}"
 SLEEP_SECS="${HEALTH_SLEEP_SECS:-5}"
+K8S_NAMESPACE="${K8S_NAMESPACE:-itu}"
 
 load_env_key() {
   local key="$1"
@@ -45,10 +42,10 @@ load_env_key() {
 
 load_env_key REDIS_PASSWORD
 load_env_key NEXT_PUBLIC_APP_URL
-# Also allow keys from deploy images.env (written by deploy-prod.sh).
 if [[ -f "$ENV_FILE" ]]; then
   load_env_key REDIS_PASSWORD "$ENV_FILE"
   load_env_key NEXT_PUBLIC_APP_URL "$ENV_FILE"
+  load_env_key DEPLOY_ORCHESTRATOR "$ENV_FILE"
 fi
 
 if [[ -z "${HEALTH_BASE_URL:-}" ]]; then
@@ -61,6 +58,22 @@ if [[ -z "${HEALTH_BASE_URL:-}" ]]; then
 fi
 
 : "${REDIS_PASSWORD:?REDIS_PASSWORD is required for Redis health PING}"
+
+detect_orchestrator() {
+  if [[ -n "${DEPLOY_ORCHESTRATOR:-}" ]]; then
+    echo "$DEPLOY_ORCHESTRATOR"
+    return
+  fi
+  if command -v kubectl >/dev/null 2>&1 \
+    && kubectl get ns "$K8S_NAMESPACE" >/dev/null 2>&1 \
+    && kubectl -n "$K8S_NAMESPACE" get deploy itu-web >/dev/null 2>&1; then
+    echo "k8s"
+    return
+  fi
+  echo "compose"
+}
+
+ORCH="$(detect_orchestrator)"
 
 compose() {
   local args=()
@@ -80,12 +93,15 @@ http_ok() {
   [[ -n "$body" ]] && echo "$body" | grep -q '"ok":true'
 }
 
-echo "==> Health gate against ${HEALTH_BASE_URL}"
+echo "==> Health gate against ${HEALTH_BASE_URL} (orchestrator=${ORCH})"
 
-# Wait for compose-reported healthy where supported, then probe HTTP.
-if compose ps --help 2>/dev/null | grep -q -- '--format'; then
-  echo "Compose service status:"
-  compose ps || true
+if [[ "$ORCH" == "compose" ]]; then
+  if compose ps --help 2>/dev/null | grep -q -- '--format'; then
+    echo "Compose service status:"
+    compose ps || true
+  fi
+else
+  kubectl -n "$K8S_NAMESPACE" get pods -l 'app in (itu-web,itu-socket,itu-redis)' || true
 fi
 
 alive=0
@@ -103,7 +119,11 @@ if [[ "$alive" -ne 1 ]]; then
   echo "---- last /api/health response ----"
   curl -sS --max-time 10 "${HEALTH_BASE_URL}/api/health" || true
   echo
-  compose logs --tail=100 web || true
+  if [[ "$ORCH" == "k8s" ]]; then
+    kubectl -n "$K8S_NAMESPACE" logs -l app=itu-web --tail=100 || true
+  else
+    compose logs --tail=100 web || true
+  fi
   exit 1
 fi
 
@@ -115,7 +135,6 @@ for i in $(seq 1 "$RETRIES"); do
     break
   fi
   echo "WAIT /api/health/ready (attempt ${i}/${RETRIES})"
-  # Surface readiness body so Redis/Supabase misconfig is visible in deploy logs.
   if [[ $((i % 4)) -eq 0 ]]; then
     echo "---- /api/health/ready body (attempt ${i}) ----"
     curl -sS --max-time 10 "${HEALTH_BASE_URL}/api/health/ready" || true
@@ -128,14 +147,25 @@ if [[ "$ready" -ne 1 ]]; then
   echo "---- last /api/health/ready response ----"
   curl -sS --max-time 10 "${HEALTH_BASE_URL}/api/health/ready" || true
   echo
-  compose logs --tail=100 web || true
+  if [[ "$ORCH" == "k8s" ]]; then
+    kubectl -n "$K8S_NAMESPACE" logs -l app=itu-web --tail=100 || true
+  else
+    compose logs --tail=100 web || true
+  fi
   exit 1
 fi
 
 echo "==> Redis PING"
-if ! compose exec -T redis sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping' | grep -q PONG; then
-  echo "ERROR: Redis PING failed"
-  exit 1
+if [[ "$ORCH" == "k8s" ]]; then
+  if ! kubectl -n "$K8S_NAMESPACE" exec itu-redis-0 -- sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping' | grep -q PONG; then
+    echo "ERROR: Redis PING failed (K8s itu-redis-0)"
+    exit 1
+  fi
+else
+  if ! compose exec -T redis sh -c 'REDISCLI_AUTH="$REDIS_PASSWORD" redis-cli ping' | grep -q PONG; then
+    echo "ERROR: Redis PING failed (Compose redis)"
+    exit 1
+  fi
 fi
 echo "OK  Redis PING"
 

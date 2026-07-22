@@ -1,14 +1,20 @@
-# Production stack — split images (Phase 3D):
+# Production stack — Compose definition retained for EMERGENCY ROLLBACK only.
+#
+# Primary production orchestrator is K3s (namespace: itu). Host ports :4009 and
+# :3001 are owned by nginx → ClusterIP (see k8s/scripts/cutover-nginx.sh).
+# Running `compose up` while that edge is live WILL fail with:
+#   bind host port 0.0.0.0:3001/tcp: address already in use
+#
+# Deploy path: scripts/deploy-prod.sh auto-selects DEPLOY_ORCHESTRATOR=k8s.
+# Do NOT use `docker stop $(docker ps -q)` to "free ports" — that kills Supabase.
+#
+# Split images (Phase 3D):
 #   web     → Dockerfile (Next.js standalone)
 #   sidecars → Dockerfile.sidecar
 #
-# Deploy always pins immutable SHA tags via IMAGE_WEB / IMAGE_SIDECAR
-# (see scripts/deploy-prod.sh). :latest is only a local/default convenience.
-#
+# Emergency Compose rollback (after removing nginx edge conf + reload):
 #   IMAGE_WEB=ghcr.io/.../web:<sha> IMAGE_SIDECAR=ghcr.io/.../sidecar:<sha> \
 #     docker compose --env-file .deploy/images.env -f docker-compose.prod.yml up -d
-#
-# Usage (local build fallback): docker compose -f docker-compose.prod.yml up -d --build
 
 name: itu-prod
 
