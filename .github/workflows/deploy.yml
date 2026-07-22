@@ -256,11 +256,13 @@ jobs:
           DEPLOY_SHA: ${{ github.sha }}
           IMAGE_WEB: ${{ env.IMAGE_WEB_REPO }}:${{ github.sha }}
           IMAGE_SIDECAR: ${{ env.IMAGE_SIDECAR_REPO }}:${{ github.sha }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: DEPLOY_SHA,IMAGE_WEB,IMAGE_SIDECAR
+          envs: DEPLOY_SHA,IMAGE_WEB,IMAGE_SIDECAR,REDIS_PASSWORD,NEXT_PUBLIC_APP_URL
           script: |
             set -euo pipefail
             cd /var/www/itu
@@ -274,8 +276,7 @@ jobs:
 
             chmod +x scripts/deploy-prod.sh scripts/deploy-healthcheck.sh scripts/deploy-rollback.sh
 
-            export DEPLOY_SHA IMAGE_WEB IMAGE_SIDECAR
-            export HEALTH_BASE_URL="${HEALTH_BASE_URL:-http://127.0.0.1:4009}"
+            export DEPLOY_SHA IMAGE_WEB IMAGE_SIDECAR REDIS_PASSWORD NEXT_PUBLIC_APP_URL
             bash scripts/deploy-prod.sh
 
   # ── Manual / automated rollback to previous (or explicit) SHA ─────────────
@@ -288,11 +289,13 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         env:
           TARGET_SHA: ${{ inputs.target_sha }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          envs: TARGET_SHA
+          envs: TARGET_SHA,REDIS_PASSWORD,NEXT_PUBLIC_APP_URL
           script: |
             set -euo pipefail
             cd /var/www/itu
@@ -305,6 +308,7 @@ jobs:
 
             chmod +x scripts/deploy-rollback.sh scripts/deploy-healthcheck.sh
 
+            export REDIS_PASSWORD NEXT_PUBLIC_APP_URL
             if [ -n "${TARGET_SHA:-}" ]; then
               bash scripts/deploy-rollback.sh "$TARGET_SHA"
             else
