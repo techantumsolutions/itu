@@ -131,9 +131,21 @@ compose pull
 # Single-replica compose recreate is not true multi-instance blue/green, but
 # migrating first + --wait on healthchecks minimizes the unsafe window versus
 # the previous "up then migrate" order.
+dump_stack_diagnostics() {
+  echo "==> Stack diagnostics (compose ps + recent logs)"
+  compose ps -a || true
+  echo "---- web (last 150 lines) ----"
+  compose logs --tail=150 web || true
+  echo "---- redis (last 50 lines) ----"
+  compose logs --tail=50 redis || true
+  echo "---- socket (last 50 lines) ----"
+  compose logs --tail=50 socket || true
+}
+
 echo "==> Recreating stack on SHA ${DEPLOY_SHA}"
-if ! compose up -d --remove-orphans --wait --wait-timeout 180; then
-  echo "WARN: compose --wait failed or unsupported; falling back to up -d"
+if ! compose up -d --remove-orphans --wait --wait-timeout 300; then
+  echo "WARN: compose --wait failed or unsupported; dumping diagnostics then falling back to up -d"
+  dump_stack_diagnostics
   compose up -d --remove-orphans
 fi
 
@@ -147,6 +159,7 @@ set -e
 
 if [[ "$HEALTH_RC" -ne 0 ]]; then
   echo "ERROR: Health gate failed for SHA ${DEPLOY_SHA}"
+  dump_stack_diagnostics
   if [[ "${SKIP_ROLLBACK:-0}" == "1" ]]; then
     echo "SKIP_ROLLBACK=1 — leaving failed release in place"
     exit 1
