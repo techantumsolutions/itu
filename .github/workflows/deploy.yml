@@ -7,19 +7,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-    inputs:
-      action:
-        description: 'deploy (default) or rollback'
-        required: true
-        default: deploy
-        type: choice
-        options:
-          - deploy
-          - rollback
-      target_sha:
-        description: 'Rollback target SHA (empty = previous successful SHA on VPS)'
-        required: false
-        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -40,7 +27,6 @@ jobs:
   # ── Quality gates (production: scanners hard-fail High/Critical) ──────────
   lint:
     name: ESLint
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,7 +36,6 @@ jobs:
 
   typecheck:
     name: TypeScript
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -60,7 +45,6 @@ jobs:
 
   test:
     name: Unit tests + coverage
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -76,7 +60,6 @@ jobs:
 
   audit:
     name: Production dependency audit
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -87,7 +70,6 @@ jobs:
 
   secret-scan:
     name: Secret scanning
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -100,7 +82,6 @@ jobs:
 
   codeql:
     name: CodeQL
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -116,7 +97,6 @@ jobs:
 
   build-app:
     name: Build + standalone verify
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy')
     runs-on: ubuntu-latest
     needs: [lint, typecheck, test, audit, secret-scan]
     steps:
@@ -151,7 +131,6 @@ jobs:
   # ── Build, hard-scan, then push SHA (+ convenience :latest) ───────────────
   build-and-push:
     name: Docker build + scan + push
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy')
     runs-on: ubuntu-latest
     needs: [build-app, codeql]
     outputs:
@@ -244,9 +223,10 @@ jobs:
           docker push ${{ env.IMAGE_SIDECAR_REPO }}:latest
 
   # ── Deploy immutable SHA; migrate-before-cutover; health gate; auto-rollback ─
+  # Auto-rollback on failed health checks runs inside scripts/deploy-prod.sh on the VPS.
+  # Manual rollback: use the separate "Rollback VPS" workflow (rollback.yml).
   deploy:
     name: Deploy to VPS
-    if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'deploy')
     needs: [build-and-push]
     runs-on: ubuntu-latest
     steps:
@@ -269,48 +249,12 @@ jobs:
 
             echo "${{ secrets.VPS_GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ secrets.VPS_GITHUB_USERNAME }}" --password-stdin
 
-            # Fetch deploy scripts + migrations while current stack still serves traffic
+            # Sync deploy scripts + migrations; discard any local VPS edits so pull never conflicts
             git fetch origin main
             git checkout main
-            git pull origin main
+            git reset --hard origin/main
 
             chmod +x scripts/deploy-prod.sh scripts/deploy-healthcheck.sh scripts/deploy-rollback.sh
 
             export DEPLOY_SHA IMAGE_WEB IMAGE_SIDECAR REDIS_PASSWORD NEXT_PUBLIC_APP_URL
             bash scripts/deploy-prod.sh
-
-  # ── Manual / automated rollback to previous (or explicit) SHA ─────────────
-  rollback:
-    name: Rollback VPS to previous SHA
-    if: github.event_name == 'workflow_dispatch' && inputs.action == 'rollback'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Rollback via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        env:
-          TARGET_SHA: ${{ inputs.target_sha }}
-          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
-          NEXT_PUBLIC_APP_URL: ${{ vars.NEXT_PUBLIC_APP_URL }}
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          envs: TARGET_SHA,REDIS_PASSWORD,NEXT_PUBLIC_APP_URL
-          script: |
-            set -euo pipefail
-            cd /var/www/itu
-
-            echo "${{ secrets.VPS_GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ secrets.VPS_GITHUB_USERNAME }}" --password-stdin
-
-            git fetch origin main
-            git checkout main
-            git pull origin main
-
-            chmod +x scripts/deploy-rollback.sh scripts/deploy-healthcheck.sh
-
-            export REDIS_PASSWORD NEXT_PUBLIC_APP_URL
-            if [ -n "${TARGET_SHA:-}" ]; then
-              bash scripts/deploy-rollback.sh "$TARGET_SHA"
-            else
-              bash scripts/deploy-rollback.sh
-            fi
