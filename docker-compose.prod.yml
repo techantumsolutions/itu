@@ -149,12 +149,16 @@ services:
         condition: service_healthy
     restart: always
     stop_grace_period: 30s
+    # Liveness only — process listening. Redis/Supabase readiness is gated by
+    # scripts/deploy-healthcheck.sh (/api/health/ready) after cutover, not here.
+    # Using ready here made compose --wait fail while Next.js was still warming
+    # or while deps were briefly unreachable, blocking cron (depends_on: healthy).
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health/ready | grep -q '\"ok\":true'"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health | grep -q '\"ok\":true'"]
       interval: 15s
-      timeout: 5s
+      timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 120s
     mem_limit: 2g
     cpus: "2"
     networks: *prod-app-networks

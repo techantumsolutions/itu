@@ -100,6 +100,10 @@ for i in $(seq 1 "$RETRIES"); do
 done
 if [[ "$alive" -ne 1 ]]; then
   echo "ERROR: /api/health failed after ${RETRIES} attempts"
+  echo "---- last /api/health response ----"
+  curl -sS --max-time 10 "${HEALTH_BASE_URL}/api/health" || true
+  echo
+  compose logs --tail=100 web || true
   exit 1
 fi
 
@@ -111,10 +115,20 @@ for i in $(seq 1 "$RETRIES"); do
     break
   fi
   echo "WAIT /api/health/ready (attempt ${i}/${RETRIES})"
+  # Surface readiness body so Redis/Supabase misconfig is visible in deploy logs.
+  if [[ $((i % 4)) -eq 0 ]]; then
+    echo "---- /api/health/ready body (attempt ${i}) ----"
+    curl -sS --max-time 10 "${HEALTH_BASE_URL}/api/health/ready" || true
+    echo
+  fi
   sleep "$SLEEP_SECS"
 done
 if [[ "$ready" -ne 1 ]]; then
   echo "ERROR: /api/health/ready failed after ${RETRIES} attempts"
+  echo "---- last /api/health/ready response ----"
+  curl -sS --max-time 10 "${HEALTH_BASE_URL}/api/health/ready" || true
+  echo
+  compose logs --tail=100 web || true
   exit 1
 fi
 

@@ -82,7 +82,7 @@ RUN chmod 755 /docker-entrypoint-web.sh
 
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=5 \
   CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1
 
 ENTRYPOINT ["/docker-entrypoint-web.sh"]
