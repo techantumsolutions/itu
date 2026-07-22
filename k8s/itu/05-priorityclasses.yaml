@@ -1,0 +1,26 @@
+# PriorityClasses for ITU on single-node K3s.
+# critical-redis > platform-core (web/socket) > platform-workers > best-effort
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: itu-critical
+value: 1000000
+globalDefault: false
+description: "ITU Redis — highest app priority; keep queue state available"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: itu-platform
+value: 800000
+globalDefault: false
+description: "ITU web and socket — user-facing"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: itu-workers
+value: 500000
+globalDefault: false
+description: "ITU workers, cron, and background jobs"

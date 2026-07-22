@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: itu-web
+  namespace: itu
+  labels:
+    app: itu-web
+    app.kubernetes.io/part-of: itu
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: itu-web
+  template:
+    metadata:
+      labels:
+        app: itu-web
+        app.kubernetes.io/part-of: itu
+    spec:
+      priorityClassName: itu-platform
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: web
+          image: ghcr.io/techantumsolutions/itu/web@sha256:3b4252d7bc47e98650b7a0f113ba3cad9bdeff57706ef95797ac86683f77bcc6
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: itu-config
+            - secretRef:
+                name: itu-app-secrets
+          env:
+            - name: PORT
+              value: "3000"
+            - name: HOSTNAME
+              value: "0.0.0.0"
+            - name: SERVICE_NAME
+              value: itu-web
+            - name: SOCKET_SERVER_URL
+              value: http://itu-socket:3001
+            - name: CRON_PROVIDER_SYNC_BASE_URL
+              value: http://itu-web:3000
+            # In-cluster Supabase Kong (overrides any host-only URL from secret)
+            - name: SUPABASE_URL
+              value: http://supabase-external:8000
+            - name: REDIS_URL
+              value: redis://itu-redis:6379
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /api/health/ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: itu-web
+  namespace: itu
+  labels:
+    app: itu-web
+    app.kubernetes.io/part-of: itu
+spec:
+  type: ClusterIP
+  selector:
+    app: itu-web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: itu-web
+  namespace: itu
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: itu-web

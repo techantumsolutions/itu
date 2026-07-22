@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: itu-system-plans-availability
+  namespace: itu
+  labels:
+    app: itu-system-plans-availability
+    app.kubernetes.io/part-of: itu
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: itu-system-plans-availability
+  template:
+    metadata:
+      labels:
+        app: itu-system-plans-availability
+        app.kubernetes.io/part-of: itu
+    spec:
+      priorityClassName: itu-workers
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: system-plans-availability
+          image: ghcr.io/techantumsolutions/itu/sidecar@sha256:5cd95837640f6472cc02bf6bc2b83cc328989eb7bee6dcfeb21b4a0cb036babc
+          imagePullPolicy: IfNotPresent
+          command: ["node", "sidecar-dist/system-plans-availability-worker.js"]
+          envFrom:
+            - configMapRef:
+                name: itu-config
+            - secretRef:
+                name: itu-app-secrets
+          env:
+            - name: SERVICE_NAME
+              value: itu-system-plans-availability
+            - name: SUPABASE_URL
+              value: http://supabase-external:8000
+            - name: REDIS_URL
+              value: redis://itu-redis:6379
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          startupProbe:
+            exec:
+              command: ["/bin/sh", "-ec", "pgrep -f system-plans-availability-worker >/dev/null"]
+            failureThreshold: 18
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-ec", "pgrep -f system-plans-availability-worker >/dev/null"]
+            periodSeconds: 60
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-ec", "pgrep -f system-plans-availability-worker >/dev/null"]
+            periodSeconds: 30
+            timeoutSeconds: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: itu-system-plans-merge
+  namespace: itu
+  labels:
+    app: itu-system-plans-merge
+    app.kubernetes.io/part-of: itu
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: itu-system-plans-merge
+  template:
+    metadata:
+      labels:
+        app: itu-system-plans-merge
+        app.kubernetes.io/part-of: itu
+    spec:
+      priorityClassName: itu-workers
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: system-plans-merge
+          image: ghcr.io/techantumsolutions/itu/sidecar@sha256:5cd95837640f6472cc02bf6bc2b83cc328989eb7bee6dcfeb21b4a0cb036babc
+          imagePullPolicy: IfNotPresent
+          command: ["node", "sidecar-dist/system-plans-duplicate-merge-worker.js"]
+          envFrom:
+            - configMapRef:
+                name: itu-config
+            - secretRef:
+                name: itu-app-secrets
+          env:
+            - name: SERVICE_NAME
+              value: itu-system-plans-merge
+            - name: SUPABASE_URL
+              value: http://supabase-external:8000
+            - name: REDIS_URL
+              value: redis://itu-redis:6379
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          startupProbe:
+            exec:
+              command: ["/bin/sh", "-ec", "pgrep -f system-plans-duplicate-merge-worker >/dev/null"]
+            failureThreshold: 18
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-ec", "pgrep -f system-plans-duplicate-merge-worker >/dev/null"]
+            periodSeconds: 60
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-ec", "pgrep -f system-plans-duplicate-merge-worker >/dev/null"]
+            periodSeconds: 30
+            timeoutSeconds: 5

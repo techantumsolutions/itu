@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: itu-worker
+  namespace: itu
+  labels:
+    app: itu-worker
+    app.kubernetes.io/part-of: itu
+spec:
+  # KEDA ScaledObject owns replicas after Ready=True (minReplicaCount=1).
+  replicas: 1
+  selector:
+    matchLabels:
+      app: itu-worker
+  template:
+    metadata:
+      labels:
+        app: itu-worker
+        app.kubernetes.io/part-of: itu
+    spec:
+      priorityClassName: itu-workers
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: worker
+          image: ghcr.io/techantumsolutions/itu/sidecar@sha256:5cd95837640f6472cc02bf6bc2b83cc328989eb7bee6dcfeb21b4a0cb036babc
+          imagePullPolicy: IfNotPresent
+          command: ["node", "sidecar-dist/lcr-sync-worker.js"]
+          envFrom:
+            - configMapRef:
+                name: itu-config
+            - secretRef:
+                name: itu-app-secrets
+          env:
+            - name: SERVICE_NAME
+              value: itu-worker
+            - name: SUPABASE_URL
+              value: http://supabase-external:8000
+            - name: REDIS_URL
+              value: redis://itu-redis:6379
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          # Process-based: sidecar has procps; no HTTP server on worker.
+          startupProbe:
+            exec:
+              command: ["/bin/sh", "-ec", "pgrep -f lcr-sync-worker >/dev/null"]
+            failureThreshold: 24
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-ec", "pgrep -f lcr-sync-worker >/dev/null"]
+            periodSeconds: 30
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-ec", "pgrep -f lcr-sync-worker >/dev/null"]
+            periodSeconds: 15
+            timeoutSeconds: 5
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: itu-worker
+  namespace: itu
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: itu-worker

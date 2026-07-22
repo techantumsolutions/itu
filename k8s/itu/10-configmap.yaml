@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: itu-config
+  namespace: itu
+  labels:
+    app.kubernetes.io/part-of: itu
+data:
+  NODE_ENV: "production"
+  NODE_OPTIONS: "--dns-result-order=ipv4first"
+  APP_ENV: "production"
+  LOG_FORMAT: "json"
+  APP_VERSION: "40dbd7a510b98420c41dad821ebaea751ff90244"
+  SHOW_DEV_OTP: "true"
+  # App clients: password injected from Secret REDIS_PASSWORD (see resolveRedisUrl).
+  REDIS_URL: "redis://itu-redis:6379"
+  # KEDA addressFromEnv alternative (host:port only — never a redis:// URL).
+  REDIS_ADDRESS: "itu-redis:6379"
+  # Supabase Kong via external Service (Compose stays outside K8s).
+  SUPABASE_URL: "http://supabase-external:8000"
+  SOCKET_BIND_HOST: "0.0.0.0"
+  SOCKET_PORT: "3001"
+  SOCKET_SERVER_URL: "http://itu-socket:3001"
+  CRON_PROVIDER_SYNC_BASE_URL: "http://itu-web:3000"
