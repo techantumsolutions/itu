@@ -8,8 +8,8 @@
 #   4. Postgres reachable via Supabase DB container
 #
 # Usage:
-#   bash scripts/deploy-healthcheck.sh
-#   HEALTH_BASE_URL=http://127.0.0.1:4009 bash scripts/deploy-healthcheck.sh
+#   HEALTH_BASE_URL=http://<server-ip>:4009 bash scripts/deploy-healthcheck.sh
+#   NEXT_PUBLIC_APP_URL=http://<server-ip>:4009/ bash scripts/deploy-healthcheck.sh
 #
 set -euo pipefail
 
@@ -18,16 +18,59 @@ cd "$ROOT"
 
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.prod.yml}"
 ENV_FILE="${DEPLOY_ENV_FILE:-.deploy/images.env}"
-HEALTH_BASE_URL="${HEALTH_BASE_URL:-http://127.0.0.1:4009}"
 RETRIES="${HEALTH_RETRIES:-24}"
 SLEEP_SECS="${HEALTH_SLEEP_SECS:-5}"
 
-compose() {
-  if [[ -f "$ENV_FILE" ]]; then
-    docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
-  else
-    docker compose -f "$COMPOSE_FILE" "$@"
+load_env_key() {
+  local key="$1"
+  local file="${2:-.env}"
+  local line val
+  if [[ -n "${!key:-}" ]]; then
+    return 0
   fi
+  if [[ ! -f "$file" ]]; then
+    return 0
+  fi
+  line="$(grep -E "^${key}=" "$file" | tail -1 || true)"
+  [[ -n "$line" ]] || return 0
+  val="${line#"${key}="}"
+  val="${val%$'\r'}"
+  if [[ "$val" =~ ^\".*\"$ ]]; then
+    val="${val:1:${#val}-2}"
+  elif [[ "$val" =~ ^\'.*\'$ ]]; then
+    val="${val:1:${#val}-2}"
+  fi
+  export "$key=$val"
+}
+
+load_env_key REDIS_PASSWORD
+load_env_key NEXT_PUBLIC_APP_URL
+# Also allow keys from deploy images.env (written by deploy-prod.sh).
+if [[ -f "$ENV_FILE" ]]; then
+  load_env_key REDIS_PASSWORD "$ENV_FILE"
+  load_env_key NEXT_PUBLIC_APP_URL "$ENV_FILE"
+fi
+
+if [[ -z "${HEALTH_BASE_URL:-}" ]]; then
+  if [[ -n "${NEXT_PUBLIC_APP_URL:-}" ]]; then
+    HEALTH_BASE_URL="${NEXT_PUBLIC_APP_URL%/}"
+  else
+    echo "ERROR: HEALTH_BASE_URL or NEXT_PUBLIC_APP_URL is required (use the public server URL, not localhost)"
+    exit 1
+  fi
+fi
+
+: "${REDIS_PASSWORD:?REDIS_PASSWORD is required for Redis health PING}"
+
+compose() {
+  local args=()
+  if [[ -f .env ]]; then
+    args+=(--env-file .env)
+  fi
+  if [[ -f "$ENV_FILE" ]]; then
+    args+=(--env-file "$ENV_FILE")
+  fi
+  docker compose "${args[@]}" -f "$COMPOSE_FILE" "$@"
 }
 
 http_ok() {
