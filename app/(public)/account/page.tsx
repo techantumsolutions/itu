@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { useAuthStore } from '@/lib/stores'
 import { Camera, Mail, Phone, Calendar, Gift, Loader2, Shield, Eye, EyeOff, CheckCircle2, Lock, Check, ChevronDown } from 'lucide-react'
 import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp'
@@ -36,7 +35,7 @@ import { Label } from '@/components/ui/label'
 import { Edit2 } from 'lucide-react'
 
 export default function AccountProfilePage() {
-  const { user, setSession } = useAuthStore()
+  const { user, setSession, refreshSession } = useAuthStore()
   const [isEditing, setIsEditing] = useState(false)
   const [name, setName] = useState(user?.name || '')
   const [email, setEmail] = useState(user?.email || '')
@@ -258,6 +257,10 @@ export default function AccountProfilePage() {
       resetPhoneFields(user)
     }
   }, [user])
+
+  useEffect(() => {
+    void refreshSession()
+  }, [refreshSession])
 
   const normalizedPhone = phone.replace(/[^\d]/g, '')
   const fullPhone = normalizedPhone ? `+${selectedDialCode}${normalizedPhone}` : ''
@@ -780,7 +783,11 @@ export default function AccountProfilePage() {
 
               <div className="space-y-2">
                 <label className="text-sm font-medium">Member Since</label>
-                <div className="flex items-center gap-2">
+                <div
+                  className={`flex items-center justify-start gap-2${
+                    isEditing ? ' h-10 rounded-xl bg-muted/30 px-3' : ''
+                  }`}
+                >
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">{memberSince}</p>
                 </div>
@@ -788,24 +795,21 @@ export default function AccountProfilePage() {
             </div>
 
             {isEditing && (
-              <>
-                <Separator />
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={handleCancel} disabled={updating}>
-                    Cancel
-                  </Button>
-                  <Button onClick={handleSaveChanges} disabled={updating}>
-                    {updating ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Saving...
-                      </>
-                    ) : (
-                      'Save Changes'
-                    )}
-                  </Button>
-                </div>
-              </>
+              <div className="flex justify-end gap-2 pt-4">
+                <Button variant="outline" onClick={handleCancel} disabled={updating}>
+                  Cancel
+                </Button>
+                <Button onClick={handleSaveChanges} disabled={updating}>
+                  {updating ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
+                </Button>
+              </div>
             )}
           </CardContent>
         </Card>

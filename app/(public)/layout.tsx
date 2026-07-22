@@ -38,6 +38,7 @@ import { ItuLogoMark } from '@/components/itu-logo-mark'
 import { FooterPaymentLogos } from '@/components/footer-payment-logos'
 import { CMSTypographyScope } from '@/components/cms-typography-scope'
 import { SessionIdleGuard } from '@/components/session-idle-guard'
+import { SessionRefresh } from '@/components/session-refresh'
 
 const AdManager = dynamic(
   () => import('@/components/ui/ads/ad-manager').then((m) => ({ default: m.AdManager })),
@@ -310,6 +311,7 @@ export default function PublicLayout({
   return (
     <CMSTypographyScope className="min-h-screen flex flex-col bg-background">
       <SessionIdleGuard variant="public" />
+      <SessionRefresh />
       <header
         className={cn(
           'pointer-events-none fixed inset-x-0 z-50 flex justify-center transition-[padding] duration-200 max-w-6xl mx-auto',

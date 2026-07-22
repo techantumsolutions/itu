@@ -15,6 +15,8 @@ interface AuthState {
   logout: () => void
   register: (email: string, password: string, name: string) => Promise<boolean>
   setSession: (user: User | null) => void
+  /** Re-fetch `/api/auth/me` and update persisted user (e.g. reward points). */
+  refreshSession: () => Promise<User | null>
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -24,6 +26,31 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isLoading: false,
       setSession: (user) => set({ user, isAuthenticated: Boolean(user) }),
+      refreshSession: async () => {
+        try {
+          const res = await fetch('/api/auth/me', { credentials: 'include', cache: 'no-store' })
+          const data = (await res.json().catch(() => ({}))) as {
+            ok?: boolean
+            user?: User | null
+            session_revoked?: boolean
+          }
+          if (data?.session_revoked) {
+            get().logout()
+            return null
+          }
+          if (data?.ok && data.user?.id) {
+            set({ user: data.user, isAuthenticated: true })
+            return data.user
+          }
+          if (data?.ok && !data.user) {
+            set({ user: null, isAuthenticated: false })
+            return null
+          }
+        } catch {
+          /* keep current session on network blips */
+        }
+        return get().user
+      },
       login: async (email: string, password: string, fingerprint?: string, captchaToken?: string, source?: string) => {
         set({ isLoading: true })
         try {

@@ -38,7 +38,7 @@ type LedgerEntry = {
 }
 
 export default function RewardsPage() {
-  const { user } = useAuthStore()
+  const { user, setSession } = useAuthStore()
   const [entries, setEntries] = useState<LedgerEntry[]>([])
   const [pointValue, setPointValue] = useState(0.01)
   const [balance, setBalance] = useState(0)
@@ -58,8 +58,14 @@ export default function RewardsPage() {
           const data = await res.json()
           setEntries(data.entries ?? [])
           setPointValue(data.pointValue ?? 0.01)
-          setBalance(data.balance ?? 0)
+          const nextBalance = Number(data.balance ?? 0) || 0
+          setBalance(nextBalance)
           setBalanceWorth(data.balanceWorth ?? 0)
+          // Keep navbar / account badge in sync with live rewards balance.
+          const current = useAuthStore.getState().user
+          if (current?.id && current.rewardPoints !== nextBalance) {
+            setSession({ ...current, rewardPoints: nextBalance })
+          }
         }
       } catch {
         // silent
@@ -68,7 +74,7 @@ export default function RewardsPage() {
       }
     }
     fetchHistory()
-  }, [])
+  }, [setSession])
 
   // Use the live balance from the API, fall back to the auth store value
   const displayPoints = balance || rewardPoints

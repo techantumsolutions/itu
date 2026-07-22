@@ -1,10 +1,11 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useTopupStore } from '@/store/topupStore'
+import { useAuthStore } from '@/lib/stores'
 import { Download, RotateCcw, Sparkles } from 'lucide-react'
 import { buildInternationalMobile } from '@/lib/lcr/countries'
 import { formatPlanRechargeValue } from '@/lib/catalog/format-plan-recharge-value'
@@ -27,6 +28,11 @@ export default function TopupSuccessPage() {
     providerName,
     rewardPointsEarned,
   } = useTopupStore()
+  const refreshSession = useAuthStore((s) => s.refreshSession)
+
+  useEffect(() => {
+    void refreshSession()
+  }, [refreshSession, rewardPointsEarned])
 
   const refId = useMemo(() => {
     if (transactionId) return transactionId.slice(0, 12).toUpperCase()
