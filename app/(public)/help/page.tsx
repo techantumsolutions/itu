@@ -27,7 +27,7 @@ export default function HelpPage() {
           <p className="mt-2 text-sm text-neutral-400 md:text-base">{help.subtitle}</p>
         </div>
 
-        <div className="mx-auto mt-8 max-w-3xl rounded-2xl bg-white px-4 py-4 shadow-[0_12px_40px_-28px_rgba(15,23,42,0.35)] ring-1 ring-black/5 md:px-6">
+       {/* <div className="mx-auto mt-8 max-w-3xl rounded-2xl bg-white px-4 py-4 shadow-[0_12px_40px_-28px_rgba(15,23,42,0.35)] ring-1 ring-black/5 md:px-6">
           <div className="flex items-center gap-3">
             <div className="flex size-10 items-center justify-center rounded-xl bg-[#eef8ff] ring-1 ring-black/5">
               <Search className="size-5 text-neutral-500" />
@@ -41,7 +41,7 @@ export default function HelpPage() {
             </Button>
           </div>
           <p className="mt-2 text-xs text-neutral-500">Tip: try “receipt”, “wrong number”, “payment”, or “voucher”.</p>
-        </div>
+        </div> */}
 
         <div className="mt-8 grid gap-4 md:grid-cols-3">
           {help.quickLinks.map((c) => {
