@@ -26,6 +26,11 @@ export const metadata: Metadata = {
   },
 }
 
+// Avoid year-long Full Route Cache (s-maxage=31536000) on documents. Stale HTML
+// after image deploys points at deleted /_next/static chunk hashes and surfaces
+// as a brief successful paint followed by "couldn't load" until hard refresh.
+export const revalidate = 0
+
 export default function RootLayout({
   children,
 }: Readonly<{

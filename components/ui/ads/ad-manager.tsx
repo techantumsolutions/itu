@@ -54,7 +54,7 @@ export function AdManager({ placement, page, country, className }: AdManagerProp
     }
 
     fetchAd()
-  }, [placement, page, country])
+  }, [placement, page, country, pathname])
 
   if (loading || !ad) return null
 

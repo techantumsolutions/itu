@@ -75,14 +75,44 @@ const nextConfig = {
     ],
   },
   async headers() {
-    const headers = [...SECURITY_HEADERS]
-    if (process.env.NODE_ENV === 'production') {
-      headers.push({
+    const security = [...SECURITY_HEADERS]
+    // Only emit HSTS when the public site is actually served over HTTPS.
+    // Setting HSTS on plain http://IP:4009 confuses browsers and can break
+    // subsequent asset loads after the first document response.
+    const hstsEnabled =
+      process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'false'
+    if (hstsEnabled) {
+      security.push({
         key: 'Strict-Transport-Security',
         value: 'max-age=31536000; includeSubDomains',
       })
     }
-    return [{ source: '/:path*', headers }]
+
+    return [
+      // Hashed build artifacts — immutable (safe across deploys via new filenames).
+      {
+        source: '/_next/static/:path*',
+        headers: [
+          ...security,
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=31536000, immutable',
+          },
+        ],
+      },
+      // HTML / RSC / pages — never long-cache. Stale HTML after deploy references
+      // deleted Turbopack/webpack chunk hashes → "couldn't load" until hard refresh.
+      {
+        source: '/:path*',
+        headers: [
+          ...security,
+          {
+            key: 'Cache-Control',
+            value: 'private, no-cache, no-store, max-age=0, must-revalidate',
+          },
+        ],
+      },
+    ]
   },
 }
 
